@@ -23,6 +23,12 @@ inspiration: OpenBot Workflows (idées seulement — licence PolyForm Noncommerc
 - Les workflows apparaissent **aussi** dans la page Automatisations (liste/calendrier) parce qu'ils s'appuient sur ses déclencheurs.
 - Le bouton de navigation garde son emplacement ; seul son nom et le titre de la page changent.
 
+## Réponses de l'utilisateur (2026-11-02, après la première version de ce document)
+
+- **Envoyer** : vers une **notification** (ordinateur et téléphone) et vers **la discussion d'un bot**. Discord et e-mail ne sont pas dans la version 1.
+- **Automatisations existantes** : chacune apparaît dans l'Atelier comme un **mini-workflow** (Déclencheur → Bot), ouvrable ; lui ajouter des blocs la transforme en vrai workflow (la routine d'origine devient la cible `workflow`, sans perte de réglages, avec retour arrière possible tant qu'aucun bloc n'a été ajouté).
+- **Échec la nuit** : une **notification** « Le workflow {nom} a échoué à l'étape {bloc} », avec un clic qui ouvre l'exécution.
+
 ## Expérience
 
 ### Toile commune
@@ -50,7 +56,7 @@ inspiration: OpenBot Workflows (idées seulement — licence PolyForm Noncommerc
 | Bot | instruction, bot (sélecteur), modèle (facultatif) | texte (réponse finale du bot) |
 | Condition | une question en français | Oui / Non |
 | Approbation | message affiché | Oui / Non (pause jusqu'à la réponse ou 24 h) |
-| Envoyer | notification, ou message dans la discussion d'un bot | — |
+| Envoyer | notification (ordinateur et téléphone), ou message dans la discussion d'un bot | — |
 | Note | texte libre | — (jamais exécutée) |
 
 Les déclencheurs par **adresse web** et par **événement d'appli** viennent dans une phase suivante (même mécanisme).
