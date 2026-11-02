@@ -18,6 +18,30 @@ const kinds = (list: Piece[]) => list.map((p) => `${p.kind}:${p.tech}`);
 const emptyInput = project({});
 
 describe("detectPieces", () => {
+  it("names a server from its folder when no known framework was found, and only then", () => {
+    const loose = pieces({ "server/a.js": "x", "server/b.js": "x", "server/c.js": "x", "server/notes.json": "{}" });
+    expect(kinds(loose)).toEqual(["api:"]);
+    expect(loose[0]!.evidence.map((e) => e.code)).toEqual(["folder", "folder", "folder"]);
+    expect(loose[0]!.evidence.map((e) => e.path)).toEqual(["server/a.js", "server/b.js", "server/c.js"]);
+    expect(loose[0]!.modules.length).toBeGreaterThan(0);
+    expect(kinds(pieces({ "server/a.js": "x", "server/b.js": "x" }))).toEqual([]);
+    const named = pieces({ "package.json": JSON.stringify({ dependencies: { express: "4" } }), "server/a.js": "x", "server/b.js": "x", "server/c.js": "x" });
+    expect(kinds(named)).toEqual(["api:Express"]);
+    expect(named[0]!.evidence.map((e) => e.code)).toEqual(["dependency"]);
+  });
+
+  it("names a site from its folder, and leaves a bot's own code out of any server", () => {
+    expect(kinds(pieces({ "components/a.jsx": "x", "components/b.jsx": "x", "components/c.jsx": "x" }))).toEqual(["ui:"]);
+    const bot = pieces({ "package.json": JSON.stringify({ dependencies: { telegraf: "4" } }), "bot/a.js": "x", "bot/b.js": "x", "bot/c.js": "x" });
+    expect(kinds(bot)).toEqual(["chatbot:Telegraf"]);
+  });
+
+  it("caps the folder evidence at five files", () => {
+    const many = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`api/f${i}.py`, "x"]));
+    expect(pieces(many)[0]!.evidence).toHaveLength(5);
+  });
+
+
   it("a project with no manifest gives no pieces and does not throw", () => {
     expect(detectPieces(emptyInput)).toEqual([]);
     expect(pieces({ "scripts/a.sh": "echo", "scripts/b.sh": "echo", "run.py": "import os\n" })).toEqual([]);
@@ -244,24 +268,42 @@ describe("linkPieces", () => {
 describe("pieceDiagramHtml", () => {
   const piece = (kind: Piece["kind"], tech: string): Piece => ({ kind, tech, evidence: [], modules: [] });
 
-  it("draws one box per piece with the plain word and the tech, and an arrow per link with its count", () => {
-    const html = pieceDiagramHtml({ pieces: [piece("ui", "React"), piece("api", "Express"), piece("database", "PostgreSQL")], links: [{ from: "ui", to: "api", count: 12, examples: [] }, { from: "api", to: "database", count: 3, examples: [] }] }, "shop");
+  it("draws one box per kind in the four columns of the app, with plain phrases on the arrows and no counts", () => {
+    const html = pieceDiagramHtml({ pieces: [piece("ui", "React"), piece("ui", "Vite"), piece("api", "Express"), piece("database", "PostgreSQL")], links: [{ from: "ui", to: "api", count: 12, examples: [] }, { from: "api", to: "database", count: 3, examples: [] }] }, "shop");
     expect(html).toMatch(/^<!doctype html>/i);
-    for (const text of ["Site ou appli", "React", "Serveur", "Express", "Base de données", "PostgreSQL", "12 appels", "3 fichiers", "shop"]) expect(html).toContain(text);
+    for (const text of ["Site ou appli", "Serveur", "Base de données", "envoie ses demandes au", "range les informations dans", "shop", "Ce que les gens voient"]) expect(html).toContain(text);
+    expect(html).not.toContain("12 appels");
+    expect(html).not.toContain("React");
     expect(html.match(/data-piece=/g)).toHaveLength(3);
     expect(html.match(/data-link=/g)).toHaveLength(2);
+    const x = (kind: string) => Number(new RegExp(`data-piece="${kind}"><rect x="(-?[\\d.]+)"`).exec(html)![1]);
+    expect(x("ui")).toBeLessThan(x("api"));
+    expect(x("api")).toBeLessThan(x("database"));
     expect(html).not.toMatch(/<script|https?:\/\//i);
+  });
+
+  it("gives each outside service its own box, named by its brand, and fans the server's link out to each", () => {
+    const html = pieceDiagramHtml({ pieces: [piece("api", "Express"), piece("external", "Stripe"), piece("external", "SendGrid"), piece("tests", ""), piece("deploy", "Docker")], links: [{ from: "api", to: "external", count: 2, examples: [] }] }, "shop");
+    expect(html).toContain('data-piece="external:Stripe"');
+    expect(html).toContain('data-piece="external:SendGrid"');
+    expect(html).toContain("Service extérieur");
+    expect(html).toContain("encaisse les paiements avec");
+    expect(html).toContain("envoie les e-mails avec");
+    expect(html.match(/data-link=/g)).toHaveLength(2);
+    expect(html).toContain("Pour fabriquer et mettre en ligne");
+    expect(html).toContain("Vérifications");
   });
 
   it("escapes every label and the title", () => {
     const html = pieceDiagramHtml({ pieces: [piece("external", '<img src=x onerror="alert(1)">&')], links: [] }, "</title><script>x</script>");
+    expect(html).not.toContain('"alert');
     expect(html).not.toContain("<img");
     expect(html).not.toContain("<script");
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;");
   });
 
   it("says plainly when nothing was found, and stays under 30 KB even when crowded", () => {
-    expect(pieceDiagramHtml({ pieces: [], links: [] }, "vide")).toContain("Aucune pièce");
+    expect(pieceDiagramHtml({ pieces: [], links: [] }, "vide")).toContain("Aucun grand bloc");
     const many = Array.from({ length: 60 }, (_, i) => piece((["ui", "api", "database", "external", "deploy"] as const)[i % 5], `Tech number ${i} ${"x".repeat(80)}`));
     const html = pieceDiagramHtml({ pieces: many, links: [{ from: "ui", to: "api", count: 1, examples: [] }] }, "t".repeat(500));
     expect(new TextEncoder().encode(html).length).toBeLessThanOrEqual(30 * 1024);

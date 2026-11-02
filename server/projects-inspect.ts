@@ -1,6 +1,6 @@
 import { classify } from "./projects-architecture.ts";
-import type { Architecture, FileImports } from "./projects-architecture.ts";
-import { PIECE_KINDS, PIECE_LABELS } from "../shared/projects-pieces.ts";
+import type { Architecture, Family, FileImports } from "./projects-architecture.ts";
+import { BUILD_KINDS, FLOW_COLUMNS, LINK_PHRASES, PIECE_DEFAULT_TEXT, PIECE_KINDS, PIECE_LABELS, externalPhrase, pieceKey } from "../shared/projects-pieces.ts";
 import type { EvidenceCode, Piece, PieceKind, PieceLink } from "../shared/projects-pieces.ts";
 
 export type { Piece, PieceKind, PieceLink };
@@ -104,6 +104,14 @@ const FILE_CUES: readonly FileCue[] = [
 ];
 
 const MAX_EVIDENCE = 5;
+
+/** A site or a server whose framework is not on the cue lists still shows, from the family its code sits in. */
+const FOLDER_FALLBACKS: readonly { kind: PieceKind; family: Family; unless: readonly PieceKind[]; reason: string }[] = [
+  { kind: "ui", family: "ui", unless: [], reason: "file in an interface folder" },
+  { kind: "api", family: "server", unless: ["chatbot"], reason: "file in a server folder" },
+];
+const MIN_FOLDER_FILES = 3;
+const CODE_FILE = /\.(?:[cm]?[jt]sx?|vue|svelte|html|py|go|rs|rb|php|java)$/i;
 
 const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 const dirName = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
@@ -367,6 +375,17 @@ export function detectPieces(input: { paths: string[]; manifests: Record<string,
     for (const f of input.arch.files) if (testModules.includes(f.module)) addEvidence(tests, f.path, "test_file", "test file", true);
   }
 
+  for (const fallback of FOLDER_FALLBACKS) {
+    const kinds = new Set([...drafts.values()].map((d) => d.kind));
+    if (kinds.has(fallback.kind) || fallback.unless.some((k) => kinds.has(k))) continue;
+    const modules = new Set(input.arch.modules.filter((m) => m.family === fallback.family).map((m) => m.id));
+    const files = input.arch.files.filter((f) => modules.has(f.module) && CODE_FILE.test(f.path)).map((f) => f.path).sort(byText);
+    if (files.length < MIN_FOLDER_FILES) continue;
+    const d = draft(fallback.kind, "");
+    for (const path of files.slice(0, MAX_EVIDENCE)) addEvidence(d, path, "folder", fallback.reason, false);
+    for (const f of input.arch.files) if (modules.has(f.module) && CODE_FILE.test(f.path)) d.modules.add(f.module);
+  }
+
   const named = new Set([...drafts.values()].filter((d) => d.tech).map((d) => d.kind));
   const moduleOrder = input.arch.modules.map((m) => m.id);
   return [...drafts.values()]
@@ -497,62 +516,102 @@ export function linkPieces(pieces: Piece[], texts: { path: string; text: string 
   return links;
 }
 
-const DIAGRAM_COLUMNS: readonly (readonly PieceKind[])[] = [["ui", "chatbot"], ["api", "jobs"], ["database", "cache", "external"], ["tests", "deploy"]];
+const DIAGRAM_COLUMN_TITLES: Record<(typeof FLOW_COLUMNS)[number]["id"], string> = {
+  see: "Ce que les gens voient", work: "Ce qui travaille derrière", store: "Où c'est rangé", outside: "Services extérieurs",
+};
+const DIAGRAM_BUILD_TITLE = "Pour fabriquer et mettre en ligne";
 const DIAGRAM_COLORS: Record<PieceKind, string> = {
   ui: "#5b8def", api: "#38b27a", database: "#d9822b", cache: "#c95fd1", jobs: "#c9a227",
   external: "#e0566b", chatbot: "#2bb3c0", tests: "#8a93a6", deploy: "#6f7ad9",
 };
 const MAX_DIAGRAM_BOXES = 12;
 const MAX_DIAGRAM_TECH = 40;
-const BOX_W = 200;
-const BOX_H = 56;
-const GAP_X = 70;
+const BOX_W = 230;
+const BOX_H = 70;
+const BUILD_H = 40;
+const GAP_X = 120;
 const GAP_Y = 22;
+const HEAD_H = 26;
+const WRAP = 34;
 
 const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]!);
 const cut = (text: string, max: number) => ([...text].length > max ? `${[...text].slice(0, max - 1).join("")}…` : text);
 
-/** A self-contained page (inline SVG, no script, no outside link) of a project's pieces and the links between them, in plain French. */
+/** At most two lines of about `width` characters, the second cut with an ellipsis. */
+function wrapTwo(text: string, width: number): string[] {
+  const lines: string[] = [""];
+  for (const word of text.split(" ")) {
+    const last = lines[lines.length - 1]!;
+    if (!last || (last + " " + word).length <= width) lines[lines.length - 1] = last ? `${last} ${word}` : word;
+    else lines.push(word);
+  }
+  return lines.length > 2 ? [lines[0]!, cut(lines.slice(1).join(" "), width)] : lines;
+}
+
+type DiagramBox = { key: string; kind: PieceKind; tech: string; x: number; y: number; w: number; h: number };
+
+/** A self-contained page (inline SVG, no script, no outside link) of a project's pieces and the links between them, in plain French, laid out like the app's « Comment ça marche » view. */
 export function pieceDiagramHtml(inspect: { pieces: Piece[]; links: PieceLink[] }, title: string): string {
   const heading = escapeHtml(cut(title.replace(/[\u0000-\u001f\u007f]+/g, " ").trim(), 80));
-  const boxes = new Map<PieceKind, { x: number; y: number; w: number; h: number }>();
+  const boxesOf = (kind: PieceKind): { key: string; tech: string }[] => {
+    const own = inspect.pieces.filter((p) => p.kind === kind);
+    if (!own.length) return [];
+    if (kind !== "external") return [{ key: kind, tech: "" }];
+    return [...new Map(own.map((p) => [pieceKey(p), cut(p.tech, MAX_DIAGRAM_TECH)])).entries()].slice(0, MAX_DIAGRAM_BOXES).map(([key, tech]) => ({ key, tech }));
+  };
+  const boxes: DiagramBox[] = [];
   const shapes: string[] = [];
   let height = 0;
-  DIAGRAM_COLUMNS.forEach((kinds, column) => {
-    let y = 0;
-    for (const kind of kinds) {
-      const own = inspect.pieces.filter((p) => p.kind === kind).slice(0, MAX_DIAGRAM_BOXES);
-      if (!own.length) continue;
-      const techs = own.map((p) => p.tech).filter(Boolean);
-      const x = column * (BOX_W + GAP_X);
-      const lines = Math.max(1, Math.min(techs.length, 4));
-      const h = BOX_H + (lines - 1) * 16;
-      boxes.set(kind, { x, y, w: BOX_W, h });
-      const color = DIAGRAM_COLORS[kind];
-      const shown = techs.slice(0, 4).map((t, i) => `<text x="${x + 14}" y="${y + 42 + i * 16}" class="t">${escapeHtml(cut(t, MAX_DIAGRAM_TECH))}${i === 3 && techs.length > 4 ? ` +${techs.length - 4}` : ""}</text>`).join("");
-      shapes.push(`<g data-piece="${kind}"><rect x="${x}" y="${y}" width="${BOX_W}" height="${h}" rx="10" fill="${color}22" stroke="${color}" stroke-width="2"/><text x="${x + 14}" y="${y + 22}" class="k">${escapeHtml(PIECE_LABELS[kind].fr)}</text>${shown}</g>`);
-      y += h + GAP_Y;
+  let column = 0;
+  for (const { id, kinds } of FLOW_COLUMNS) {
+    const list = kinds.flatMap((kind) => boxesOf(kind).map((b) => ({ ...b, kind })));
+    if (!list.length) continue;
+    const x = column * (BOX_W + GAP_X);
+    shapes.push(`<text x="${x}" y="14" class="h">${escapeHtml(DIAGRAM_COLUMN_TITLES[id])}</text>`);
+    let y = HEAD_H;
+    for (const b of list) {
+      boxes.push({ ...b, x, y, w: BOX_W, h: BOX_H });
+      const color = DIAGRAM_COLORS[b.kind];
+      const name = b.kind === "external" && b.tech ? b.tech : PIECE_LABELS[b.kind].fr;
+      const lines = b.kind === "external" && b.tech ? [PIECE_LABELS.external.fr] : wrapTwo(PIECE_DEFAULT_TEXT[b.kind].fr, WRAP);
+      const text = lines.map((line, i) => `<text x="${x + 14}" y="${y + 42 + i * 15}" class="t">${escapeHtml(line)}</text>`).join("");
+      shapes.push(`<g data-piece="${escapeHtml(b.key)}"><rect x="${x}" y="${y}" width="${BOX_W}" height="${BOX_H}" rx="10" fill="${color}22" stroke="${color}" stroke-width="2"/><text x="${x + 14}" y="${y + 23}" class="k">${escapeHtml(name)}</text>${text}</g>`);
+      y += BOX_H + GAP_Y;
     }
     height = Math.max(height, y);
-  });
+    column++;
+  }
+  const build = BUILD_KINDS.filter((kind) => inspect.pieces.some((p) => p.kind === kind));
+  if (build.length) {
+    const y0 = height + 12;
+    shapes.push(`<text x="0" y="${y0 + 14}" class="h">${DIAGRAM_BUILD_TITLE}</text>`);
+    build.forEach((kind, i) => {
+      const x = i * (BOX_W + GAP_Y);
+      const y = y0 + HEAD_H;
+      boxes.push({ key: kind, kind, tech: "", x, y, w: BOX_W, h: BUILD_H });
+      shapes.push(`<g data-piece="${kind}"><rect x="${x}" y="${y}" width="${BOX_W}" height="${BUILD_H}" rx="10" fill="none" stroke="${DIAGRAM_COLORS[kind]}" stroke-opacity="0.6" stroke-width="1.5"/><text x="${x + 14}" y="${y + 25}" class="t">${escapeHtml(PIECE_LABELS[kind].fr)}</text></g>`);
+    });
+    height = y0 + HEAD_H + BUILD_H;
+  }
   const arrows = inspect.links.flatMap((link) => {
-    const a = boxes.get(link.from);
-    const b = boxes.get(link.to);
-    if (!a || !b) return [];
-    const forward = b.x >= a.x;
-    const x1 = forward ? a.x + a.w : a.x;
-    const x2 = forward ? b.x : b.x + b.w;
-    const y1 = a.y + a.h / 2;
-    const y2 = b.y + b.h / 2;
-    const word = link.from === "ui" && link.to === "api" ? (link.count > 1 ? "appels" : "appel") : (link.count > 1 ? "fichiers" : "fichier");
-    return [`<g data-link="${link.from}-${link.to}"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="a" marker-end="url(#h)"/><text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6}" class="c" text-anchor="middle">${link.count} ${word}</text></g>`];
+    const a = boxes.find((b) => b.kind === link.from);
+    if (!a) return [];
+    return boxes.filter((b) => b.kind === link.to).map((b) => {
+      const forward = b.x >= a.x;
+      const x1 = forward ? a.x + a.w : a.x;
+      const x2 = forward ? b.x : b.x + b.w;
+      const y1 = a.y + a.h / 2;
+      const y2 = b.y + b.h / 2;
+      const phrase = link.to === "external" ? externalPhrase(b.tech, "fr") : LINK_PHRASES[`${link.from}->${link.to}` as keyof typeof LINK_PHRASES]?.fr ?? "";
+      return `<g data-link="${escapeHtml(`${a.key}-${b.key}`)}"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="a" marker-end="url(#h)"/><text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6}" class="c" text-anchor="middle">${escapeHtml(phrase)}</text></g>`;
+    });
   });
-  const width = Math.max(1, ...[...boxes.values()].map((b) => b.x + b.w));
-  const body = boxes.size
-    ? `<svg viewBox="-4 -4 ${width + 8} ${Math.max(height, BOX_H) + 8}" width="100%" role="img" aria-label="Les pièces de ${heading}"><defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#9aa4b8"/></marker></defs>${arrows.join("")}${shapes.join("")}</svg>`
-    : `<p>Aucune pièce reconnue dans ce projet pour l'instant.</p>`;
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${heading}</title><style>body{margin:0;padding:16px;background:#14161c;color:#e8ebf2;font:14px system-ui,sans-serif}h1{font-size:16px;margin:0 0 12px}.k{fill:#f2f4f8;font-weight:600;font-size:14px}.t{fill:#b8c0d0;font-size:11px}.a{stroke:#9aa4b8;stroke-width:2;stroke-dasharray:6 4}.c{fill:#cfd5e2;font-size:11px}</style></head><body><h1>Les grandes pièces de ${heading}</h1>${body}</body></html>`;
+  const width = Math.max(1, ...boxes.map((b) => b.x + b.w));
+  const body = boxes.length
+    ? `<svg viewBox="-4 -4 ${width + 8} ${Math.max(height, BOX_H) + 8}" width="100%" role="img" aria-label="Comment marche ${heading}"><defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#9aa4b8"/></marker></defs>${arrows.join("")}${shapes.join("")}</svg>`
+    : `<p>Aucun grand bloc reconnu dans ce projet pour l'instant.</p>`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${heading}</title><style>body{margin:0;padding:16px;background:#14161c;color:#e8ebf2;font:14px system-ui,sans-serif}h1{font-size:16px;margin:0 0 12px}.h{fill:#8a93a6;font-size:12px}.k{fill:#f2f4f8;font-weight:600;font-size:14px}.t{fill:#b8c0d0;font-size:11.5px}.a{stroke:#9aa4b8;stroke-width:1.5}.c{fill:#cfd5e2;font-size:11px}</style></head><body><h1>Comment marche ${heading}</h1>${body}</body></html>`;
 }
 
 const LANGUAGE_NAMES: Readonly<Record<string, string>> = {
