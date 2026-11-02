@@ -3,8 +3,21 @@ export type Family = "tests" | "docs" | "i18n" | "data" | "config" | "scripts" |
 /** Priority order: a file goes to the first family whose rules match it. Also the order families are shown in. */
 export const FAMILY_ORDER: readonly Family[] = ["tests", "docs", "i18n", "data", "config", "scripts", "assets", "ui", "server", "other"];
 
-/** The person's corrections for one project, kept in projects-map.json under `overrides[projectId]`. */
-export type ArchOverrides = { moduleFamily: Record<string, Family>; familyNames: Partial<Record<Family, string>> };
+/**
+ * The person's corrections for one project, kept in projects-map.json under `overrides[projectId]`.
+ * `summary` is the "En bref" card (at most 600 characters, line breaks kept); `familyText` and `moduleText` are
+ * one-line descriptions of at most 160 characters.
+ */
+export type ArchOverrides = {
+  moduleFamily: Record<string, Family>;
+  familyNames: Partial<Record<Family, string>>;
+  summary?: string;
+  familyText?: Partial<Record<Family, string>>;
+  moduleText?: Record<string, string>;
+};
+
+export const SUMMARY_MAX = 600;
+export const DESCRIPTION_MAX = 160;
 
 /**
  * The body of GET /api/projects/architecture.

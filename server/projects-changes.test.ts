@@ -160,6 +160,67 @@ describe("applyChanges", () => {
   });
 });
 
+describe("descriptions", () => {
+  it("describe_project stores a summary of at most 600 chars, newlines kept", () => {
+    const summary = "Une boutique en ligne.\n\nLe site montre les produits.\u0007 " + "x".repeat(700);
+    const r = applyChanges(state(), [{ op: "describe_project", projectId: "s1:shop", summary }], known);
+    expect(r.ok).toBe(true);
+    const saved = r.ok ? r.state.overrides["s1:shop"]!.summary! : "";
+    expect(saved.startsWith("Une boutique en ligne.\n\nLe site montre les produits. x")).toBe(true);
+    expect(saved.length).toBeLessThanOrEqual(600);
+    expect(applyChanges(state(), [{ op: "describe_project", projectId: "s1:shop", summary: " \n " }], known).ok).toBe(false);
+  });
+
+  it("describe_family and describe_module store at most 160 chars on one line", () => {
+    const r = applyChanges(state(), [
+      { op: "describe_family", projectId: "s1:shop", family: "ui", text: "Ce que voient\nles clients " + "y".repeat(300) },
+      { op: "describe_module", projectId: "s1:shop", moduleId: "src/state", text: "Garde le panier" },
+    ], known);
+    expect(r.ok).toBe(true);
+    const own = r.ok ? r.state.overrides["s1:shop"]! : null;
+    expect(own!.familyText!.ui!.startsWith("Ce que voient les clients y")).toBe(true);
+    expect(own!.familyText!.ui!.length).toBeLessThanOrEqual(160);
+    expect(own!.moduleText).toEqual({ "src/state": "Garde le panier" });
+    if (r.ok) expect(projectMapStateSchema.safeParse(r.state).success).toBe(true);
+  });
+
+  it("an unknown module is refused", () => {
+    expect(applyChanges(state(), [{ op: "describe_module", projectId: "s1:shop", moduleId: "src/nope", text: "x" }], known))
+      .toEqual({ ok: false, problems: [{ index: 0, reason: expect.stringContaining("src/nope") }] });
+    expect(applyChanges(state(), [{ op: "describe_family", projectId: "s1:gone", family: "ui", text: "x" }], known).ok).toBe(false);
+  });
+
+  it("keeps the other corrections of a project", () => {
+    const s = state({ overrides: { "s1:shop": { moduleFamily: { "src/components": "ui" }, familyNames: { ui: "Front" } } } });
+    const r = applyChanges(s, [{ op: "describe_project", projectId: "s1:shop", summary: "Une boutique." }], known);
+    expect(r.ok && r.state.overrides["s1:shop"]).toEqual({ moduleFamily: { "src/components": "ui" }, familyNames: { ui: "Front" }, summary: "Une boutique." });
+  });
+
+  it("the schema takes the three operations with their sizes", () => {
+    expect(projectChangesSchema.safeParse([
+      { op: "describe_project", projectId: "s1:shop", summary: "x" },
+      { op: "describe_family", projectId: "s1:shop", family: "ui", text: "x" },
+      { op: "describe_module", projectId: "s1:shop", moduleId: "src/state", text: "x" },
+    ]).success).toBe(true);
+    expect(projectChangeSchema.safeParse({ op: "describe_project", projectId: "s1:shop", summary: "x".repeat(2001) }).success).toBe(false);
+  });
+
+  it("the card line shows a description cleaned to one line of at most 160 chars", () => {
+    expect(describeChanges([{ op: "describe_family", projectId: "s1:shop", family: "ui", text: "Autoriser\nx" }], names)[0]).not.toContain("\n");
+    expect(describeChanges([
+      { op: "describe_project", projectId: "s1:shop", summary: "Une boutique.\nAvec un site." },
+      { op: "describe_family", projectId: "s1:shop", family: "ui", text: "Ce que voient les clients" },
+      { op: "describe_module", projectId: "s1:shop", moduleId: "src/state", text: "Garde «le» panier" },
+    ], names)).toEqual([
+      "Dans «shop» : fiche En bref «Une boutique. Avec un site.»",
+      "Dans «shop» : décrire «Interface» : «Ce que voient les clients»",
+      "Dans «shop» : décrire «src/state» : «Garde le panier»",
+    ]);
+    const long = describeChanges([{ op: "describe_project", projectId: "s1:shop", summary: "z".repeat(600) }], names)[0]!;
+    expect(long).toContain(`«${"z".repeat(159)}…»`);
+  });
+});
+
 describe("describeChanges", () => {
   it("describes each change in one plain French line", () => {
     expect(describeChanges([{ op: "link", a: "s1:bot", b: "s1:api", label: "utilise" }], names)).toEqual(["Relier «bot» → «api» : «utilise»"]);

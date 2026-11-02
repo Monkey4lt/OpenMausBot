@@ -199,6 +199,18 @@ describe("cartographe internal routes", () => {
     expect(withdrawn).toEqual([]);
   });
 
+  it("describe_module checks the module too; describe_project needs no read of the modules", async () => {
+    const { call, state, reads, asks } = setup();
+    expect(await call(APPLY, { changes: [{ op: "describe_module", projectId: "s1:shop", moduleId: "src/nope", text: "x" }] })).toMatchObject({ body: { applied: false, reason: "invalid" } });
+    expect(asks).toEqual([]);
+    expect(await call(APPLY, { changes: [{ op: "describe_project", projectId: "s1:shop", summary: "Une boutique." }, { op: "describe_module", projectId: "s1:shop", moduleId: "src/state", text: "Le panier" }] })).toMatchObject({ body: { applied: true } });
+    expect(state().overrides["s1:shop"]).toEqual({ moduleFamily: {}, familyNames: {}, summary: "Une boutique.", moduleText: { "src/state": "Le panier" } });
+    expect(asks.at(-1)!.lines).toEqual(["Dans «shop» : fiche En bref «Une boutique.»", "Dans «shop» : décrire «src/state» : «Le panier»"]);
+    expect(reads).toEqual(["s1:shop", "s1:shop", "s1:shop"]);
+    const arch = (await call(ARCH, { projectId: "s1:shop" })).body as { overrides: Record<string, unknown> };
+    expect(arch.overrides).toMatchObject({ summary: "Une boutique.", moduleText: { "src/state": "Le panier" } });
+  });
+
   it("move_module checks the module against the project's architecture and writes the override", async () => {
     const { call, state, reads } = setup();
     expect(await call(APPLY, { changes: [{ op: "move_module", projectId: "s1:shop", moduleId: "src/state", family: "data" }] })).toMatchObject({ body: { applied: true } });

@@ -81,13 +81,13 @@ function parseBatch(raw: unknown): { ok: true; changes: ProjectChange[] } | { ok
 export function createCartographeRoutes(deps: CartographeDeps) {
   const scan = async () => scanProjects(readProjectMapState(deps.dataDir));
 
-  /** Known projects from a fresh scan, and the module ids of each project a move_module names. */
+  /** Known projects from a fresh scan, and the module ids of each project a move_module or describe_module names. */
   async function knownFor(changes: ProjectChange[], projects: Project[]): Promise<{ known: KnownProjects; problems: { index: number; reason: string }[] }> {
     const projectIds = new Set(projects.map((p) => p.id));
     const modules = new Map<string, ReadonlySet<string>>();
     const problems: { index: number; reason: string }[] = [];
     for (const [index, change] of changes.entries()) {
-      if (change.op !== "move_module" || !projectIds.has(change.projectId) || modules.has(change.projectId)) continue;
+      if ((change.op !== "move_module" && change.op !== "describe_module") || !projectIds.has(change.projectId) || modules.has(change.projectId)) continue;
       try {
         const architecture = await deps.architectureOf(change.projectId);
         if (architecture) modules.set(change.projectId, new Set(architecture.modules.map((m) => m.id)));

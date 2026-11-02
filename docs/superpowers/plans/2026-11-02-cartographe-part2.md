@@ -109,7 +109,7 @@ it("the intro mentions that file contents can be sent to the AI", () => {});
 - Modify: `server/projects.ts` (schéma `overrides[projectId]` : `summary?`, `familyText?: Partial<Record<Family,string>>`, `moduleText?: Record<string,string>`), `shared/projects-architecture.ts` (type), `server/projects-changes.ts` (ops `describe_project`, `describe_family`, `describe_module` + lignes de carte « Dans {projet} : fiche En bref », « … décrire {famille} : {texte} »), `server/drivers/agents-cartographe-tools.ts` (schéma de l'outil d'application)
 - Test: `server/projects-changes.test.ts`, `server/projects.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it("describe_project stores a summary of at most 600 chars, newlines kept", () => {});
@@ -120,8 +120,8 @@ it("the card line shows a description cleaned to one line of at most 160 chars",
 });
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS.
-- [ ] **Step 5:** Commit `feat(cartographe): project summary and plain-language descriptions`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS.
+- [x] **Step 5:** Commit `feat(cartographe): project summary and plain-language descriptions`.
 
 ### Task 13: Affichage simple
 

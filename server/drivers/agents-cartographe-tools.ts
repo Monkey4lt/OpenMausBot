@@ -84,7 +84,7 @@ export const CARTOGRAPHE_TOOL_DEFINITIONS = [
             type: "object",
             additionalProperties: false,
             properties: {
-              op: { type: "string", enum: ["create_group", "rename_group", "delete_group", "assign", "link", "unlink", "rename_family", "move_module"] },
+              op: { type: "string", enum: ["create_group", "rename_group", "delete_group", "assign", "link", "unlink", "rename_family", "move_module", "describe_project", "describe_family", "describe_module"] },
               name: name(60),
               color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
               ref: { type: "string", pattern: "^[\\w-]{1,40}$" },
@@ -95,6 +95,8 @@ export const CARTOGRAPHE_TOOL_DEFINITIONS = [
               label: name(60),
               family: { type: "string", enum: FAMILIES },
               moduleId: name(300),
+              summary: { type: "string", maxLength: 600, description: "describe_project: the En bref card, plain words" },
+              text: name(160),
             },
             required: ["op"],
           },

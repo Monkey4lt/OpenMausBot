@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { FAMILY_ORDER, type Family } from "./projects-architecture.ts";
+import { DESCRIPTION_MAX, SUMMARY_MAX } from "../shared/projects-architecture.ts";
 import { scanGithubLines } from "./projects-github.ts";
 
 /** Heavy folders that say nothing about a project's shape. Hidden entries are skipped too. */
@@ -48,6 +49,9 @@ const familySchema = z.enum(FAMILY_ORDER as [Family, ...Family[]]);
 const archOverridesSchema = z.object({
   moduleFamily: z.record(z.string().min(1).max(300), familySchema).default({}),
   familyNames: z.partialRecord(familySchema, z.string().trim().min(1).max(60)).default({}),
+  summary: z.string().min(1).max(SUMMARY_MAX).optional(),
+  familyText: z.partialRecord(familySchema, z.string().min(1).max(DESCRIPTION_MAX)).optional(),
+  moduleText: z.record(z.string().min(1).max(300), z.string().min(1).max(DESCRIPTION_MAX)).optional(),
 });
 
 export const projectMapStateSchema = z.object({

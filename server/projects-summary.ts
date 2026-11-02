@@ -1,4 +1,4 @@
-import type { ArchOverrides, Architecture } from "../shared/projects-architecture.ts";
+import { DESCRIPTION_MAX, SUMMARY_MAX, type ArchOverrides, type Architecture } from "../shared/projects-architecture.ts";
 import { PIECE_LABELS, type Piece, type PieceKind, type PieceLink } from "../shared/projects-pieces.ts";
 import { cleanLabel } from "./projects-changes.ts";
 import type { Project, ProjectMapState, ProjectNode } from "./projects.ts";
@@ -113,6 +113,9 @@ export function summarizeArchitecture(arch: Architecture, overrides: ArchOverrid
   const kept: ArchOverrides = {
     moduleFamily: Object.fromEntries(Object.entries(overrides?.moduleFamily ?? {}).filter(([id]) => moduleIds.has(id))),
     familyNames: Object.fromEntries(Object.entries(overrides?.familyNames ?? {}).map(([family, name]) => [family, cleanLabel(name ?? "")])),
+    ...(overrides?.summary ? { summary: cleanLabel(overrides.summary, { max: SUMMARY_MAX, keepLines: true }) } : {}),
+    ...(overrides?.familyText ? { familyText: Object.fromEntries(Object.entries(overrides.familyText).map(([family, text]) => [family, cleanLabel(text ?? "", { max: DESCRIPTION_MAX })])) } : {}),
+    ...(overrides?.moduleText ? { moduleText: Object.fromEntries(Object.entries(overrides.moduleText).filter(([id]) => moduleIds.has(id)).map(([id, text]) => [id, cleanLabel(text, { max: DESCRIPTION_MAX })])) } : {}),
   };
   const families = arch.families.map((f) => ({ id: f.id, name: cleanLabel(f.name), files: f.files }));
   const familyEdges = arch.edges.filter((e) => e.level === "family");
@@ -127,7 +130,7 @@ export function summarizeArchitecture(arch: Architecture, overrides: ArchOverrid
   const base = { families, modules: arch.modules, external: arch.external, overrides: kept };
   const cut = (part: Partial<ArchitectureSummary>): ArchitectureSummary => ({ ...base, edges: arch.edges, ...noFiles, ...part, truncated: true });
   const overrideEntries = Object.entries(kept.moduleFamily);
-  const withOverrides = (n: number): ArchOverrides => ({ moduleFamily: Object.fromEntries(overrideEntries.slice(0, n)), familyNames: kept.familyNames });
+  const withOverrides = (n: number): ArchOverrides => ({ ...kept, moduleFamily: Object.fromEntries(overrideEntries.slice(0, n)) });
 
   return firstFitting<ArchitectureSummary>(limit, [
     () => ({ ...base, edges: arch.edges, ...(includeFiles ? pageOf(files.length) : {}), truncated: arch.truncated }),

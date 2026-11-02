@@ -54,7 +54,8 @@ describe("the Cartographe's projects tools", () => {
     const full = fullInputSchema("projects_apply_changes") as { required: string[]; properties: { changes: { type: string; minItems: number; maxItems: number; items: { properties: Record<string, { enum?: string[] }>; required: string[] } } } };
     expect(full.required).toEqual(["changes"]);
     expect(full.properties.changes).toMatchObject({ type: "array", minItems: 1, maxItems: 100 });
-    expect(full.properties.changes.items.properties.op.enum).toEqual(["create_group", "rename_group", "delete_group", "assign", "link", "unlink", "rename_family", "move_module"]);
+    expect(full.properties.changes.items.properties.op.enum).toEqual(["create_group", "rename_group", "delete_group", "assign", "link", "unlink", "rename_family", "move_module", "describe_project", "describe_family", "describe_module"]);
+    expect(full.properties.changes.items.properties).toMatchObject({ summary: { maxLength: 600 }, text: { maxLength: 160 } });
     expect(full.properties.changes.items.required).toEqual(["op"]);
     expect(fullInputSchema("projects_read_architecture")).toMatchObject({
       required: ["projectId"],

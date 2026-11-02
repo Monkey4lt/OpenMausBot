@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 
 import { GROUP_PALETTE } from "../shared/project-groups.ts";
-import { FAMILY_ORDER, type Family } from "../shared/projects-architecture.ts";
+import { DESCRIPTION_MAX, FAMILY_ORDER, SUMMARY_MAX, type Family } from "../shared/projects-architecture.ts";
 import type { ProjectMapState } from "./projects.ts";
 
 
@@ -31,6 +31,9 @@ export const projectChangeSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("unlink"), a: id, b: id }).strict(),
   z.object({ op: z.literal("rename_family"), projectId: id, family, name: text }).strict(),
   z.object({ op: z.literal("move_module"), projectId: id, moduleId: z.string().min(1).max(300), family }).strict(),
+  z.object({ op: z.literal("describe_project"), projectId: id, summary: z.string().max(2000) }).strict(),
+  z.object({ op: z.literal("describe_family"), projectId: id, family, text: text }).strict(),
+  z.object({ op: z.literal("describe_module"), projectId: id, moduleId: z.string().min(1).max(300), text: text }).strict(),
 ]);
 export const projectChangesSchema = z.array(projectChangeSchema).min(1).max(100);
 
@@ -42,7 +45,10 @@ export type ProjectChange =
   | { op: "link"; a: string; b: string; label?: string }
   | { op: "unlink"; a: string; b: string }
   | { op: "rename_family"; projectId: string; family: Family; name: string }
-  | { op: "move_module"; projectId: string; moduleId: string; family: Family };
+  | { op: "move_module"; projectId: string; moduleId: string; family: Family }
+  | { op: "describe_project"; projectId: string; summary: string }
+  | { op: "describe_family"; projectId: string; family: Family; text: string }
+  | { op: "describe_module"; projectId: string; moduleId: string; text: string };
 
 export interface KnownProjects {
   projectIds: ReadonlySet<string>;
@@ -57,12 +63,28 @@ const SPACES = /[\s\u0085]+/g;
  * Hangul fillers, all of which can hide text; and the guillemets the card quotes each name with. */
 const INVISIBLE = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Cs}\u{E0000}-\u{E007F}\u{FE00}-\u{FE0F}\u3164\u115F\u1160\uFFA0«»]/gu;
 
-/** One line a person can read on an approval card: nothing hidden, no guillemets, single spaces, at most 60 UTF-16 units. */
-export function cleanLabel(value: string): string {
-  const flat = value.replace(SPACES, " ").replace(INVISIBLE, "").replace(/ {2,}/g, " ").trim();
-  if (flat.length <= LABEL_MAX) return flat;
-  const end = /[\ud800-\udbff]/.test(flat[LABEL_MAX - 1]!) ? LABEL_MAX - 1 : LABEL_MAX;
+function cutAt(flat: string, max: number): string {
+  if (flat.length <= max) return flat;
+  const end = /[\ud800-\udbff]/.test(flat[max - 1]!) ? max - 1 : max;
   return flat.slice(0, end).trimEnd();
+}
+
+/**
+ * One line a person can read on an approval card: nothing hidden, no guillemets, single spaces, at most `max` UTF-16
+ * units (60 unless given). With `keepLines`, line breaks stay (at most one blank line in a row) and each line is cleaned.
+ */
+export function cleanLabel(value: string, options: { max?: number; keepLines?: boolean } = {}): string {
+  const max = options.max ?? LABEL_MAX;
+  const clean = (line: string) => line.replace(SPACES, " ").replace(INVISIBLE, "").replace(/ {2,}/g, " ").trim();
+  if (!options.keepLines) return cutAt(clean(value), max);
+  const lines = value.replace(/\r\n?/g, "\n").split("\n").map(clean);
+  return cutAt(lines.join("\n").replace(/\n{3,}/g, "\n\n").trim(), max);
+}
+
+/** A description on the card: one clean line, cut to 160 with an ellipsis when longer. */
+function cardText(value: string): string {
+  const flat = cleanLabel(value, { max: Number.MAX_SAFE_INTEGER });
+  return flat.length > DESCRIPTION_MAX ? `${cutAt(flat, DESCRIPTION_MAX - 1)}…` : flat;
 }
 
 /** A name on the card, quoted so no name can pass for the words around it. */
@@ -148,6 +170,25 @@ export function applyChanges(state: ProjectMapState, changes: ProjectChange[], k
         next.links = next.links.filter((l) => !sameLink(l, change.a, change.b));
         return null;
       }
+      case "describe_project":
+      case "describe_family":
+      case "describe_module": {
+        const unknown = project(change.projectId);
+        if (unknown) return unknown;
+        if (change.op === "describe_module") {
+          const modules = known.moduleIds?.(change.projectId) ?? null;
+          if (modules && !modules.has(change.moduleId)) return `Unknown module ${change.moduleId} in ${change.projectId}`;
+        }
+        const written = change.op === "describe_project"
+          ? cleanLabel(change.summary, { max: SUMMARY_MAX, keepLines: true })
+          : cleanLabel(change.text, { max: DESCRIPTION_MAX });
+        if (!written) return "A description needs some text";
+        const own = Object.hasOwn(next.overrides, change.projectId) ? next.overrides[change.projectId] : { moduleFamily: {}, familyNames: {} };
+        next.overrides[change.projectId] = change.op === "describe_project" ? { ...own, summary: written }
+          : change.op === "describe_family" ? { ...own, familyText: { ...own.familyText, [change.family]: written } }
+          : { ...own, moduleText: { ...own.moduleText, [change.moduleId]: written } };
+        return null;
+      }
       case "rename_family":
       case "move_module": {
         const unknown = project(change.projectId);
@@ -197,6 +238,9 @@ export function describeChanges(changes: ProjectChange[], names: { project: (id:
       case "unlink": return `Délier ${project(change.a)} et ${project(change.b)}`;
       case "rename_family": return `Dans ${project(change.projectId)} : renommer ${quoted(FAMILY_LABEL[change.family])} en ${quoted(change.name)}`;
       case "move_module": return `Dans ${project(change.projectId)} : déplacer ${quoted(change.moduleId)} vers ${quoted(FAMILY_LABEL[change.family])}`;
+      case "describe_project": return `Dans ${project(change.projectId)} : fiche En bref «${cardText(change.summary)}»`;
+      case "describe_family": return `Dans ${project(change.projectId)} : décrire ${quoted(FAMILY_LABEL[change.family])} : «${cardText(change.text)}»`;
+      case "describe_module": return `Dans ${project(change.projectId)} : décrire ${quoted(change.moduleId)} : «${cardText(change.text)}»`;
     }
   });
 }
