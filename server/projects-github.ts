@@ -27,7 +27,8 @@ export function gitCredentialToken(): Promise<string | null> {
     const child = execFile(
       "git",
       ["credential", "fill"],
-      { timeout: 120_000, windowsHide: true },
+      // No windowsHide: on Windows it would also hide Git Credential Manager's sign-in window.
+      { timeout: 120_000 },
       (error, stdout) => {
         if (error) return resolve(null);
         const line = stdout.split("\n").find((l) => l.startsWith("password="));
@@ -94,6 +95,11 @@ export async function listGithubRepos(target: string): Promise<GithubRepo[]> {
     const batch = await gh<ApiRepo[]>(path, auth);
     repos.push(...batch.map(toRepo));
     if (batch.length < 100) break;
+  }
+  if (!repos.length) {
+    throw new Error(me
+      ? `No repository visible for ${owner}. Git on this computer is signed in to GitHub as ${me}; sign in as ${owner} to see its private repositories`
+      : `No public repository for ${owner}. Private repositories need a GitHub sign-in with Git on this computer`);
   }
   return repos.slice(0, MAX_REPOS);
 }
