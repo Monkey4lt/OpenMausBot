@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createMapSync } from "./projects-map-sync";
-import { arrangeByGroup, blockRect, boundsOf, edgePoint, groupZone, linkEdges, openingView, placeBlock, type Rect } from "./projects-map";
+import { arrangeByGroup, blockRect, blockRects, boundsOf, edgePoint, groupZone, linkEdges, openingView, placeBlock, type Rect } from "./projects-map";
 
 const r: Rect = { x: 0, y: 0, w: 100, h: 50 };
 
@@ -74,6 +74,21 @@ describe("the projects map on the canvas", () => {
 
   it("a block without a saved position gets a spot in a grid", () => {
     expect(blockRect({}, "x", 5, undefined)).toEqual({ x: 50 + 380, y: 450, w: 320, h: 120 });
+  });
+
+  it("blocks without a saved position never overlap, however tall their file tree is, and keep a saved one where it is", () => {
+    const ids = ["a", "b", "c", "d", "e", "f", "g"];
+    const tall = Object.fromEntries(ids.map((id, i) => [id, { w: 320, h: i === 1 ? 640 : 470 }]));
+    const overlap = (r: Rect, o: Rect) => r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h;
+    const check = (map: Map<string, Rect>) => {
+      const list = [...map.values()];
+      for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) expect(overlap(list[i]!, list[j]!)).toBe(false);
+    };
+    check(blockRects({}, ids, tall));
+    expect(blockRects({}, ids, tall).get("f")!.y).toBeGreaterThanOrEqual(50 + 640);
+    // Before they are measured, a block is taken to be as tall as a full one, so the first frame does not overlap either.
+    check(new Map([...blockRects({}, ids, {})].map(([id, r]) => [id, { ...r, h: 470 }])));
+    expect(blockRects({ c: { x: 7, y: 9 } }, ids, tall).get("c")).toEqual({ x: 7, y: 9, w: 320, h: 470 });
   });
 
   it("dragging a block saves its world position through the existing save path with baseRev", async () => {

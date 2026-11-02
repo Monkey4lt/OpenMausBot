@@ -5,6 +5,8 @@ export type Rect = { x: number; y: number; w: number; h: number };
 
 export const BLOCK_W = 320;
 const DEFAULT_BLOCK_H = 120;
+/** A block not measured yet is taken to be as tall as one with a full file tree, so nothing overlaps on the first frame. */
+export const UNMEASURED_BLOCK_H = 480;
 
 export function edgePoint(from: Rect, to: Rect, gap = 8): [number, number] {
   const ax = from.x + from.w / 2, ay = from.y + from.h / 2, dx = to.x + to.w / 2 - ax, dy = to.y + to.h / 2 - ay;
@@ -49,6 +51,13 @@ export function arrangeByGroup(
 export function blockRect(pos: Record<string, { x: number; y: number }>, id: string, index: number, size: { w: number; h: number } | undefined): Rect {
   const at = Object.hasOwn(pos, id) ? pos[id]! : { x: 50 + (index % 4) * 380, y: 50 + Math.floor(index / 4) * 400 };
   return { x: at.x, y: at.y, w: size?.w ?? BLOCK_W, h: size?.h ?? DEFAULT_BLOCK_H };
+}
+
+/** Every block's rectangle: a saved position stays; the others fill a 4-column grid whose rows are as tall as their tallest block. */
+export function blockRects(pos: Record<string, { x: number; y: number }>, ids: readonly string[], sizes: Record<string, { w: number; h: number } | undefined>): Map<string, Rect> {
+  const free = ids.filter((id) => !Object.hasOwn(pos, id));
+  const grid = arrangeByGroup([free.map((id) => ({ id, h: sizes[id]?.h ?? UNMEASURED_BLOCK_H }))], { perRow: 4, step: 380, rowGap: 40, groupGap: 0, x0: 50, y0: 50 });
+  return new Map(ids.map((id, index) => [id, blockRect(Object.hasOwn(pos, id) ? pos : grid, id, index, sizes[id])]));
 }
 
 /** The first view of the map: the one this device remembers, else the saved zoom from the top-left corner,

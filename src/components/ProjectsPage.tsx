@@ -15,7 +15,7 @@ import { summaryPreview, type ArchOverrides } from "@/lib/projects-architecture-
 import { centerOn, clampScale, DEFAULT_VIEW } from "@/lib/canvas/geometry";
 import type { Tool } from "@/lib/canvas/gestures";
 import { annotationBounds, annotationText, type Annotation } from "@/lib/canvas/model";
-import { BLOCK_W, arrangeByGroup, blockRect, groupZone, linkEdges, openingView, placeBlock } from "@/lib/projects-map";
+import { BLOCK_W, UNMEASURED_BLOCK_H, arrangeByGroup, blockRects, groupZone, linkEdges, openingView, placeBlock } from "@/lib/projects-map";
 import { createMapSync } from "@/lib/projects-map-sync";
 import { panelDraft, panelLayout, readPanelOpen, writePanelOpen } from "@/lib/projects-panel";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -358,7 +358,7 @@ export function ProjectsPage() {
   }, []);
   const measure = useCallback((el: HTMLDivElement | null) => { if (el) observer.current?.observe(el); }, []);
 
-  const rects = useMemo(() => new Map(projects.map((p, i) => [p.id, blockRect(S?.pos ?? {}, p.id, i, sizes[p.id])])), [projects, S?.pos, sizes]);
+  const rects = useMemo(() => blockRects(S?.pos ?? {}, projects.map((p) => p.id), sizes), [projects, S?.pos, sizes]);
   const zones = useMemo(() => (S?.groups ?? []).flatMap((g) => {
     const zone = groupZone(projects.filter((p) => S?.member[p.id] === g.id).map((p) => rects.get(p.id)!));
     return zone ? [{ group: g, zone }] : [];
@@ -426,7 +426,7 @@ export function ProjectsPage() {
   };
   const arrange = () => {
     const buckets = [...S.groups.map((g) => projects.filter((p) => S.member[p.id] === g.id)), projects.filter((p) => !groupOf(p.id))];
-    const next: MapState["pos"] = { ...S.pos, ...arrangeByGroup(buckets.map((list) => list.map((p) => ({ id: p.id, h: sizes[p.id]?.h ?? 200 })))) };
+    const next: MapState["pos"] = { ...S.pos, ...arrangeByGroup(buckets.map((list) => list.map((p) => ({ id: p.id, h: sizes[p.id]?.h ?? UNMEASURED_BLOCK_H })))) };
     update((s) => ({ ...s, pos: next }));
   };
   const searchItems: CanvasSearchItem[] = [
