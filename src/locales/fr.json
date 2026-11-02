@@ -64,6 +64,7 @@
   "server.workflow.noAi": "Aucune IA ne peut répondre à cette étape",
   "server.workflow.botMissing": "Le bot de cette étape n'existe plus",
   "server.workflow.botFailed": "Le bot n'a pas pu terminer cette étape",
+  "server.workflow.notStarted": "Le workflow {name} n'a pas pu démarrer",
   "server.runs.didNotFinish": "Cette exécution ne s'est pas terminée.",
   "server.runs.didNotFinishWhy": "Cette exécution ne s'est pas terminée : {detail}",
   "server.runs.recovered": "Rétabli : {name} s'est bien terminé à {time}",

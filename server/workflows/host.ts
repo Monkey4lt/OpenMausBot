@@ -3,6 +3,7 @@
 import { viewersDefaultBot, type DefaultBotFields } from "../../shared/default-bot.ts";
 import type { Notification } from "../../shared/notification.ts";
 import type { WorkflowRun } from "../../shared/workflows.ts";
+import type { RoutineRun } from "../routines.ts";
 import { buildNotification, summarize } from "../notify.ts";
 import type { OutboundRequestService } from "../outbound-requests.ts";
 import { clean } from "../records-block.ts";
@@ -10,6 +11,7 @@ import { serverLine, type ServerLineKey } from "../server-lines.ts";
 import type { SideJobText } from "../side-jobs.ts";
 import { flushUsageLedger, readUsage } from "../usage-ledger.ts";
 import { KIND_NAME } from "./graph.ts";
+import { createWorkflowRoutineLink, type WorkflowRoutines } from "./routine-link.ts";
 import { createWorkflowRoutes } from "./routes.ts";
 import { createWorkflowRunner } from "./runner.ts";
 import { StepError, type Cost, type StepDeps } from "./steps.ts";
@@ -50,6 +52,8 @@ export interface WorkflowHostDeps {
   dismissCard(threadId: string, requestId: string): void;
   outboundRequests: Pick<OutboundRequestService, "open" | "forget">;
   notify(notification: Notification | null): void;
+  /** The routines engine, once it is up: a workflow whose trigger runs on a schedule gets its own routine. */
+  routines?(): WorkflowRoutines | null;
 }
 
 /** "<instanceId>" or "<instanceId>/<model>"; a model id may itself hold slashes. */
@@ -195,11 +199,28 @@ export function createWorkflowHost(deps: WorkflowHostDeps) {
     },
   });
 
+  const routineLink = createWorkflowRoutineLink({ routines: () => deps.routines?.() ?? null, store, runner });
+
   const routes = createWorkflowRoutes({
     store,
     runner,
     botExists: deps.botExists,
     onChanged: (id, rev) => deps.broadcast({ kind: "workflow", id, rev }, { adminOnly: true }),
+    routines: routineLink,
   });
-  return { store, runner, routes, steps };
+  /** RoutineManagerOptions.onRunFailed for a workflow routine run that never got to start its workflow (missed, the
+   * workflow gone or not ready): the workflow's own failure notice covers a run that started. */
+  const routineRunFailed = (run: Pick<RoutineRun, "id" | "target" | "routineName" | "error">) => {
+    if (run.target !== "workflow" || routineLink.startedRun(run)) return;
+    const bot = defaultBot();
+    if (!bot || bot.notifications === false) return;
+    deps.notify({
+      kind: "routine-failed", botId: bot.id, botName: bot.name, threadId: bot.threadId,
+      title: line("server.workflow.notStarted", { name: run.routineName }),
+      body: summarize(run.error ?? "", 240),
+      ...(bot.avatarUrl ? { avatarUrl: bot.avatarUrl } : {}),
+    });
+  };
+
+  return { store, runner, routes, steps, routineLink, routineRunFailed };
 }

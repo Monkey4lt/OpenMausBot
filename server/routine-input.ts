@@ -4,16 +4,25 @@ import { cleanAttachments, cleanTimeoutMinutes } from "./routine-attachments.ts"
 import { loadChecks } from "./routine-load.ts";
 import { cleanSchedule } from "./routine-schedules.ts";
 import type { Routine, RoutineInput } from "./routines.ts";
+import { WORKFLOW_ROUTINE_BOT } from "../shared/routines.ts";
 
 export function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" | "createdAt" | "updatedAt" | "nextRunAt"> {
   const name = String(input.name ?? "").trim().slice(0, 80);
   const prompt = String(input.prompt ?? "").trim().slice(0, 20_000);
   const botId = String(input.botId ?? "").trim();
   if (!name) throw new Error("Give the routine a name");
-  if (!prompt) throw new Error("Tell the bot what to do");
-  if (!botId) throw new Error("Choose a bot");
   const target = input.target ?? "bot";
-  if (target !== "bot" && target !== "room-goal") throw new Error("Choose a valid routine target");
+  if (target !== "bot" && target !== "room-goal" && target !== "workflow") throw new Error("Choose a valid routine target");
+  // A workflow's Trigger block hands its text on; it may hand on nothing.
+  if (!prompt && target !== "workflow") throw new Error("Tell the bot what to do");
+  if (!botId) throw new Error("Choose a bot");
+  const workflowId = typeof input.workflowId === "string" ? input.workflowId.trim() : "";
+  if (target === "workflow") {
+    if (!/^[\w-]{1,64}$/.test(workflowId)) throw new Error("Choose a workflow");
+    if (botId !== WORKFLOW_ROUTINE_BOT) throw new Error("A workflow routine has no bot of its own");
+    if ((input.runOn ?? "maus") !== "maus") throw new Error("Workflows can only run on this computer");
+    if (input.continuity === true || (input.attachments?.length ?? 0) > 0 || input.runOnStartup === true) throw new Error("Workflows do not take these routine settings");
+  } else if (botId === WORKFLOW_ROUTINE_BOT) throw new Error("Choose a bot");
   const groupId = typeof input.groupId === "string" ? input.groupId.trim() : "";
   const runOn = input.runOn ?? "maus";
   if (runOn !== "maus" && runOn !== "cloud") throw new Error("Choose where this routine runs");
@@ -48,6 +57,7 @@ export function sanitizeInput(input: RoutineInput, after: number): Omit<Routine,
     target,
     botId,
     groupId: target === "room-goal" && groupId ? groupId : undefined,
+    ...(target === "workflow" ? { workflowId } : {}),
     runOn,
     enabled: input.enabled !== false,
     schedule,

@@ -5659,6 +5659,8 @@ function isUnattended(botId?: string | null, threadId?: string): boolean {
 
 const reviewAnswerThreads = new Set<string>(); const firstHourHooks = createFirstHourHooks({ dataDir: DATA_DIR, personal: Boolean(CLOUD_PERSONAL) });
 let routines: RoutineManager | null = null;
+/** Set once the workflow host is made (after the routines engine): the routines engine starts workflows through it. */
+let workflowRoutines: Pick<ReturnType<typeof createWorkflowHost>, "routineLink" | "routineRunFailed"> | null = null;
 const automationReports = createAutomationReports({ store, routines: () => routines, busy: threadBusy, wrote: markTaskContextExternallyUpdated, brief: (run, turnId) => proactive.runSettled(run, turnId), threadLanguage,
   notify: (kind, bot, threadId, detail) => notify(buildNotification(kind, bot, threadId, detail, { avatarUrl: bot.avatarUrl }), { routine: true }) });
 const proactive = createProactive({ store, cfg, composio, registry, dataDir: DATA_DIR, ideas: (botId) => memoryUpkeep.ideas(botId), ...firstHourHooks.proactive, team: Boolean(HOSTED_WORKSPACE || CLOUD_TEAM), frozen: moveFreeze.frozen, routines: () => routines, mainThread: botMainThread, threadBusy, notify, helpers: { decider, extractor }, cloud: Boolean(CLOUD_HOME || HOSTED_WORKSPACE || CLOUD_TEAM),
@@ -8979,10 +8981,17 @@ routines = new RoutineManager({
     }
   },
   interruptGoal: interruptRoutineGroupGoal,
+  workflowState: (workflowId) => workflowRoutines?.routineLink.workflowState(workflowId) ?? "missing",
+  startWorkflow: (workflowId, runId, text, onDispatchError, source) => {
+    if (!workflowRoutines) return onDispatchError("Workflows are not ready yet");
+    workflowRoutines.routineLink.startWorkflow(workflowId, runId, text, onDispatchError, source);
+  },
+  stopWorkflow: (runId) => workflowRoutines?.routineLink.stopWorkflow(runId),
   onRunChanged: (run) => { cloudHealth?.noteRoutineRun(run); syncRoutineRunToSource(run); },
   onRunCut: (run) => run.groupId ? coordinator.cancelRoom(run.groupId, run.threadId!, ROUTINE_RESTARTED) : coordinator.cancelDirect(run.threadId!, ROUTINE_RESTARTED),
   onRunFailed: (run, alert) => {
     cloudHealth?.noteRoutineRun(run);
+    if (run.target === "workflow") return workflowRoutines?.routineRunFailed(run);
     const bot = store.bot(run.botId);
     if (!bot || alert === null || run.deliver === "brief") return;
     const said = alert?.detail ?? run.error, detail = said ? `${run.routineName}: ${said}` : run.routineName;
@@ -9665,7 +9674,9 @@ ROUTES.push(createProjectRoutes({ dataDir: DATA_DIR, architectures: projectArchi
   ensureCartographe: () => (CLOUD_HOME || HOSTED_WORKSPACE ? null : ensureCartographeBot(store, { dataDir: DATA_DIR })?.id ?? null) }));
 const workflowHost = createWorkflowHost({ dataDir: DATA_DIR, language: appLanguage, botExists: (id) => Boolean(store.bot(id)), broadcast, bots: () => store.bots, bot: (id) => store.bot(id), budgetAllows: () => { try { assertWithinBudget(cfg, DATA_DIR); return true; } catch { return false; } },
   sideText: (botId, instanceId) => { const instance = instanceId ? registry.get(instanceId) : undefined; return instanceId && !instance ? null : sideJobs.text("workflow", botId, instance ? { instance } : undefined); }, createTask: (botId, title) => store.createTask(botId, title, false), interruptTurn: (botId, threadId) => interruptDirectThread(botId, threadId, "The workflow was stopped"),
-  startTurn: (botId, prompt, opts) => startTurn(botId, prompt, { threadId: opts.threadId, automationSource: "webhook", onSettled: opts.onSettled, onDispatchError: opts.onDispatchError }).then(() => {}), appendMessage: (threadId, message) => { store.appendMessage(threadId, message as Omit<Message, "id" | "at">); }, dismissCard: cartographe.dismissCard, outboundRequests, notify }); ROUTES.push(workflowHost.routes);
+  startTurn: (botId, prompt, opts) => startTurn(botId, prompt, { threadId: opts.threadId, automationSource: "webhook", onSettled: opts.onSettled, onDispatchError: opts.onDispatchError }).then(() => {}), appendMessage: (threadId, message) => { store.appendMessage(threadId, message as Omit<Message, "id" | "at">); }, dismissCard: cartographe.dismissCard, outboundRequests, notify, routines: () => routines });
+ROUTES.push(workflowHost.routes); workflowRoutines = workflowHost;
+try { workflowHost.routineLink.reconcile(); } catch (error) { console.error("workflows: could not line up the workflow routines", error); }
 ROUTES.push(createWebhookRoutes({ webhooks, ingress: webhookIngressStatus, visible: (auth) => visibleTo(viewerFor(auth)) }));
 
 const RUNTIME_KEEP_MS = 30 * 24 * 60 * 60_000;
