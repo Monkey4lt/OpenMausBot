@@ -959,6 +959,63 @@
   --identity-chrome: #B3BAC4;
 }
 
+/* ── Aurora ───────────────────────────────────────────────────────────────
+   Night blue with a violet-to-cyan accent: the dark side of "system".
+   ───────────────────────────────────────────────────────────────────────── */
+[data-skin="aurora"] {
+  --code-color-scheme: dark;
+  --color-app: #0c0d19;
+  --color-panel: #13142b;
+  --color-raised: #1d1e38;
+  --color-raised-hover: #282a4d;
+  --color-composer: #1d1e38;
+  --color-composer-ring: transparent;
+  --color-card: #16172c;
+  --color-menu: #16172c;
+  --color-menu-hover: color-mix(in srgb, var(--color-raised) 70%, transparent);
+  --color-menu-active: var(--color-raised);
+  --color-inset: #090a14;
+  --color-control: #20223f;
+  --color-hairline: #2f3157;
+
+  --color-ink: #f1f2ff;
+  --color-ink-secondary: #b8bbdd;
+  --color-ink-tertiary: #9a9ec9;
+
+  --color-accent: #7357f6;
+  --color-accent-border: #957ffa;
+  --color-accent-text: #b8a8ff;
+  --color-focus: #3fd5f0;
+  --color-accent-ink: #ffffff;
+  --color-bubble-user: #2b2560;
+  --color-bubble-user-ink: #f1f2ff;
+
+  --color-success: #3ddba0;
+  --color-danger: #ff7a8e;
+  --color-danger-ink: #2a0a10;
+  --color-success-ink: #04210f;
+  --color-warning: #fbc04a;
+  --color-scrollbar: #34375f;
+  --color-maus-line: #b8bbdd;
+
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", system-ui, sans-serif;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
+  --identity-green: #22c58b;
+  --identity-blue: #4f8cff;
+  --identity-red: #ff5d73;
+  --identity-orange: #ff9a3d;
+  --identity-purple: #9b7bff;
+  --identity-cyan: #22cde8;
+  --identity-pink: #ff5cb0;
+  --identity-yellow: #f5c331;
+  --identity-teal: #19c4ab;
+  --identity-coral: #ff6f59;
+  --identity-silver: #aab0c8;
+  --identity-chrome: #b6bdd8;
+}
+
 /* Every popover and menu in the menu tone, flat in Midnight and on a soft lift in Daylight. A popover's rim is its
    border, never a ring, so clearing box-shadow leaves the rim. */
 .popover-surface {
@@ -990,6 +1047,17 @@
 }
 :root[data-skin="daylight"] .ui-button-primary:disabled {
   background: color-mix(in srgb, var(--color-ink) 15%, transparent);
+}
+
+/* Aurora's primary action is its accent as a violet-to-cyan gradient. */
+:root[data-skin="aurora"] .ui-button-primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #7357f6, #2f9fe8);
+  color: #ffffff;
+}
+:root[data-skin="aurora"] .ui-button-primary:not(:disabled):is(:hover, :active) {
+  background: linear-gradient(135deg, #8169f8, #3fb0f0);
+  filter: none;
 }
 
 /* A primary action that belongs to one bot wears that bot's flat bubble tone in every skin. Unlayered, like the
@@ -2887,7 +2955,7 @@ button:disabled.bg-danger {
   outline-offset: -1.5px;
 }
 :root,
-:is([data-skin="midnight"], [data-skin="foundry"], [data-skin="graphite"], [data-skin="dusk"], [data-skin="halloween"]) {
+:is([data-skin="midnight"], [data-skin="foundry"], [data-skin="graphite"], [data-skin="dusk"], [data-skin="halloween"], [data-skin="aurora"]) {
   --radius-menu: 12px;
   --menu-shadow: 0 0 #0000;
 }

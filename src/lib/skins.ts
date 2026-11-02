@@ -12,6 +12,7 @@ export const SKIN_IDS = [
   "meadow",
   "pop",
   "halloween",
+  "aurora",
 ] as const;
 export type SkinId = (typeof SKIN_IDS)[number];
 
@@ -33,11 +34,12 @@ export const SKINS: readonly Skin[] = [
   { id: "meadow", name: "Meadow", tagline: "Fresh white with a calm green. The MausBot look." },
   { id: "pop", name: "Pop", tagline: "Cream paper, thick ink outlines, hard shadows. Chunky and cheerful." },
   { id: "halloween", name: "Halloween", tagline: "Plum after dark, lit in pumpkin orange. Bats optional." },
+  { id: "aurora", name: "Aurora", tagline: "Night blue lit in violet and cyan. The default after dark." },
 ];
 
 /** "system" follows the OS between the light and dark skins below; anything else pins one skin. */
 export type SkinChoice = SkinId | "system";
-export const THEME_SKINS = { light: "daylight", dark: "midnight" } as const satisfies Record<"light" | "dark", SkinId>;
+export const THEME_SKINS = { light: "daylight", dark: "aurora" } as const satisfies Record<"light" | "dark", SkinId>;
 
 export const DEFAULT_SKIN_CHOICE: SkinChoice = "system";
 export const PRIOR_INSTALL_SKIN: SkinId = "midnight";

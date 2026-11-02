@@ -63,12 +63,20 @@ describe("skins", () => {
     expect(PRIOR_INSTALL_SKIN).toBe("midnight");
   });
 
-  it("follows the computer between Daylight and Midnight by default", () => {
+  it("follows the computer between Daylight and Aurora by default", () => {
     expect(DEFAULT_SKIN_CHOICE).toBe("system");
-    expect(THEME_SKINS).toEqual({ light: "daylight", dark: "midnight" });
+    expect(THEME_SKINS).toEqual({ light: "daylight", dark: "aurora" });
     expect(resolveSkin("system", false)).toBe("daylight");
-    expect(resolveSkin("system", true)).toBe("midnight");
+    expect(resolveSkin("system", true)).toBe("aurora");
     expect(resolveSkin("meadow", true)).toBe("meadow");
+    expect(resolveSkin("midnight", true)).toBe("midnight");
+  });
+
+  it("adds Aurora last, dark, with a gradient primary button", () => {
+    expect(SKIN_IDS.at(-1)).toBe("aurora");
+    expect(SKINS.find((skin) => skin.id === "aurora")?.name).toBe("Aurora");
+    expect(css).toMatch(/\[data-skin="aurora"\] \{[^}]*--code-color-scheme: dark;/);
+    expect(css).toMatch(/:root\[data-skin="aurora"\] \.ui-button-primary\s*\{[^}]*linear-gradient/);
   });
 
   it("keeps Meadow's own bubble light, in the page's ink", () => {
@@ -85,8 +93,8 @@ describe("skins", () => {
     expect(css).toMatch(/@scope \(\[data-skin="pop"\]:not\(\[data-skin-preview\]\)\) to \(\[data-skin\]\)/);
   });
 
-  it("adds Halloween last, dark, with its atmosphere kept off the picker miniature", () => {
-    expect(SKIN_IDS.at(-1)).toBe("halloween");
+  it("adds Halloween after Pop, dark, with its atmosphere kept off the picker miniature", () => {
+    expect(SKIN_IDS.indexOf("halloween")).toBe(SKIN_IDS.indexOf("pop") + 1);
     expect(SKINS.find((s) => s.id === "halloween")?.name).toBe("Halloween");
     expect(css).toMatch(/@scope \(\[data-skin="halloween"\]:not\(\[data-skin-preview\]\)\) to \(\[data-skin\]\)\s*\{\s*main\.bg-app\s*\{/);
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\[data-skin="halloween"\] main\.bg-app::before/);
