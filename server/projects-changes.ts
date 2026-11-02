@@ -2,11 +2,10 @@ import { randomBytes } from "node:crypto";
 
 import { z } from "zod";
 
+import { GROUP_PALETTE } from "../shared/project-groups.ts";
 import { FAMILY_ORDER, type Family } from "../shared/projects-architecture.ts";
 import type { ProjectMapState } from "./projects.ts";
 
-/** The colors new groups get on the Projects page, in the order it hands them out. */
-export const GROUP_PALETTE = ["#38d591", "#1084fe", "#ff9800", "#ff5667", "#b47cff", "#2dd4bf", "#f472b6", "#facc15"];
 
 const MAX_GROUPS = 50;
 const MAX_LINKS = 500;

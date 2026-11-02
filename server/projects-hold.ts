@@ -28,10 +28,6 @@ export function projectsCardTitle(count: number): string {
   return count === 1 ? "Appliquer ce changement à la carte ?" : `Appliquer ces ${count} changements à la carte ?`;
 }
 
-/**
- * The chat message for a map-change card. It carries `outboundRequest` so the existing card-answer path resolves it
- * through the same OutboundRequestService; `from` is set when the card is posted in a room.
- */
 export function projectsCardMessage(card: ProjectsCard, from?: { botId: string; name: string; color: string }) {
   return {
     role: "bot" as const,

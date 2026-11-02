@@ -16,9 +16,7 @@ import { PASS, type RouteHandler } from "./table.ts";
 export interface ProjectRouteDeps {
   dataDir: string;
   onArchitectureRead?: (projectId: string) => void;
-  /** Shares one architecture cache with other callers; made from dataDir and onArchitectureRead when absent. */
   architectures?: ArchitectureReader;
-  /** Called after each saved write with the new rev. */
   onChanged?: (rev: number) => void;
   cartographeBotId?: () => string | null;
 }

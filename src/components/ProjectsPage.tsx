@@ -16,6 +16,7 @@ import { arrangeByGroup, edgePoint, groupZone } from "@/lib/projects-map";
 import { createMapSync } from "@/lib/projects-map-sync";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { api } from "@/state/api";
+import { GROUP_PALETTE as PALETTE } from "../../shared/project-groups";
 import { openBot, useStore } from "@/state/store";
 
 import { ArchitectureView } from "./projects/ArchitectureView";
@@ -40,7 +41,6 @@ interface MapState {
 }
 interface ProjectsResponse { state: MapState; projects: Project[]; errors: { sourceId: string; message: string }[]; cartographeBotId?: string | null }
 
-const PALETTE = ["#38d591", "#1084fe", "#ff9800", "#ff5667", "#b47cff", "#2dd4bf", "#f472b6", "#facc15"];
 const BLOCK_W = 300;
 const newId = (prefix: string) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 const contains = (nodes: ProjectNode[], q: string): boolean => nodes.some((n) => n.n.toLowerCase().includes(q) || (n.c ? contains(n.c, q) : false));

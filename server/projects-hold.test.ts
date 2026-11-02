@@ -28,9 +28,14 @@ const input = { botId: "carto", threadId: "t1", lines: ["Créer le pôle Clients
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 describe("createProjectsHold", () => {
-  it("always appends a card, whatever the bot's access level", async () => {
+  it("never reads an access level: its inputs hold none, and one passed anyway changes nothing", async () => {
+    type Keys = keyof import("./projects-hold.ts").ProjectsHoldDeps | keyof Parameters<import("./projects-hold.ts").ProjectsHold["ask"]>[0];
+    type AccessKeys = Extract<Keys, "fullAccess" | "approvalMode" | "autoApprove" | "outbound" | "alwaysAllow" | "bot" | "store">;
+    const none: [AccessKeys] extends [never] ? true : false = true;
+    expect(none).toBe(true);
     const { hold, cards, notified, answer } = setup();
-    const pending = hold.ask(input);
+    const full = { ...input, fullAccess: true, approvalMode: "full", autoApprove: true } as typeof input;
+    const pending = hold.ask(full);
     expect(cards).toEqual([{ threadId: "t1", card: { title: "Appliquer ces 2 changements à la carte ?", lines: input.lines, requestId: expect.any(String) } }]);
     expect(notified).toEqual([{ botId: "carto", text: "Appliquer ces 2 changements à la carte ?" }]);
     answer("deny");
@@ -166,7 +171,11 @@ describe("projects card", () => {
         outboundRequest: { tool: PROJECTS_APPLY_TOOL, app: null, calls: [{ app: null, label: "Créer le pôle Clients" }, { app: null, label: "Ranger shop dans Clients" }] },
       },
     });
-    expect(Boolean(message.card.requestId && message.card.outboundRequest)).toBe(true);
+    // The predicate resolveAndSendTrust (server/index.ts) finds an outbound card by.
+    const found = [message].find((row) => row.card?.requestId === "r1" && row.card.outboundRequest);
+    expect(found).toBe(message);
+    expect(found!.card.outboundRequest.calls.map((call) => call.label)).toEqual(input.lines);
+    expect(Object.keys(message.card).sort()).toEqual(["options", "outboundRequest", "requestId", "subtitle", "title", "tool"]);
   });
 
   it("names the bot when the card is posted in a room", () => {

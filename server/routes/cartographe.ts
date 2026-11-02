@@ -1,6 +1,3 @@
-// The internal calls behind the Cartographe's projects_read_map, projects_read_architecture and projects_apply_changes
-// tools. Runs inside index.ts's /api/internal/ block after the capability bearer is checked; the bot is the capability's.
-// Only projects-map.json is ever written, and only after the person allows the batch on its card.
 import type { ServerResponse } from "node:http";
 
 import type { Architecture } from "../../shared/projects-architecture.ts";
@@ -41,7 +38,6 @@ export type ApplyAnswer =
   | { applied: true; rev: number }
   | { applied: false; reason: "refused" | "timeout" | "invalid" | "inactive"; problems?: { index: number; reason: string }[] };
 
-/** The card answers this long before the bot's MCP call would give up, so the bot always hears the outcome. */
 export const CARTOGRAPHE_CARD_MARGIN_MS = 15_000;
 const MIN_CARD_MS = 5_000;
 
