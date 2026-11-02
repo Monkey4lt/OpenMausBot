@@ -4,6 +4,10 @@ import { agentToolAnnotations, isReadOnlyAgentTool, READ_ONLY_AGENT_TOOL_NAMES }
 describe("built-in agent tool read policy", () => {
   it("includes only the reviewed local reads", () => {
     expect([...READ_ONLY_AGENT_TOOL_NAMES]).toEqual([
+      "projects_read_map",
+      "projects_read_architecture",
+      "projects_inspect_project",
+      "projects_read_file",
       "list_bots",
       "list_team_setup",
       "list_shared_computers",
@@ -16,10 +20,6 @@ describe("built-in agent tool read policy", () => {
       "list_waits",
       "skills_list",
       "list_unread_notifications",
-      "projects_read_map",
-      "projects_read_architecture",
-      "projects_inspect_project",
-      "projects_read_file",
     ]);
     for (const name of READ_ONLY_AGENT_TOOL_NAMES) {
       expect(isReadOnlyAgentTool(name)).toBe(true);

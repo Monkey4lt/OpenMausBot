@@ -1,6 +1,10 @@
 /** The reviewed local reads of the built-in agents MCP. Names, prefixes or third-party annotations alone must never grant
  * read access; session recall keeps its own-bot scope. */
 export const READ_ONLY_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "projects_read_map",
+  "projects_read_architecture",
+  "projects_inspect_project",
+  "projects_read_file",
   "list_bots",
   "list_team_setup",
   "list_shared_computers",
@@ -13,10 +17,6 @@ export const READ_ONLY_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "list_waits",
   "skills_list",
   "list_unread_notifications",
-  "projects_read_map",
-  "projects_read_architecture",
-  "projects_inspect_project",
-  "projects_read_file",
 ]);
 
 export const READ_ONLY_ANNOTATIONS = Object.freeze({

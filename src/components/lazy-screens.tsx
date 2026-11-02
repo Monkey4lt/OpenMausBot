@@ -83,8 +83,9 @@ export const ProjectsPage = lazyScreen("ProjectsPage", async () => (await import
 
 const SCREENS = [
   ActivityPanel, BotSettingsDialog, ComputerPanel, FilesView, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
-  RemoteAgentSettingsPanel, RemoteDesktopPanel, RoomPanel, SettingsModal, TeamMapPage, ProjectsPage, TriggersPage,
+  RemoteAgentSettingsPanel, RemoteDesktopPanel, RoomPanel, SettingsModal, TeamMapPage, TriggersPage,
 ];
+SCREENS.push(ProjectsPage);
 
 if (typeof location !== "undefined" && new URLSearchParams(location.search).has("desktop-settings")) {
   void SettingsModal.preload().catch(() => {});

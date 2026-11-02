@@ -29,7 +29,7 @@ function seenBy(bot: BotRecord, person: string): boolean {
   return typeof visibility === "object" && visibility.people.some((email) => email.trim().toLowerCase() === person);
 }
 
-/** What MausBot found: what its client saw, with the person's other bots (the app-made Cartographe aside) and the routines they run counted here. */
+/** What MausBot found: what its client saw, with the person's other bots and the routines they run counted here. */
 export function followupFacts(
   maus: BotRecord,
   seen: { ai: HelperFollowupFacts["ai"]; apps: readonly string[] },
