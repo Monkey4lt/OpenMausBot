@@ -118,7 +118,9 @@ export type ImportRef = { spec: string; line: number };
 interface Syntax { lineComment: string | null; blockComment: boolean; quotes: string; tripleQuotes: boolean }
 
 const C_LIKE: Syntax = { lineComment: "//", blockComment: true, quotes: "\"'`", tripleQuotes: false };
-const SYNTAX: Record<string, Syntax> = {
+type Language = "js" | "css" | "scss" | "py" | "go" | "rs";
+
+const SYNTAX: Record<Language, Syntax> = {
   js: C_LIKE,
   css: { lineComment: null, blockComment: true, quotes: "\"'", tripleQuotes: false },
   scss: { lineComment: "//", blockComment: true, quotes: "\"'", tripleQuotes: false },
@@ -127,7 +129,7 @@ const SYNTAX: Record<string, Syntax> = {
   rs: { lineComment: "//", blockComment: true, quotes: "\"", tripleQuotes: false },
 };
 
-const LANGUAGE_OF: Record<string, keyof typeof SYNTAX> = {
+const LANGUAGE_OF: Partial<Record<string, Language>> = {
   ".ts": "js", ".tsx": "js", ".mts": "js", ".cts": "js", ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js", ".vue": "js", ".svelte": "js",
   ".css": "css", ".scss": "scss", ".sass": "scss", ".less": "scss",
   ".py": "py", ".go": "go", ".rs": "rs",
@@ -183,7 +185,7 @@ function findAll(re: RegExp, code: string, group: number): Found[] {
   return [...code.matchAll(re)].map((m) => ({ spec: m[group], at: m.index }));
 }
 
-function findImports(language: keyof typeof SYNTAX, code: string): Found[] {
+function findImports(language: Language, code: string): Found[] {
   switch (language) {
     case "js": return [...findAll(JS_STATIC, code, 2), ...findAll(JS_CALL, code, 2)];
     case "css": case "scss": return [...findAll(CSS_IMPORT, code, 2), ...findAll(CSS_URL, code, 1)];

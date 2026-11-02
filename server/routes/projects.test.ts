@@ -23,11 +23,11 @@ function ctx(method: string, path: string, body?: unknown): RouteContext & { sen
     headersSent: false,
     writableEnded: false,
     req,
-    writeHead(code: number) { status = code; this.headersSent = true; return this; },
-    end(data?: string) { text = data ?? ""; this.writableEnded = true; return this; },
+    writeHead(code: number) { status = code; res.headersSent = true; return res; },
+    end(data?: string) { text = data ?? ""; res.writableEnded = true; return res; },
     getHeader: () => undefined,
     hasHeader: () => false,
-  } as unknown as ServerResponse;
+  } as unknown as { -readonly [K in keyof ServerResponse]: ServerResponse[K] };
   const url = new URL(path, "http://localhost");
   return {
     req, res, url, path: url.pathname, method,
