@@ -16,13 +16,16 @@ import { PASS, type RouteHandler } from "./table.ts";
 export interface ProjectRouteDeps {
   dataDir: string;
   onArchitectureRead?: (projectId: string) => void;
+  /** Called after each saved write with the new rev. */
+  onChanged?: (rev: number) => void;
+  cartographeBotId?: () => string | null;
 }
 
 const ARCHITECTURE_CACHE_SIZE = 32;
 
 /**
- * GET /api/projects        → the saved layout plus a fresh scan of every source
- * PUT /api/projects/state  → save the layout (sources, groups, links, positions)
+ * GET /api/projects        → the saved layout plus a fresh scan of every source, and the Cartographe's bot id or null
+ * PUT /api/projects/state {...layout, baseRev} → 200 {ok, rev}; 409 {error, rev} when baseRev is not the saved rev
  * GET /api/projects/github → the GitHub login Git keeps on this computer, if any
  * POST /api/projects/github/signin {switch?} → open Git's GitHub sign-in window on this computer
  * GET /api/projects/architecture?id=<sourceId:name> → 200 Architecture (shared/projects-architecture.ts),
@@ -56,13 +59,18 @@ export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
         }
       }));
       projects.sort((a, b) => a.id.localeCompare(b.id));
-      return json(res, 200, { state, projects, errors });
+      return json(res, 200, { state, projects, errors, cartographeBotId: deps.cartographeBotId?.() ?? null });
     }
     if (path === "/api/projects/state" && method === "PUT") {
-      const parsed = projectMapStateSchema.safeParse(await readBody(req, 2_000_000));
-      if (!parsed.success) return json(res, 400, { error: "Invalid project map" });
-      writeProjectMapState(deps.dataDir, parsed.data);
-      return json(res, 200, { ok: true });
+      const body = await readBody(req, 2_000_000) as { baseRev?: unknown } | null;
+      const baseRev = body?.baseRev;
+      const parsed = projectMapStateSchema.safeParse(body);
+      if (!parsed.success || typeof baseRev !== "number" || !Number.isInteger(baseRev) || baseRev < 0) return json(res, 400, { error: "Invalid project map" });
+      const current = readProjectMapState(deps.dataDir).rev;
+      if (baseRev !== current) return json(res, 409, { error: "The map changed since it was loaded", rev: current });
+      const { rev } = writeProjectMapState(deps.dataDir, parsed.data);
+      deps.onChanged?.(rev);
+      return json(res, 200, { ok: true, rev });
     }
     if (path === "/api/projects/github" && method === "GET") {
       return json(res, 200, { login: await githubLogin() });

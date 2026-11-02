@@ -92,7 +92,7 @@ it("a name with newlines, control characters and 200 chars becomes one clean lin
   - `PUT /api/projects/state` : corps = état + `baseRev: number` ; si `baseRev !== rev sur disque` → `409 { error, rev }` ; sinon `200 { ok: true, rev }` et `onChanged(rev)`.
   - `GET /api/projects` : ajoute `cartographeBotId: string | null`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it("each write bumps rev from what is on disk", () => {});
@@ -101,8 +101,8 @@ it("PUT with the current baseRev saves, answers the new rev and calls onChanged 
 it("GET /api/projects returns cartographeBotId from the dependency, or null", async () => {});
 ```
 
-- [ ] **Step 2:** Run → FAIL. **Step 3:** Implémenter. **Step 4:** Run → PASS.
-- [ ] **Step 5:** Commit `feat(projects): revision counter, stale-save 409 and change notification`.
+- [x] **Step 2:** Run → FAIL. **Step 3:** Implémenter. **Step 4:** Run → PASS.
+- [x] **Step 5:** Commit `feat(projects): revision counter, stale-save 409 and change notification`.
 
 ### Task 3: Carte d'accord toujours affichée
 

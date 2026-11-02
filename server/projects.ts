@@ -64,6 +64,8 @@ export const projectMapStateSchema = z.object({
   zoom: z.number().min(0.2).max(2).default(1),
   help: z.boolean().default(true),
   overrides: z.record(idSchema, archOverridesSchema).default({}),
+  /** Bumped by every write; a save based on an older rev is refused. */
+  rev: z.number().int().nonnegative().default(0),
 });
 export type ProjectSource = z.infer<typeof sourceSchema>;
 export type ProjectMapState = z.infer<typeof projectMapStateSchema>;
@@ -80,8 +82,11 @@ export function readProjectMapState(dataDir: string): ProjectMapState {
   return projectMapStateSchema.parse({});
 }
 
-export function writeProjectMapState(dataDir: string, state: ProjectMapState): void {
-  writeFileAtomic(statePath(dataDir), JSON.stringify(state, null, 2));
+/** Writes `state` with rev one past the rev on disk, whatever rev `state` carries, and returns what was written. */
+export function writeProjectMapState(dataDir: string, state: ProjectMapState): ProjectMapState {
+  const written = { ...state, rev: readProjectMapState(dataDir).rev + 1 };
+  writeFileAtomic(statePath(dataDir), JSON.stringify(written, null, 2));
+  return written;
 }
 
 const skipped = (name: string) => name.startsWith(".") || PROJECT_IGNORE.includes(name);

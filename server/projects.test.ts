@@ -92,7 +92,25 @@ describe("projects map", () => {
     const dataDir = tmp();
     expect(readProjectMapState(dataDir).sources).toEqual([]);
     const state = projectMapStateSchema.parse({ groups: [{ id: "g1", name: "Clients", color: "#38d591" }], member: { "local:api": "g1" } });
-    writeProjectMapState(dataDir, state);
-    expect(readProjectMapState(dataDir)).toEqual(state);
+    const written = writeProjectMapState(dataDir, state);
+    expect(written).toEqual({ ...state, rev: 1 });
+    expect(readProjectMapState(dataDir)).toEqual(written);
+  });
+
+  it("each write bumps rev from what is on disk", () => {
+    const dataDir = tmp();
+    expect(readProjectMapState(dataDir).rev).toBe(0);
+    expect(writeProjectMapState(dataDir, projectMapStateSchema.parse({})).rev).toBe(1);
+    expect(writeProjectMapState(dataDir, projectMapStateSchema.parse({ rev: 0 })).rev).toBe(2);
+    expect(writeProjectMapState(dataDir, projectMapStateSchema.parse({ rev: 40 })).rev).toBe(3);
+    expect(readProjectMapState(dataDir).rev).toBe(3);
+  });
+
+  it("a file saved before rev existed reads as rev 0", () => {
+    const dataDir = tmp();
+    writeFileSync(join(dataDir, "projects-map.json"), JSON.stringify({ groups: [{ id: "g1", name: "Clients", color: "#38d591" }] }));
+    expect(readProjectMapState(dataDir)).toMatchObject({ rev: 0, groups: [{ id: "g1" }] });
+    expect(projectMapStateSchema.safeParse({ rev: -1 }).success).toBe(false);
+    expect(projectMapStateSchema.safeParse({ rev: 1.5 }).success).toBe(false);
   });
 });

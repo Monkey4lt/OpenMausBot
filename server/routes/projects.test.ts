@@ -49,12 +49,51 @@ async function call(route: RouteHandler, method: string, path: string, body?: un
 describe("projects routes", () => {
   it("GET /api/projects on an empty data dir returns no sources and no projects", async () => {
     const route = createProjectRoutes({ dataDir: tmp() });
-    expect(await call(route, "GET", "/api/projects")).toEqual({ status: 200, body: { state: expect.objectContaining({ sources: [] }), projects: [], errors: [] } });
+    expect(await call(route, "GET", "/api/projects")).toEqual({ status: 200, body: { state: expect.objectContaining({ sources: [], rev: 0 }), projects: [], errors: [], cartographeBotId: null } });
+  });
+
+  it("GET /api/projects returns cartographeBotId from the dependency, or null", async () => {
+    let id: string | null = "b-carto";
+    const route = createProjectRoutes({ dataDir: tmp(), cartographeBotId: () => id });
+    expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ cartographeBotId: "b-carto" });
+    id = null;
+    expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ cartographeBotId: null });
+  });
+
+  it("PUT with the current baseRev saves, answers the new rev and calls onChanged once", async () => {
+    const changed: number[] = [];
+    const route = createProjectRoutes({ dataDir: tmp(), onChanged: (rev) => changed.push(rev) });
+    const groups = [{ id: "g1", name: "Clients", color: "#38d591" }];
+    expect(await call(route, "PUT", "/api/projects/state", { groups, baseRev: 0 })).toEqual({ status: 200, body: { ok: true, rev: 1 } });
+    expect(changed).toEqual([1]);
+    const got = (await call(route, "GET", "/api/projects")).body as { state: { rev: number; groups: unknown[] } };
+    expect(got.state).toMatchObject({ rev: 1, groups });
+    expect(await call(route, "PUT", "/api/projects/state", { ...got.state, groups: [], baseRev: 1 })).toEqual({ status: 200, body: { ok: true, rev: 2 } });
+    expect(changed).toEqual([1, 2]);
+  });
+
+  it("PUT with a stale baseRev answers 409 with the current rev and writes nothing", async () => {
+    const changed: number[] = [];
+    const route = createProjectRoutes({ dataDir: tmp(), onChanged: (rev) => changed.push(rev) });
+    const groups = [{ id: "g1", name: "Clients", color: "#38d591" }];
+    await call(route, "PUT", "/api/projects/state", { groups, baseRev: 0 });
+    const stale = await call(route, "PUT", "/api/projects/state", { groups: [], baseRev: 0, rev: 1 });
+    expect(stale).toEqual({ status: 409, body: { error: expect.any(String), rev: 1 } });
+    expect(changed).toEqual([1]);
+    expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ state: { rev: 1, groups } });
+  });
+
+  it("PUT without a usable baseRev is refused and writes nothing", async () => {
+    const route = createProjectRoutes({ dataDir: tmp() });
+    for (const baseRev of [undefined, "0", -1, 0.5]) {
+      expect((await call(route, "PUT", "/api/projects/state", { groups: [], baseRev })).status).toBe(400);
+    }
+    expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ state: { rev: 0 } });
   });
 
   it("PUT /api/projects/state rejects an SSH host that starts with a dash", async () => {
     const route = createProjectRoutes({ dataDir: tmp() });
-    const bad = { sources: [{ id: "s1", label: "x", kind: "ssh", host: "-oProxyCommand=x", path: "/" }] };
+    const bad = { sources: [{ id: "s1", label: "x", kind: "ssh", host: "-oProxyCommand=x", path: "/" }], baseRev: 0 };
     expect((await call(route, "PUT", "/api/projects/state", bad)).status).toBe(400);
   });
 
@@ -68,7 +107,7 @@ describe("projects routes", () => {
       groups: [{ id: "g1", name: "Clients", color: "#38d591" }],
       member: { "s1:api": "g1" },
     };
-    expect(await call(route, "PUT", "/api/projects/state", state)).toEqual({ status: 200, body: { ok: true } });
+    expect(await call(route, "PUT", "/api/projects/state", { ...state, baseRev: 0 })).toEqual({ status: 200, body: { ok: true, rev: 1 } });
 
     const got = await call(route, "GET", "/api/projects");
     expect(got.status).toBe(200);
@@ -91,6 +130,7 @@ describe("projects routes", () => {
         { id: "gone", label: "Gone", kind: "local", path: missing },
         { id: "ok", label: "Here", kind: "local", path: root },
       ],
+      baseRev: 0,
     });
 
     const body = (await call(route, "GET", "/api/projects")).body as { projects: { id: string }[]; errors: { sourceId: string; message: string }[] };
@@ -116,7 +156,7 @@ describe("GET /api/projects/architecture", () => {
   }
   async function withSources(sources: unknown[], overrides: unknown = {}) {
     const route = createProjectRoutes({ dataDir: tmp() });
-    expect((await call(route, "PUT", "/api/projects/state", { sources, overrides })).status).toBe(200);
+    expect((await call(route, "PUT", "/api/projects/state", { sources, overrides, baseRev: 0 })).status).toBe(200);
     return route;
   }
   type Arch = { edges: { level: string; from: string; to: string; weight: number }[]; families: { id: string; name: string }[]; files: { path: string }[]; truncated: boolean };
@@ -187,7 +227,7 @@ describe("GET /api/projects/architecture", () => {
     const root = localProject({ "a.ts": "", "README.md": "x" });
     let reads = 0;
     const route = createProjectRoutes({ dataDir: tmp(), onArchitectureRead: () => { reads += 1; } });
-    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "Here", kind: "local", path: root }] });
+    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "Here", kind: "local", path: root }], baseRev: 0 });
     await call(route, "GET", "/api/projects/architecture?id=s1%3Aapi");
     writeFileSync(join(root, "api", "README.md"), "longer text");
     await call(route, "GET", "/api/projects/architecture?id=s1%3Aapi");
@@ -198,7 +238,7 @@ describe("GET /api/projects/architecture", () => {
     const root = localProject({ "a.ts": "" });
     let reads = 0;
     const route = createProjectRoutes({ dataDir: tmp(), onArchitectureRead: () => { reads += 1; } });
-    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "Here", kind: "local", path: root }] });
+    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "Here", kind: "local", path: root }], baseRev: 0 });
     const all = await Promise.all([1, 2, 3].map(() => call(route, "GET", "/api/projects/architecture?id=s1%3Aapi")));
     expect(all.map((r) => r.status)).toEqual([200, 200, 200]);
     expect(reads).toBe(1);
@@ -208,7 +248,7 @@ describe("GET /api/projects/architecture", () => {
     const root = localProject({ "a.ts": "" });
     const route = await withSources([{ id: "s1", label: "Here", kind: "local", path: root }]);
     expect((await architecture(route, "s1:api")).body.families[0].name).toBe("server");
-    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "Here", kind: "local", path: root }], overrides: { "s1:api": { moduleFamily: {}, familyNames: { server: "Back" } } } });
+    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "Here", kind: "local", path: root }], overrides: { "s1:api": { moduleFamily: {}, familyNames: { server: "Back" } } }, baseRev: 1 });
     expect((await architecture(route, "s1:api")).body.families[0].name).toBe("Back");
   });
 
