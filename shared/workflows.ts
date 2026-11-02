@@ -60,7 +60,12 @@ export const scheduleSchema = z.object({
 });
 export type WorkflowSchedule = z.infer<typeof scheduleSchema>;
 
-const triggerData = z.object({ mode: z.enum(["manual", "schedule", "ai-reset"]).default("manual"), schedule: scheduleSchema.optional() });
+const triggerData = z.object({
+  mode: z.enum(["manual", "schedule", "ai-reset"]).default("manual"),
+  schedule: scheduleSchema.optional(),
+  /** Mode "ai-reset": the engine instance id whose usage limit it waits for ("claude", "codex", …). */
+  engine: z.string().transform((s) => s.trim()).pipe(z.string().regex(/^[\w.:-]{1,128}$/)).optional(),
+});
 const aiData = z.object({ prompt: text().default(""), system: optionalText(), model: refSchema.optional() });
 const botData = z.object({ instruction: text().default(""), botId: refSchema.default(""), model: refSchema.optional() });
 const conditionData = z.object({ question: text().default("") });

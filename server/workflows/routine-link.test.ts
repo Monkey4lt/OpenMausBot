@@ -113,6 +113,15 @@ describe("a workflow's routine follows its trigger", () => {
     expect(h.workflowRoutines()).toEqual([]);
   });
 
+  it("an AI-limit-reset trigger makes a routine that waits for that AI's reset, every reset", () => {
+    const h = setup();
+    const saved = h.save(def({ mode: "ai-reset", engine: "codex" }));
+    expect(saved.routine).toMatchObject({ nextRunAt: null });
+    expect(h.workflowRoutines()[0]!.schedule).toMatchObject({ type: "limit_reset", engine: "codex", repeat: "every_reset" });
+    expect(h.save(def({ mode: "ai-reset" })).routine).toBeNull();
+    expect(h.workflowRoutines()).toEqual([]);
+  });
+
   it("deleting the workflow removes its routine, and start-up drops routines of workflows that are gone", () => {
     const h = setup();
     h.save(def(daily));
@@ -186,6 +195,7 @@ describe("existing automations as mini-workflows", () => {
     expect(triggerOfRoutine({ type: "daily", time: "08:00", weekdays: [0, 1, 2, 3, 4, 5, 6] })).toEqual({ mode: "schedule", schedule: { kind: "daily", at: "08:00" } });
     expect(triggerOfRoutine({ type: "interval", everyMinutes: 30, anchorAt: 0 })).toEqual({ mode: "schedule", schedule: { kind: "interval", everyMinutes: 30 } });
     expect(triggerOfRoutine({ type: "once", at: new Date(2026, 10, 3, 14, 5).getTime() })).toEqual({ mode: "schedule", schedule: { kind: "once", date: "2026-11-03", at: "14:05" } });
+    expect(triggerOfRoutine({ type: "limit_reset", engine: "claude", repeat: "once", at: null })).toEqual({ mode: "ai-reset", engine: "claude" });
     expect(triggerOfRoutine({ type: "cron", expression: "0 9 * * 1", timeZone: "UTC" } as never)).toBeNull();
     expect(routineScheduleOf({ mode: "schedule", schedule: { kind: "once", date: "2026-11-03", at: "14:05" } }, 0)).toEqual({ type: "once", at: new Date(2026, 10, 3, 14, 5).getTime() });
     expect(routineScheduleOf({ mode: "schedule", schedule: { kind: "weekdays", at: "08:00" } }, 0)).toEqual({ type: "daily", time: "08:00", weekdays: [1, 2, 3, 4, 5] });

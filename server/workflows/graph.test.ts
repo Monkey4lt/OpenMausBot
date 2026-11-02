@@ -107,6 +107,12 @@ describe("validateWorkflow", () => {
     expect(codes(validateWorkflow(w, ctx)).includes("missing-setting")).toBe(!ok);
   });
 
+  it("an AI-limit-reset trigger needs the AI whose limit it waits for", () => {
+    const without = validateWorkflow(wf([n("t", "trigger", { mode: "ai-reset" })], []), ctx);
+    expect(without.filter((p) => p.code === "missing-setting").map((p) => p.message_en)).toEqual(["Trigger: Choose which AI's usage limit to wait for."]);
+    expect(codes(validateWorkflow(wf([n("t", "trigger", { mode: "ai-reset", engine: "codex" })], []), ctx))).toEqual([]);
+  });
+
   it("names a bot that cannot be found, in a Bot block and in a send to a bot's chat", () => {
     const w = wf([n("t", "trigger"), n("b", "bot", { botId: "ghost" }), n("s", "send", { to: "bot-chat", botId: "ghost" })], []);
     expect(validateWorkflow(w, ctx).filter((p) => p.code === "unknown-bot").map((p) => p.nodeId)).toEqual(["b", "s"]);

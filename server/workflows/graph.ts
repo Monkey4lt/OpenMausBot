@@ -35,6 +35,7 @@ function missingSettings(node: WorkflowNode): [string, string][] {
   const out: [string, string][] = [];
   switch (node.kind) {
     case "trigger": {
+      if (node.data.mode === "ai-reset" && !node.data.engine) out.push(["Choisis l'IA dont il faut attendre la fin de limite d'utilisation.", "Choose which AI's usage limit to wait for."]);
       if (node.data.mode !== "schedule") break;
       const s = node.data.schedule;
       if (!s) { out.push(["Choisis quand ce déclencheur doit se lancer.", "Choose when this trigger should start."]); break; }

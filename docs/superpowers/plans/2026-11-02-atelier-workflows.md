@@ -214,7 +214,9 @@
 
 **Files:** Modify `server/routines.ts` (réutilise `limitResetsAt`) ; `shared/workflows.ts` si un réglage manque (moteur visé) — Test `server/routines.workflow.test.ts`
 
-- [ ] Tests (`it("fires when the chosen engine's usage limit resets")`, `it("does nothing while the reset time is unknown")`) → FAIL → implémenter → PASS → commit `feat(workflows): trigger on AI limit reset`.
+- [x] Tests (`it("fires when the chosen engine's usage limit resets")`, `it("does nothing while the reset time is unknown")`, + schéma, graphe, `routine-link`) → FAIL → implémenter → PASS → commit `feat(workflows): trigger on AI limit reset`.
+
+**Livré :** `triggerData.engine?` (id d'instance du moteur, `^[\w.:-]{1,128}$`, nettoyé) ; `graph.ts` : `missing-setting` « Choisis l'IA dont il faut attendre la fin de limite d'utilisation. » quand `mode: "ai-reset"` sans `engine` ; `routine-link` : `ai-reset` → routine `{ type: "limit_reset", engine, repeat: "every_reset" }` (le moteur de routines existant recale l'heure sur `limitResetsAt`, `nextRunAt: null` tant qu'elle est inconnue) ; l'exécution part avec `source: "ai-reset"`. Les tests du moteur de routines passaient déjà après la tâche 10 (même chemin que `limit_reset`).
 
 ---
 
@@ -246,7 +248,7 @@
 
 ## Questions ouvertes
 
-1. Déclencheur `ai-reset` : quel moteur surveiller ? Le schéma n'a pas encore de champ (`engine?` à ajouter en Task 11).
+1. ~~Déclencheur `ai-reset` : quel moteur surveiller ?~~ Réglé (Task 11) : `engine` dans le bloc ; l'interface doit proposer la liste des moteurs (celle de la page Automatisations, `EngineLimit.engine`).
 2. Bloc Bot : le réglage `model` n'est pas encore appliqué (le tour part sur le modèle du bot).
 3. La carte d'approbation montre un extrait (400 caractères, nettoyé) des données dans la discussion de MausBot : vérifier que le modèle de MausBot ne lit pas ces cartes comme consignes ; une carte rendue « indisponible » par l'arrêt d'un tour de MausBot laisse l'étape attendre jusqu'à 24 h.
 4. Notification d'échec : pas encore de lien direct vers l'exécution (la notification ouvre la discussion de MausBot).

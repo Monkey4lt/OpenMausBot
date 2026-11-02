@@ -48,7 +48,7 @@ const WEEKDAYS = [1, 2, 3, 4, 5];
 export function routineScheduleOf(trigger: NodeData<"trigger"> | undefined, anchorAt: number): RoutineScheduleInput | null {
   if (!trigger) return null;
   if (trigger.mode === "ai-reset") {
-    const engine = (trigger as { engine?: string }).engine?.trim();
+    const engine = trigger.engine?.trim();
     return engine ? { type: "limit_reset", engine, repeat: "every_reset" } : null;
   }
   if (trigger.mode !== "schedule" || !trigger.schedule) return null;
@@ -68,7 +68,7 @@ export function routineScheduleOf(trigger: NodeData<"trigger"> | undefined, anch
 
 /** The Trigger block data a routine schedule reads as; null for a schedule a Trigger block cannot hold. */
 export function triggerOfRoutine(schedule: Routine["schedule"]): NodeData<"trigger"> | null {
-  if (schedule.type === "limit_reset") return { mode: "ai-reset", engine: schedule.engine } as NodeData<"trigger">;
+  if (schedule.type === "limit_reset") return { mode: "ai-reset", engine: schedule.engine };
   if (schedule.type === "once") {
     const d = new Date(schedule.at);
     return { mode: "schedule", schedule: { kind: "once", date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, at: `${pad(d.getHours())}:${pad(d.getMinutes())}` } };

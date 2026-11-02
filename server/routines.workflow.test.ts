@@ -180,3 +180,29 @@ describe("workflow routines", () => {
     expect(WORKFLOW_ROUTINE_BOT).toMatch(/[^\w-]/);
   });
 });
+
+describe("AI-limit-reset trigger", () => {
+  it("fires when the chosen engine's usage limit resets", async () => {
+    const h = harness();
+    h.reset("codex", START + 2 * HOUR);
+    const routine = h.manager.create({ name: "After reset", prompt: "", target: "workflow", workflowId: "wf-1", botId: WORKFLOW_ROUTINE_BOT, schedule: { type: "limit_reset", engine: "codex", repeat: "every_reset" } });
+    expect(routine.nextRunAt).toBe(START + 2 * HOUR + MINUTE);
+    await h.manager.tick();
+    expect(h.started).toEqual([]);
+    h.at(START + 2 * HOUR + 2 * MINUTE);
+    await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+    expect(h.started[0]).toMatchObject({ workflowId: "wf-1", source: "ai-reset" });
+  });
+
+  it("does nothing while the reset time is unknown", async () => {
+    const h = harness();
+    h.reset("codex", null);
+    const routine = h.manager.create({ name: "After reset", prompt: "", target: "workflow", workflowId: "wf-1", botId: WORKFLOW_ROUTINE_BOT, schedule: { type: "limit_reset", engine: "codex", repeat: "every_reset" } });
+    expect(routine.nextRunAt).toBeNull();
+    h.at(START + 48 * HOUR);
+    await h.manager.tick();
+    expect(h.started).toEqual([]);
+    expect(h.manager.listRuns()).toEqual([]);
+  });
+});
