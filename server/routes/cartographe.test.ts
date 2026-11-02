@@ -210,6 +210,19 @@ describe("cartographe internal routes", () => {
     expect(arch.overrides).toMatchObject({ summary: "Une boutique.", moduleText: { "src/state": "Le panier" } });
   });
 
+  it("describe_piece checks the piece against the project's own pieces before any card", async () => {
+    const { call, state, asks, root } = setup();
+    writeFileSync(join(root, "shop", "package.json"), JSON.stringify({ dependencies: { express: "4", stripe: "1" } }));
+    expect(await call(APPLY, { changes: [{ op: "describe_piece", projectId: "s1:shop", piece: "database", text: "x" }] }))
+      .toMatchObject({ body: { applied: false, reason: "invalid", problems: [{ index: 0, reason: expect.stringContaining("database") }] } });
+    expect(asks).toEqual([]);
+    expect(await call(APPLY, { changes: [{ op: "describe_piece", projectId: "s1:shop", piece: "external:Stripe", text: "Encaisse les paiements." }] })).toMatchObject({ body: { applied: true } });
+    expect(asks.at(-1)!.lines).toEqual(["Dans «shop» : décrire le bloc «Stripe» : «Encaisse les paiements.»"]);
+    expect(state().overrides["s1:shop"]!.pieceText).toEqual({ "external:Stripe": "Encaisse les paiements." });
+    const arch = (await call(ARCH, { projectId: "s1:shop" })).body as { overrides: Record<string, unknown> };
+    expect(arch.overrides).toMatchObject({ pieceText: { "external:Stripe": "Encaisse les paiements." } });
+  });
+
   it("move_module checks the module against the project's architecture and writes the override", async () => {
     const { call, state, reads } = setup();
     expect(await call(APPLY, { changes: [{ op: "move_module", projectId: "s1:shop", moduleId: "src/state", family: "data" }] })).toMatchObject({ body: { applied: true } });
@@ -387,6 +400,7 @@ describe("inspect and read_file routes", () => {
     expect(got.status).toBe(200);
     const body = got.body as { pieces: { kind: string; label: string; tech: string }[]; links: { from: string; to: string; count: number }[]; languages: Record<string, number>; truncated: boolean; diagramHtml: string };
     expect(body.pieces.map((p) => `${p.kind}:${p.tech}:${p.label}`)).toEqual(["ui:React:Site ou appli", "api:Express:Serveur", "database:PostgreSQL:Base de données"]);
+    expect((body.pieces as unknown as { key: string }[]).map((p) => p.key)).toEqual(["ui", "api", "database"]);
     expect(body.links).toEqual([
       { from: "ui", to: "api", count: 1, examples: [{ from: "web/Orders.tsx", to: "server/orders.ts" }] },
       { from: "api", to: "database", count: 1, examples: [{ from: "server/orders.ts", to: "pg" }] },

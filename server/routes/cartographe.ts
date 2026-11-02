@@ -5,6 +5,7 @@ import type { json as sendJson } from "../harness/http.ts";
 import { applyChanges, describeChanges, projectChangeSchema, projectChangesSchema, type KnownProjects, type ProjectChange } from "../projects-changes.ts";
 import type { ProjectsHold } from "../projects-hold.ts";
 import { pieceDiagramHtml } from "../projects-inspect.ts";
+import { pieceKey } from "../../shared/projects-pieces.ts";
 import { fileRefusal, readProjectFile } from "../projects-sources.ts";
 import { summarizeArchitecture, summarizeInspection, summarizeMap, type FilePage } from "../projects-summary.ts";
 import { findProject, readProjectMapState, writeProjectMapState, type Project } from "../projects.ts";
@@ -81,11 +82,23 @@ function parseBatch(raw: unknown): { ok: true; changes: ProjectChange[] } | { ok
 export function createCartographeRoutes(deps: CartographeDeps) {
   const scan = async () => scanProjects(readProjectMapState(deps.dataDir));
 
-  /** Known projects from a fresh scan, and the module ids of each project a move_module or describe_module names. */
+  /** Known projects from a fresh scan, the module ids of each project a move_module or describe_module names, and the pieces of each one a describe_piece names. */
   async function knownFor(changes: ProjectChange[], projects: Project[]): Promise<{ known: KnownProjects; problems: { index: number; reason: string }[] }> {
     const projectIds = new Set(projects.map((p) => p.id));
     const modules = new Map<string, ReadonlySet<string>>();
+    const pieces = new Map<string, ReadonlySet<string>>();
     const problems: { index: number; reason: string }[] = [];
+    for (const [index, change] of changes.entries()) {
+      if (change.op !== "describe_piece" || !projectIds.has(change.projectId) || pieces.has(change.projectId)) continue;
+      if (!deps.inspectionOf) { problems.push({ index, reason: "The pieces of a project cannot be read here" }); continue; }
+      try {
+        const read = await deps.inspectionOf(change.projectId);
+        if (read) pieces.set(change.projectId, new Set(read.inspection.pieces.map(pieceKey)));
+        else problems.push({ index, reason: `Unknown project ${change.projectId}` });
+      } catch (error) {
+        problems.push({ index, reason: `The pieces of ${change.projectId} could not be read: ${message(error)}` });
+      }
+    }
     for (const [index, change] of changes.entries()) {
       if ((change.op !== "move_module" && change.op !== "describe_module") || !projectIds.has(change.projectId) || modules.has(change.projectId)) continue;
       try {
@@ -96,7 +109,7 @@ export function createCartographeRoutes(deps: CartographeDeps) {
         problems.push({ index, reason: `The modules of ${change.projectId} could not be read: ${message(error)}` });
       }
     }
-    return { known: { projectIds, moduleIds: (projectId) => modules.get(projectId) ?? null }, problems };
+    return { known: { projectIds, moduleIds: (projectId) => modules.get(projectId) ?? null, pieceKeys: (projectId) => pieces.get(projectId) ?? null }, problems };
   }
 
   async function apply(ctx: CartographeContext, raw: unknown): Promise<ApplyAnswer> {

@@ -1,5 +1,5 @@
 import { DESCRIPTION_MAX, SUMMARY_MAX, type ArchOverrides, type Architecture } from "../shared/projects-architecture.ts";
-import { PIECE_LABELS, type Piece, type PieceKind, type PieceLink } from "../shared/projects-pieces.ts";
+import { PIECE_LABELS, pieceKey, type Piece, type PieceKind, type PieceLink } from "../shared/projects-pieces.ts";
 import { MAX_NOTE_CHARS } from "../src/lib/canvas/model.ts";
 import { cleanLabel } from "./projects-changes.ts";
 import type { Project, ProjectMapState, ProjectNode } from "./projects.ts";
@@ -124,6 +124,7 @@ export function summarizeArchitecture(arch: Architecture, overrides: ArchOverrid
     familyNames: Object.fromEntries(Object.entries(overrides?.familyNames ?? {}).map(([family, name]) => [family, cleanLabel(name ?? "")])),
     ...(overrides?.summary ? { summary: cleanLabel(overrides.summary, { max: SUMMARY_MAX, keepLines: true }) } : {}),
     ...(overrides?.familyText ? { familyText: Object.fromEntries(Object.entries(overrides.familyText).map(([family, text]) => [family, cleanLabel(text ?? "", { max: DESCRIPTION_MAX })])) } : {}),
+    ...(overrides?.pieceText ? { pieceText: Object.fromEntries(Object.entries(overrides.pieceText).map(([key, text]) => [key, cleanLabel(text, { max: DESCRIPTION_MAX })])) } : {}),
     ...(overrides?.moduleText ? { moduleText: Object.fromEntries(Object.entries(overrides.moduleText).filter(([id]) => moduleIds.has(id)).map(([id, text]) => [id, cleanLabel(text, { max: DESCRIPTION_MAX })])) } : {}),
   };
   const families = arch.families.map((f) => ({ id: f.id, name: cleanLabel(f.name), files: f.files }));
@@ -153,8 +154,8 @@ export function summarizeArchitecture(arch: Architecture, overrides: ArchOverrid
 }
 
 export interface InspectionSummary {
-  /** `label` is the plain French word for the piece, to use when talking to the person. */
-  pieces: (Piece & { label: string })[];
+  /** `label` is the plain French word for the piece, to use when talking to the person; `key` names it in describe_piece. */
+  pieces: (Piece & { label: string; key: string })[];
   links: PieceLink[];
   languages: Record<string, number>;
   /** A ready page of the pieces and their links, to pass as is to show_html. */
@@ -169,7 +170,7 @@ export function summarizeInspection(
   diagram: (kept: { pieces: Piece[]; links: PieceLink[] }) => string,
   limit = SUMMARY_LIMIT,
 ): InspectionSummary {
-  const labelled = (pieces: Piece[]) => pieces.map((p) => ({ ...p, tech: cleanLabel(p.tech), label: PIECE_LABELS[p.kind as PieceKind].fr }));
+  const labelled = (pieces: Piece[]) => pieces.map((p) => ({ ...p, tech: cleanLabel(p.tech), label: PIECE_LABELS[p.kind as PieceKind].fr, key: pieceKey({ kind: p.kind, tech: cleanLabel(p.tech) }) }));
   const make = (pieces: Piece[], links: PieceLink[], languages: Record<string, number>, truncated: boolean, withDiagram = true): InspectionSummary => ({
     pieces: labelled(pieces), links, languages, diagramHtml: withDiagram ? diagram({ pieces, links }) : "", truncated,
   });

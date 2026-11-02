@@ -194,8 +194,23 @@ describe("the Cartographe bot", () => {
     expect(CARTOGRAPHE_SOUL).toMatch(/projects_read_file/);
     expect(CARTOGRAPHE_SOUL).toMatch(/never say you cannot go further/i);
     expect(CARTOGRAPHE_SOUL).toMatch(/diagramHtml.*show_html/);
-    expect(CARTOGRAPHE_SOUL).toMatch(/Projets.*icône réseau/);
+    expect(CARTOGRAPHE_SOUL).toMatch(/Atelier.*Comment ça marche/);
+    expect(CARTOGRAPHE_SOUL).not.toMatch(/icône réseau/);
     expect(CARTOGRAPHE_SOUL).toMatch(/never read.*secret/i);
+  });
+
+  it("the soul asks for the card's sentence and one line per big part, and family texts only when asked", () => {
+    expect(CARTOGRAPHE_SOUL).toMatch(/first line.*card.*120 characters/i);
+    expect(CARTOGRAPHE_SOUL).toMatch(/describe_piece.*each piece/i);
+    expect(CARTOGRAPHE_SOUL).toMatch(/family and module descriptions only when the person asks/i);
+  });
+
+  it("the intro says tu, and talks of big parts, not families and modules", () => {
+    const text = cartographeIntroMessage("Cartographe").text;
+    expect(text).toMatch(/ses grands blocs/);
+    expect(text).not.toMatch(/familles et (ses )?modules/);
+    expect(text).not.toMatch(/\b(vous|vos|votre|Essayez)\b/);
+    expect(text).toMatch(/\btes projets\b/);
   });
 
   it("the intro mentions that file contents can be sent to the AI", () => {

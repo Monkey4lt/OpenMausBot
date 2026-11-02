@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { GROUP_PALETTE } from "../shared/project-groups.ts";
 import { DESCRIPTION_MAX, FAMILY_ORDER, SUMMARY_MAX, type Family } from "../shared/projects-architecture.ts";
+import { PIECE_KEY_PATTERN, PIECE_LABELS, type PieceKind } from "../shared/projects-pieces.ts";
 import type { ProjectMapState } from "./projects.ts";
 
 
@@ -34,6 +35,7 @@ export const projectChangeSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("describe_project"), projectId: id, summary: z.string().max(2000) }).strict(),
   z.object({ op: z.literal("describe_family"), projectId: id, family, text: text }).strict(),
   z.object({ op: z.literal("describe_module"), projectId: id, moduleId: z.string().min(1).max(300), text: text }).strict(),
+  z.object({ op: z.literal("describe_piece"), projectId: id, piece: z.string().regex(PIECE_KEY_PATTERN), text: z.string().max(DESCRIPTION_MAX) }).strict(),
 ]);
 export const projectChangesSchema = z.array(projectChangeSchema).min(1).max(100);
 
@@ -48,12 +50,15 @@ export type ProjectChange =
   | { op: "move_module"; projectId: string; moduleId: string; family: Family }
   | { op: "describe_project"; projectId: string; summary: string }
   | { op: "describe_family"; projectId: string; family: Family; text: string }
-  | { op: "describe_module"; projectId: string; moduleId: string; text: string };
+  | { op: "describe_module"; projectId: string; moduleId: string; text: string }
+  | { op: "describe_piece"; projectId: string; piece: string; text: string };
 
 export interface KnownProjects {
   projectIds: ReadonlySet<string>;
   /** null when the project's modules are not known; its module ids are then not checked. */
   moduleIds?: (projectId: string) => ReadonlySet<string> | null;
+  /** The piece keys (shared/projects-pieces.ts `pieceKey`) the project has; null when not known, and a describe_piece is then refused. */
+  pieceKeys?: (projectId: string) => ReadonlySet<string> | null;
 }
 
 export type ApplyResult = { ok: true; state: ProjectMapState } | { ok: false; problems: { index: number; reason: string }[] };
@@ -85,6 +90,12 @@ export function cleanLabel(value: string, options: { max?: number; keepLines?: b
 function cardText(value: string): string {
   const flat = cleanLabel(value, { max: Number.MAX_SAFE_INTEGER });
   return flat.length > DESCRIPTION_MAX ? `${cutAt(flat, DESCRIPTION_MAX - 1)}…` : flat;
+}
+
+/** A piece key in plain words: the kind's label, or the outside service's own name. */
+function pieceName(key: string): string {
+  if (key.startsWith("external:")) return key.slice("external:".length);
+  return Object.hasOwn(PIECE_LABELS, key) ? PIECE_LABELS[key as PieceKind].fr : key;
 }
 
 /** A name on the card, quoted so no name can pass for the words around it. */
@@ -189,6 +200,18 @@ export function applyChanges(state: ProjectMapState, changes: ProjectChange[], k
           : { ...own, moduleText: { ...own.moduleText, [change.moduleId]: written } };
         return null;
       }
+      case "describe_piece": {
+        const unknown = project(change.projectId);
+        if (unknown) return unknown;
+        const pieces = known.pieceKeys?.(change.projectId) ?? null;
+        if (!pieces) return `The pieces of ${change.projectId} are not known; inspect it first`;
+        if (!pieces.has(change.piece)) return `Unknown piece ${change.piece} in ${change.projectId}`;
+        const written = cleanLabel(change.text, { max: DESCRIPTION_MAX });
+        if (!written) return "A description needs some text";
+        const own = Object.hasOwn(next.overrides, change.projectId) ? next.overrides[change.projectId] : { moduleFamily: {}, familyNames: {} };
+        next.overrides[change.projectId] = { ...own, pieceText: { ...own.pieceText, [change.piece]: written } };
+        return null;
+      }
       case "rename_family":
       case "move_module": {
         const unknown = project(change.projectId);
@@ -241,6 +264,7 @@ export function describeChanges(changes: ProjectChange[], names: { project: (id:
       case "describe_project": return `Dans ${project(change.projectId)} : fiche En bref «${cardText(change.summary)}»`;
       case "describe_family": return `Dans ${project(change.projectId)} : décrire ${quoted(FAMILY_LABEL[change.family])} : «${cardText(change.text)}»`;
       case "describe_module": return `Dans ${project(change.projectId)} : décrire ${quoted(change.moduleId)} : «${cardText(change.text)}»`;
+      case "describe_piece": return `Dans ${project(change.projectId)} : décrire le bloc ${quoted(pieceName(change.piece))} : «${cardText(change.text)}»`;
     }
   });
 }

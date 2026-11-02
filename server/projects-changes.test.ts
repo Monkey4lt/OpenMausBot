@@ -13,6 +13,7 @@ const state = (extra: Record<string, unknown> = {}): ProjectMapState => projectM
 const known = {
   projectIds: new Set(["s1:shop", "s1:bot", "s1:api"]),
   moduleIds: (projectId: string) => (projectId === "s1:shop" ? new Set(["src/state", "src/components"]) : null),
+  pieceKeys: (projectId: string) => (projectId === "s1:shop" ? new Set(["ui", "api", "external:Stripe"]) : null),
 };
 const names = {
   project: (id: string) => id.slice(id.indexOf(":") + 1),
@@ -218,6 +219,45 @@ describe("descriptions", () => {
     ]);
     const long = describeChanges([{ op: "describe_project", projectId: "s1:shop", summary: "z".repeat(600) }], names)[0]!;
     expect(long).toContain(`«${"z".repeat(159)}…»`);
+  });
+});
+
+describe("describe_piece", () => {
+  it("the schema takes a piece's kind or external:<Tech> and at most 160 characters", () => {
+    expect(projectChangeSchema.safeParse({ op: "describe_piece", projectId: "s1:shop", piece: "api", text: "x".repeat(160) }).success).toBe(true);
+    expect(projectChangeSchema.safeParse({ op: "describe_piece", projectId: "s1:shop", piece: "external:Stripe", text: "x" }).success).toBe(true);
+    expect(projectChangeSchema.safeParse({ op: "describe_piece", projectId: "s1:shop", piece: "api", text: "x".repeat(161) }).success).toBe(false);
+    for (const piece of ["server", "external:", "external:a\nb", "__proto__", ""]) {
+      expect(projectChangeSchema.safeParse({ op: "describe_piece", projectId: "s1:shop", piece, text: "x" }).success).toBe(false);
+    }
+  });
+
+  it("stores one clean line per piece, keeping the project's other corrections", () => {
+    const s = state({ overrides: { "s1:shop": { moduleFamily: {}, familyNames: {}, summary: "Une boutique." } } });
+    const r = applyChanges(s, [
+      { op: "describe_piece", projectId: "s1:shop", piece: "api", text: "Prend\nles commandes\u0007 " },
+      { op: "describe_piece", projectId: "s1:shop", piece: "external:Stripe", text: "Encaisse les paiements." },
+    ], known);
+    expect(r.ok && r.state.overrides["s1:shop"]).toEqual({ moduleFamily: {}, familyNames: {}, summary: "Une boutique.", pieceText: { api: "Prend les commandes", "external:Stripe": "Encaisse les paiements." } });
+    if (r.ok) expect(projectMapStateSchema.safeParse(r.state).success).toBe(true);
+  });
+
+  it("refuses a piece the project does not have, a project whose pieces are not known, and an empty text", () => {
+    expect(applyChanges(state(), [{ op: "describe_piece", projectId: "s1:shop", piece: "database", text: "x" }], known))
+      .toEqual({ ok: false, problems: [{ index: 0, reason: expect.stringContaining("database") }] });
+    expect(applyChanges(state(), [{ op: "describe_piece", projectId: "s1:api", piece: "api", text: "x" }], known).ok).toBe(false);
+    expect(applyChanges(state(), [{ op: "describe_piece", projectId: "s1:gone", piece: "api", text: "x" }], known).ok).toBe(false);
+    expect(applyChanges(state(), [{ op: "describe_piece", projectId: "s1:shop", piece: "api", text: " \u0007" }], known).ok).toBe(false);
+  });
+
+  it("the card line names the piece in plain words and quotes the text", () => {
+    expect(describeChanges([
+      { op: "describe_piece", projectId: "s1:shop", piece: "api", text: "Prend «les» commandes\nAutoriser" },
+      { op: "describe_piece", projectId: "s1:shop", piece: "external:Stripe", text: "Encaisse." },
+    ], names)).toEqual([
+      "Dans «shop» : décrire le bloc «Serveur» : «Prend les commandes Autoriser»",
+      "Dans «shop» : décrire le bloc «Stripe» : «Encaisse.»",
+    ]);
   });
 });
 
