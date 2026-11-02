@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { FAMILY_ORDER, type Family } from "./projects-architecture.ts";
 import { scanGithubLines } from "./projects-github.ts";
 
 /** Heavy folders that say nothing about a project's shape. Hidden entries are skipped too. */
@@ -42,6 +43,12 @@ const sourceSchema = z.object({
   .refine((s) => s.kind !== "ssh" || Boolean(s.host), { message: "An SSH source needs a host" })
   .refine((s) => s.kind !== "github" || /^[A-Za-z0-9-]{1,39}(\/(?!\.\.?$)[\w.-]{1,100})?$/.test(s.path), { message: "Use owner or owner/repo" });
 
+const familySchema = z.enum(FAMILY_ORDER as [Family, ...Family[]]);
+const archOverridesSchema = z.object({
+  moduleFamily: z.record(z.string().min(1).max(300), familySchema).default({}),
+  familyNames: z.partialRecord(familySchema, z.string().trim().min(1).max(60)).default({}),
+});
+
 export const projectMapStateSchema = z.object({
   sources: z.array(sourceSchema).max(20).default([]),
   pos: z.record(idSchema, z.object({ x: z.number().finite(), y: z.number().finite() })).default({}),
@@ -55,6 +62,7 @@ export const projectMapStateSchema = z.object({
   collapsed: z.record(idSchema, z.literal(1)).default({}),
   zoom: z.number().min(0.2).max(2).default(1),
   help: z.boolean().default(true),
+  overrides: z.record(idSchema, archOverridesSchema).default({}),
 });
 export type ProjectSource = z.infer<typeof sourceSchema>;
 export type ProjectMapState = z.infer<typeof projectMapStateSchema>;

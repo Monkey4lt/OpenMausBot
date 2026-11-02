@@ -50,6 +50,17 @@ describe("projects map", () => {
     expect(github("../etc")).toBe(false);
   });
 
+  it("the saved state keeps overrides per project and rejects an unknown family", () => {
+    const overrides = { "local:api": { moduleFamily: { "src/state": "data" }, familyNames: { ui: "Front" } } };
+    const parsed = projectMapStateSchema.safeParse({ overrides });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.overrides).toEqual(overrides);
+    expect(projectMapStateSchema.parse({}).overrides).toEqual({});
+    expect(projectMapStateSchema.parse({ overrides: { "local:api": {} } }).overrides).toEqual({ "local:api": { moduleFamily: {}, familyNames: {} } });
+    expect(projectMapStateSchema.safeParse({ overrides: { "local:api": { moduleFamily: { "src/state": "magic" }, familyNames: {} } } }).success).toBe(false);
+    expect(projectMapStateSchema.safeParse({ overrides: { "local:api": { moduleFamily: {}, familyNames: { magic: "x" } } } }).success).toBe(false);
+  });
+
   it("saves and reads the layout, and starts empty without a file", () => {
     const dataDir = tmp();
     expect(readProjectMapState(dataDir).sources).toEqual([]);

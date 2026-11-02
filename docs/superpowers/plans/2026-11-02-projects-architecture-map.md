@@ -185,7 +185,7 @@ it.each([
   - `modulesOf(paths: string[], overrides?: ArchOverrides): ModuleInfo[]`
   - Dans `projectMapStateSchema` : `overrides: z.record(idSchema, archOverridesSchema).default({})`
 
-- [ ] **Step 1 : Write the failing tests**
+- [x] **Step 1 : Write the failing tests**
 
 ```ts
 it("groups files of a family under the shortest prefix that holds at least 3 of them", () => {
@@ -200,8 +200,8 @@ it("an override moves a whole module to another family", () => {
 it("the saved state keeps overrides per project and rejects an unknown family", () => { /* projectMapStateSchema.safeParse */ });
 ```
 
-- [ ] **Step 2 :** Run → FAIL. **Step 3 :** implémenter. **Step 4 :** Run → PASS.
-- [ ] **Step 5 :** Commit `feat(projects): split families into modules with user overrides`.
+- [x] **Step 2 :** Run → FAIL. **Step 3 :** implémenter. **Step 4 :** Run → PASS.
+- [x] **Step 5 :** Commit `feat(projects): split families into modules with user overrides`.
 
 ### Task 7: Lire les imports d'un fichier
 

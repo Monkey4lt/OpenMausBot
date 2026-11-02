@@ -49,3 +49,67 @@ export function classify(path: string): Family {
   }
   return "other";
 }
+
+export type ArchOverrides = { moduleFamily: Record<string, Family>; familyNames: Partial<Record<Family, string>> };
+export type ModuleInfo = { id: string; family: Family; files: string[] };
+
+export const MIN_MODULE_FILES = 3;
+export const MAX_MODULE_DEPTH = 3;
+export const ROOT_MODULE = "(root)";
+
+interface DirNode { files: string[]; kids: Map<string, DirNode> }
+
+function dirTree(paths: string[]): DirNode {
+  const root: DirNode = { files: [], kids: new Map() };
+  for (const path of paths) {
+    const dirs = path.split("/").filter(Boolean).slice(0, -1).slice(0, MAX_MODULE_DEPTH);
+    let node = root;
+    for (const dir of dirs) {
+      let next = node.kids.get(dir);
+      if (!next) node.kids.set(dir, next = { files: [], kids: new Map() });
+      node = next;
+    }
+    node.files.push(path);
+  }
+  return root;
+}
+
+/** A folder becomes a module once it holds MIN_MODULE_FILES files not already taken by a deeper module; fewer bubble up to the parent. */
+function carve(node: DirNode, prefix: string[], out: { prefix: string; files: string[] }[]): string[] {
+  const loose = [...node.files];
+  for (const [name, kid] of node.kids) loose.push(...carve(kid, [...prefix, name], out));
+  if (prefix.length && loose.length >= MIN_MODULE_FILES) {
+    out.push({ prefix: prefix.join("/"), files: loose });
+    return [];
+  }
+  return loose;
+}
+
+export function modulesOf(paths: string[], overrides?: ArchOverrides): ModuleInfo[] {
+  const byFamily = new Map<Family, string[]>();
+  for (const path of paths) {
+    const family = classify(path);
+    byFamily.set(family, [...byFamily.get(family) ?? [], path]);
+  }
+  const found: { prefix: string; family: Family; files: string[] }[] = [];
+  for (const [family, files] of byFamily) {
+    const carved: { prefix: string; files: string[] }[] = [];
+    const rest = carve(dirTree(files), [], carved);
+    if (rest.length) carved.push({ prefix: `${ROOT_MODULE}/${family}`, files: rest });
+    found.push(...carved.map((m) => ({ ...m, family })));
+  }
+  const owner = new Map<string, { family: Family; size: number }>();
+  for (const m of found) {
+    const best = owner.get(m.prefix);
+    if (!best || m.files.length > best.size || (m.files.length === best.size && FAMILY_ORDER.indexOf(m.family) < FAMILY_ORDER.indexOf(best.family))) {
+      owner.set(m.prefix, { family: m.family, size: m.files.length });
+    }
+  }
+  const rank = (f: Family) => FAMILY_ORDER.indexOf(f);
+  return found
+    .map((m) => {
+      const id = owner.get(m.prefix)!.family === m.family ? m.prefix : `${m.prefix}#${m.family}`;
+      return { id, family: overrides?.moduleFamily[id] ?? m.family, files: [...m.files].sort() };
+    })
+    .sort((a, b) => rank(a.family) - rank(b.family) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
