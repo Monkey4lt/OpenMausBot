@@ -211,7 +211,7 @@ it("the saved state keeps overrides per project and rejects an unknown family", 
 **Interfaces:**
 - Produces : `type ImportRef = { spec: string; line: number }` ; `parseImports(path: string, text: string): ImportRef[]`
 
-- [ ] **Step 1 : Write the failing tests**
+- [x] **Step 1 : Write the failing tests**
 
 ```ts
 it.each([
@@ -231,8 +231,8 @@ it("CRLF and a BOM give the same result as LF", () => {
 });
 ```
 
-- [ ] **Step 2 :** Run → FAIL. **Step 3 :** une expression régulière par langage, choisie par extension ; commentaires `//` et `/* */` retirés pour JS/TS/CSS, `#` pour Python. **Step 4 :** PASS.
-- [ ] **Step 5 :** Commit `feat(projects): parse imports for JS/TS, Python, Go, Rust and CSS`.
+- [x] **Step 2 :** Run → FAIL. **Step 3 :** une expression régulière par langage, choisie par extension ; commentaires `//` et `/* */` retirés pour JS/TS/CSS, `#` pour Python. **Step 4 :** PASS.
+- [x] **Step 5 :** Commit `feat(projects): parse imports for JS/TS, Python, Go, Rust and CSS`.
 
 ### Task 8: Résoudre un import vers un fichier du projet
 

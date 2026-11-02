@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classify, FAMILY_ORDER, modulesOf } from "./projects-architecture.ts";
+import { classify, FAMILY_ORDER, modulesOf, parseImports } from "./projects-architecture.ts";
 
 describe("classify", () => {
   it.each([
@@ -67,5 +67,47 @@ describe("modulesOf", () => {
   it("an override moves a whole module to another family", () => {
     expect(modulesOf(paths, { moduleFamily: { "src/state": "data" }, familyNames: {} }).find((m) => m.id === "src/state")?.family).toBe("data");
     expect(modulesOf(paths).find((m) => m.id === "src/state")?.family).toBe("server");
+  });
+});
+
+describe("parseImports", () => {
+  it.each([
+    ["a.ts", 'import { x } from "./b";', ["./b"]],
+    ["a.ts", "import type { T } from '../t';", ["../t"]],
+    ["a.ts", 'export * from "./c";', ["./c"]],
+    ["a.ts", 'const m = await import("./lazy");', ["./lazy"]],
+    ["a.js", 'const fs = require("fs");', ["fs"]],
+    ["a.ts", '// import x from "./no"\n/* import y from "./no2" */', []],
+    ["a.py", "import os\nfrom .models import User\nfrom app.db import x", ["os", ".models", "app.db"]],
+    ["main.go", 'import (\n  "fmt"\n  "example.com/app/db"\n)', ["fmt", "example.com/app/db"]],
+    ["lib.rs", "mod db;\nuse crate::api::routes;", ["self::db", "crate::api::routes"]],
+    ["s.css", '@import "./theme.css";', ["./theme.css"]],
+  ])("%s", (path, text, specs) => expect(parseImports(path, text).map((r) => r.spec)).toEqual(specs));
+
+  it.each([
+    ["multi-line named import", "a.tsx", 'import {\n  a,\n  b,\n} from "./ab";\nimport "./side.css";', ["./ab", "./side.css"]],
+    ["export with names and a default import", "a.ts", 'export { a as b } from "./a";\nimport React, { useState } from "react";', ["./a", "react"]],
+    ["a URL inside a string is not a comment", "a.ts", 'const u = "http://x"; import y from "./y";', ["./y"]],
+    ["words that only look like imports", "a.ts", 'const s = "import x from y"; myimport("./no"); x.require("./no");', []],
+    ["Vue single-file component", "A.vue", '<script setup>\nimport B from "./B.vue";\n</script>', ["./B.vue"]],
+    ["Python lists, aliases, relative parents and comments", "a.py", "import os, sys as system  # import nope\nfrom .. import x\nfrom ..pkg.mod import (a, b)\n# import gone", ["os", "sys", "..", "..pkg.mod"]],
+    ["Python docstring", "a.py", '"""\nimport nope\n"""\nimport real', ["real"]],
+    ["Go single import with alias", "a.go", 'package main\n\nimport f "fmt"\nimport (\n  db "example.com/app/db" // the store\n  _ "embed"\n)', ["fmt", "example.com/app/db", "embed"]],
+    ["Rust pub mod, grouped use and external crates", "lib.rs", "pub mod api;\nmod inline { }\nuse crate::api::{routes, auth};\nuse serde::Serialize;\n// use crate::gone;", ["self::api", "crate::api", "serde::Serialize"]],
+    ["SCSS use and css url()", "a.scss", '@use "./vars";\n@import url("./reset.css");\n// @import "./gone";', ["./vars", "./reset.css"]],
+  ])("%s", (_name, path, text, specs) => expect(parseImports(path, text).map((r) => r.spec)).toEqual(specs));
+
+  it("gives the 1-based line of each import", () => {
+    expect(parseImports("a.py", "import os\n\nfrom x import y\n")).toEqual([{ spec: "os", line: 1 }, { spec: "x", line: 3 }]);
+    expect(parseImports("main.go", 'import (\n  "fmt"\n  "os"\n)')).toEqual([{ spec: "fmt", line: 2 }, { spec: "os", line: 3 }]);
+  });
+
+  it("CRLF and a BOM give the same result as LF", () => {
+    expect(parseImports("a.ts", '\uFEFFimport a from "./a";\r\nimport b from "./b";\r\n')).toEqual([{ spec: "./a", line: 1 }, { spec: "./b", line: 2 }]);
+    expect(parseImports("a.py", "\uFEFFimport a\r\nimport b\r\n")).toEqual([{ spec: "a", line: 1 }, { spec: "b", line: 2 }]);
+  });
+
+  it("a file in a language it does not read gives nothing", () => {
+    expect(parseImports("notes.txt", 'import x from "./y"')).toEqual([]);
   });
 });

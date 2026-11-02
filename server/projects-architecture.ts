@@ -74,10 +74,9 @@ function dirTree(paths: string[]): DirNode {
   return root;
 }
 
-/** A folder becomes a module once it holds MIN_MODULE_FILES files not already taken by a deeper module; fewer bubble up to the parent. */
-function carve(node: DirNode, prefix: string[], out: { prefix: string; files: string[] }[]): string[] {
+function carveModulesBottomUp(node: DirNode, prefix: string[], out: { prefix: string; files: string[] }[]): string[] {
   const loose = [...node.files];
-  for (const [name, kid] of node.kids) loose.push(...carve(kid, [...prefix, name], out));
+  for (const [name, kid] of node.kids) loose.push(...carveModulesBottomUp(kid, [...prefix, name], out));
   if (prefix.length && loose.length >= MIN_MODULE_FILES) {
     out.push({ prefix: prefix.join("/"), files: loose });
     return [];
@@ -94,7 +93,7 @@ export function modulesOf(paths: string[], overrides?: ArchOverrides): ModuleInf
   const found: { prefix: string; family: Family; files: string[] }[] = [];
   for (const [family, files] of byFamily) {
     const carved: { prefix: string; files: string[] }[] = [];
-    const rest = carve(dirTree(files), [], carved);
+    const rest = carveModulesBottomUp(dirTree(files), [], carved);
     if (rest.length) carved.push({ prefix: `${ROOT_MODULE}/${family}`, files: rest });
     found.push(...carved.map((m) => ({ ...m, family })));
   }
@@ -112,4 +111,118 @@ export function modulesOf(paths: string[], overrides?: ArchOverrides): ModuleInf
       return { id, family: overrides?.moduleFamily[id] ?? m.family, files: [...m.files].sort() };
     })
     .sort((a, b) => rank(a.family) - rank(b.family) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+export type ImportRef = { spec: string; line: number };
+
+interface Syntax { lineComment: string | null; blockComment: boolean; quotes: string; tripleQuotes: boolean }
+
+const C_LIKE: Syntax = { lineComment: "//", blockComment: true, quotes: "\"'`", tripleQuotes: false };
+const SYNTAX: Record<string, Syntax> = {
+  js: C_LIKE,
+  css: { lineComment: null, blockComment: true, quotes: "\"'", tripleQuotes: false },
+  scss: { lineComment: "//", blockComment: true, quotes: "\"'", tripleQuotes: false },
+  py: { lineComment: "#", blockComment: false, quotes: "\"'", tripleQuotes: true },
+  go: C_LIKE,
+  rs: { lineComment: "//", blockComment: true, quotes: "\"", tripleQuotes: false },
+};
+
+const LANGUAGE_OF: Record<string, keyof typeof SYNTAX> = {
+  ".ts": "js", ".tsx": "js", ".mts": "js", ".cts": "js", ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js", ".vue": "js", ".svelte": "js",
+  ".css": "css", ".scss": "scss", ".sass": "scss", ".less": "scss",
+  ".py": "py", ".go": "go", ".rs": "rs",
+};
+
+function blankCommentsKeepingOffsets(text: string, syntax: Syntax): { code: string; strings: [number, number][] } {
+  const out = text.split("");
+  const strings: [number, number][] = [];
+  const blank = (from: number, to: number) => { for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " "; };
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (syntax.tripleQuotes && (text.startsWith('"""', i) || text.startsWith("'''", i))) {
+      const close = text.indexOf(text.slice(i, i + 3), i + 3);
+      const end = close < 0 ? text.length : close + 3;
+      blank(i, end); i = end; continue;
+    }
+    if (syntax.quotes.includes(ch)) {
+      let j = i + 1;
+      while (j < text.length && text[j] !== ch && (ch === "`" || text[j] !== "\n")) j += text[j] === "\\" ? 2 : 1;
+      strings.push([i, j]); i = j + 1; continue;
+    }
+    if (syntax.lineComment && text.startsWith(syntax.lineComment, i)) {
+      const nl = text.indexOf("\n", i);
+      const end = nl < 0 ? text.length : nl;
+      blank(i, end); i = end; continue;
+    }
+    if (syntax.blockComment && text.startsWith("/*", i)) {
+      const close = text.indexOf("*/", i + 2);
+      const end = close < 0 ? text.length : close + 2;
+      blank(i, end); i = end; continue;
+    }
+    i++;
+  }
+  return { code: out.join(""), strings };
+}
+
+type Found = { spec: string; at: number };
+
+const JS_STATIC = /(?<![.\w$])(?:import|export)\s+(?:type\s+)?(?:[\w$*{}\s,]+?\s+from\s*)?(["'])([^"'\n]+)\1/g;
+const JS_CALL = /(?<![.\w$])(?:import|require)\s*\(\s*(["'`])([^"'`\n]+)\1\s*\)/g;
+const CSS_IMPORT = /@(?:import|use|forward)\s+(?:url\(\s*)?(["'])([^"'\n]+)\1/g;
+const CSS_URL = /@import\s+url\(\s*([^"'\s)]+)\s*\)/g;
+const PY_IMPORT = /^[ \t]*import[ \t]+([^\n]+)/gm;
+const PY_FROM = /^[ \t]*from[ \t]+(\.+[\w.]*|[\w.]+)[ \t]+import\b/gm;
+const GO_SINGLE = /\bimport[ \t]+(?:[\w.]+[ \t]+)?"([^"\n]+)"/g;
+const GO_BLOCK = /\bimport\s*\(([^)]*)\)/g;
+const GO_SPEC = /(?:[\w.]+[ \t]+)?"([^"\n]+)"/g;
+const RS_MOD = /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?mod[ \t]+(\w+)[ \t]*;/gm;
+const RS_USE = /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?use[ \t]+((?:::)?[\w:]+)/gm;
+
+function findAll(re: RegExp, code: string, group: number): Found[] {
+  return [...code.matchAll(re)].map((m) => ({ spec: m[group], at: m.index }));
+}
+
+function findImports(language: keyof typeof SYNTAX, code: string): Found[] {
+  switch (language) {
+    case "js": return [...findAll(JS_STATIC, code, 2), ...findAll(JS_CALL, code, 2)];
+    case "css": case "scss": return [...findAll(CSS_IMPORT, code, 2), ...findAll(CSS_URL, code, 1)];
+    case "py": return [
+      ...[...code.matchAll(PY_IMPORT)].flatMap((m) => m[1].split(",")
+        .map((part) => part.trim().split(/\s+/)[0])
+        .filter((name) => /^[\w.]+$/.test(name))
+        .map((spec) => ({ spec, at: m.index }))),
+      ...findAll(PY_FROM, code, 1),
+    ];
+    case "go": return [
+      ...findAll(GO_SINGLE, code, 1),
+      ...[...code.matchAll(GO_BLOCK)].flatMap((block) => {
+        const body = block.index + block[0].indexOf("(") + 1;
+        return [...block[1].matchAll(GO_SPEC)].map((m) => ({ spec: m[1], at: body + m.index + m[0].indexOf('"') }));
+      }),
+    ];
+    case "rs": return [
+      ...findAll(RS_MOD, code, 1).map((f) => ({ ...f, spec: `self::${f.spec}` })),
+      ...findAll(RS_USE, code, 1).map((f) => ({ ...f, spec: f.spec.replace(/::$/, "") })),
+    ];
+  }
+}
+
+export function parseImports(path: string, text: string): ImportRef[] {
+  const language = LANGUAGE_OF[extensionOf(path)];
+  if (!language) return [];
+  const normalized = text.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  const { code, strings } = blankCommentsKeepingOffsets(normalized, SYNTAX[language]);
+  const lineStarts = [0];
+  for (let i = 0; i < normalized.length; i++) if (normalized[i] === "\n") lineStarts.push(i + 1);
+  const lineOf = (at: number) => {
+    let lo = 0, hi = lineStarts.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lineStarts[mid] <= at) lo = mid; else hi = mid - 1; }
+    return lo + 1;
+  };
+  const insideString = (at: number) => strings.some(([from, to]) => at > from && at <= to);
+  return findImports(language, code)
+    .filter((found) => !insideString(found.at))
+    .sort((a, b) => a.at - b.at)
+    .map((found) => ({ spec: found.spec, line: lineOf(found.at) }));
 }
