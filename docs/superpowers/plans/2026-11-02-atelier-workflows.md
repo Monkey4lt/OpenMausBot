@@ -71,7 +71,7 @@
 
 ---
 
-### Task 4 : Routes d'édition (B1, serveur)
+### Task 4 (fait) : Routes d'édition (B1, serveur)
 
 **Files:** Create `server/workflows/routes.ts` — Modify `server/index.ts` (montage, `createWorkflowStore(DATA_DIR)` au démarrage + `failInterruptedRuns("restart")`) — Test `server/workflows/routes.test.ts`
 
@@ -86,9 +86,12 @@
   - Corps ≤ 2 Mo. Hors `CLIENT_ALLOW`.
 - Événement temps réel `{ kind: "workflow", id, rev }` via `broadcast` pour un deuxième onglet.
 
-- [ ] **Step 1: Write the failing tests** — `it("saves a draft with problems and returns them")`, `it("answers 409 with the saved rev on a stale baseRev")`, `it("answers 400 with issues on a malformed workflow")`, `it("deletes a workflow and its runs")`, `it("is not reachable by a client token")` (contrôle `CLIENT_ALLOW`).
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS + `pnpm typecheck`.
-- [ ] **Step 5:** Commit `feat(workflows): edit routes`.
+- [x] **Step 1: Write the failing tests** — `it("saves a draft with problems and returns them")`, `it("answers 409 with the saved rev on a stale baseRev")`, `it("answers 400 with issues on a malformed workflow")`, `it("deletes a workflow and its runs")`, `it("is not reachable by a client token")` (contrôle `CLIENT_ALLOW`).
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS (9) + `tsc` sur les fichiers neufs (`pnpm typecheck` impossible ici : registre npm bloqué).
+- [x] **Step 5:** Commit `feat(workflows): edit routes`.
+
+**Livré :** montage par `server/workflows/host.ts` (`createWorkflowHost({ dataDir, language, botExists, broadcast })`, une ligne dans `index.ts`) ; trame `{ kind: "workflow", id, rev }` (`rev` 0 : supprimé) ajoutée à `ServerFrame` ; l'id du chemin l'emporte sur celui du corps ; `DELETE` sans `baseRev` accepté ; textes serveur `server.workflow.*` (fr/en).
+
 
 ### Task 5 : Éditeur sur la toile (B1, interface)
 

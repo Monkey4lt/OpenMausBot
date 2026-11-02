@@ -6,6 +6,7 @@ import type { ApprovalMode } from "./approval-mode.ts";
 import type { ToolScope } from "./tool-scope.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { TurnDigest } from "./digest.ts";
+import type { WorkflowRun } from "./workflows.ts";
 import type { BotAvatarCrop, MascotFaceColor } from "./bot-avatar.ts";
 import type { BotBodyId } from "./bot-body.ts";
 import type { ReplyStyle } from "./reply-style.ts";
@@ -971,6 +972,10 @@ export type ServerFrame =
   | { kind: "notifications.read"; threadId: string; ids: string[] }
   /** The Projects map was saved; admin streams only. */
   | { kind: "projects.changed"; rev: number }
+  /** A workflow was saved (its new rev) or deleted (rev 0); admin streams only. */
+  | { kind: "workflow"; id: string; rev: number }
+  /** A workflow run started, moved on a step, or ended; admin streams only. */
+  | { kind: "workflow-run"; run: WorkflowRun }
   | { kind: "group.deleted"; groupId: string }
   | { kind: "routine"; routine: Routine }
   | { kind: "routine.deleted"; routineId: string }
