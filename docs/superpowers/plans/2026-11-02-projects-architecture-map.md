@@ -55,7 +55,7 @@
 - Consumes : `createProjectRoutes({ dataDir }): RouteHandler` (`server/routes/projects.ts`), `PASS` (`server/routes/table.ts`).
 - Produces : un helper de test local `call(route, method, path, body?) → { status, body }` construit sur des `req`/`res` factices, réutilisé en tâche 13.
 
-- [ ] **Step 1 : Write the failing tests**
+- [x] **Step 1 : Write the failing tests**
 
 ```ts
 it("GET /api/projects on an empty data dir returns no sources and no projects", async () => {
@@ -70,10 +70,10 @@ it("an unreadable source is reported in errors, other sources still load", async
 it("other paths PASS", async () => { expect(await route(ctx("GET", "/api/other"))).toBe(PASS); });
 ```
 
-- [ ] **Step 2 :** `pnpm vitest run server/routes/projects.test.ts` → les tests qui touchent un comportement manquant échouent (attendu : l'erreur de source inexistante n'est pas reportée car `scanLocalLines` renvoie `[]`).
-- [ ] **Step 3 :** Dans `scanSource`, une source locale dont le dossier n'existe pas lève `Error("Folder not found: <path>")`.
-- [ ] **Step 4 :** Relancer → PASS.
-- [ ] **Step 5 :** Commit `test(projects): cover the projects routes`.
+- [x] **Step 2 :** `pnpm vitest run server/routes/projects.test.ts` → les tests qui touchent un comportement manquant échouent (attendu : l'erreur de source inexistante n'est pas reportée car `scanLocalLines` renvoie `[]`).
+- [x] **Step 3 :** Dans `scanSource`, une source locale dont le dossier n'existe pas lève `Error("Folder not found: <path>")`.
+- [x] **Step 4 :** Relancer → PASS.
+- [x] **Step 5 :** Commit `test(projects): cover the projects routes`.
 
 ### Task 3: Tests du module GitHub
 

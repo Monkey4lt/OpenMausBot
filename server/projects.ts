@@ -2,7 +2,7 @@
 // SSH host, or a GitHub account or repository) becomes a block with its full file tree. Groups, links and block
 // positions are the person's layout, kept in projects-map.json in the data dir.
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -179,6 +179,11 @@ export function projectsFromLines(sourceId: string, lines: readonly string[]): P
 export async function scanSource(source: ProjectSource): Promise<Project[]> {
   const lines = source.kind === "ssh" ? await scanSshLines(source.host!, source.path)
     : source.kind === "github" ? await scanGithubLines(source.path.replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "").replace(/\.git$|\/$/g, ""))
-    : scanLocalLines(source.path.replace(/^~(?=$|\/)/, homedir()));
+    : scanLocalLines(existingFolder(source.path.replace(/^~(?=$|\/)/, homedir())));
   return projectsFromLines(source.id, lines);
+}
+
+function existingFolder(path: string): string {
+  if (!statSync(path, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`Folder not found: ${path}`);
+  return path;
 }
