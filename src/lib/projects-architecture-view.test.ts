@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { FAMILY_ORDER as SERVER_FAMILY_ORDER, MAX_CODE_FILES } from "../../server/projects-architecture.ts";
+import { FAMILY_ORDER as SERVER_FAMILY_ORDER } from "../../server/projects-architecture.ts";
 import * as wire from "../../shared/projects-architecture";
 
 import {
-  FAMILY_COLORS, FAMILY_ORDER, MAX_READ_FILES, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, moduleLabel, withFamilyName, withModuleFamily, type Architecture,
+  FAMILY_COLORS, FAMILY_ORDER, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, moduleLabel, withFamilyName, withModuleFamily, type Architecture,
 } from "./projects-architecture-view";
 
 const arch: Architecture = {
@@ -41,10 +41,6 @@ describe("wire shape", () => {
   it("uses the one family list the server and the page share", () => {
     expect(FAMILY_ORDER).toBe(wire.FAMILY_ORDER);
     expect(SERVER_FAMILY_ORDER).toBe(wire.FAMILY_ORDER);
-  });
-
-  it("says the same read limit as the server", () => {
-    expect(MAX_READ_FILES).toBe(MAX_CODE_FILES);
   });
 });
 

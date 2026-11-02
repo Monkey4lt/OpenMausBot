@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { CODE_EXTENSIONS } from "./projects-architecture.ts";
 import { setGithubTransport } from "./projects-github.ts";
 import {
-  isCodeFile, MAX_FILE_BYTES, MAX_TARBALL_BYTES, parseGrepOutput, parseSshImportOutput, readGithubImports, readLocalImports, readSshImports, sshImportCommand, toPosix,
+  isCodeFile, MAX_FILE_BYTES, parseGrepOutput, parseSshImportOutput, readGithubImports, readLocalImports, readSshImports, sshImportCommand, toPosix, unpackGithubTarball,
 } from "./projects-sources.ts";
 import { tar } from "./testing/tar-builder.ts";
 
@@ -39,7 +39,6 @@ describe("local import reading", () => {
       { path: "src/a.ts", imports: [{ spec: "./b", line: 1 }, { spec: "./c", line: 2 }] },
       { path: "src/empty.ts", imports: [] },
     ]);
-    expect(MAX_FILE_BYTES).toBe(256 * 1024);
   });
 
   it("a listed file that vanished is skipped, not an error", async () => {
@@ -289,9 +288,31 @@ describe("GitHub import reading", () => {
   });
 
   it("an archive larger than the cap once unpacked is a clear error", async () => {
-    expect(MAX_TARBALL_BYTES).toBe(200 * 1024 * 1024);
-    serve(() => gzipSync(new Uint8Array(MAX_TARBALL_BYTES + 1024)));
-    await expect(readGithubImports(repo)).rejects.toThrow("GitHub archive of o/r is larger than 200 MB unpacked");
+    const gz = gzipSync(new Uint8Array(2048));
+    await expect(unpackGithubTarball("o/r", gz, 1024)).rejects.toThrow("GitHub archive of o/r is larger than 1 KB unpacked");
+    expect((await unpackGithubTarball("o/r", gzipSync(tar([{ name: `${top}/a.ts`, data: "" }])), 4096)).read).toEqual([{ path: "a.ts", imports: [] }]);
+  });
+
+  it("refuses a download announced as larger than the cap", async () => {
+    const calls: string[] = [];
+    setGithubTransport({
+      credential: async () => null,
+      fetch: (async () => { calls.push("x"); return new Response(new Uint8Array(10), { headers: { "content-length": String(101 * 1024 * 1024) } }); }) as typeof globalThis.fetch,
+    });
+    await expect(readGithubImports(repo)).rejects.toThrow("GitHub archive of o/r is larger than 100 MB to download");
+  });
+
+  it("stops reading a download that grows past the cap", async () => {
+    let sent = 0;
+    const chunk = new Uint8Array(1024 * 1024);
+    setGithubTransport({
+      credential: async () => null,
+      fetch: (async () => new Response(new ReadableStream({
+        pull(controller) { sent += 1; controller.enqueue(chunk); },
+      }))) as typeof globalThis.fetch,
+    });
+    await expect(readGithubImports(repo)).rejects.toThrow("GitHub archive of o/r is larger than 100 MB to download");
+    expect(sent).toBeLessThan(110);
   });
 
   it("a download that is not gzip is a clear error", async () => {

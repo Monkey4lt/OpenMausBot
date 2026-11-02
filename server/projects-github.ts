@@ -113,9 +113,29 @@ async function gh<T>(path: string, auth: string | null, retryAnonymous = true): 
 }
 
 /** The gzipped tarball of `ref`; the API answers with a redirect to codeload.github.com, which fetch follows. */
-export async function githubTarball(fullName: string, ref: string): Promise<Uint8Array> {
+export async function githubTarball(fullName: string, ref: string, maxBytes: number): Promise<Uint8Array> {
   const res = await ghResponse(`/repos/${repoPath(fullName)}/tarball/${encodeURIComponent(ref)}`, await token(), true, 120_000);
-  return new Uint8Array(await res.arrayBuffer());
+  const tooLarge = () => new Error(`GitHub archive of ${fullName} is larger than ${maxBytes / (1024 * 1024)} MB to download`);
+  if (Number(res.headers.get("content-length") ?? 0) > maxBytes) {
+    await res.body?.cancel().catch(() => undefined);
+    throw tooLarge();
+  }
+  if (!res.body) return new Uint8Array(0);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = res.body.getReader();
+  for (let part = await reader.read(); !part.done; part = await reader.read()) {
+    size += part.value.length;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    chunks.push(part.value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) { out.set(chunk, at); at += chunk.length; }
+  return out;
 }
 
 interface ApiRepo { name: string; full_name: string; default_branch: string; pushed_at: string; owner: { login: string } }

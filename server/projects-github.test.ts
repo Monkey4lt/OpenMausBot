@@ -137,7 +137,7 @@ describe("projects GitHub source", () => {
       : { body: { tree: [] } }));
     await githubRepo("o/a b");
     await githubRepoLines({ name: "r", fullName: "o/x?y", defaultBranch: "feat/x", pushedAt: "1" });
-    await githubTarball("o/x#y", "feat/x").catch(() => null);
+    await githubTarball("o/x#y", "feat/x", 1024).catch(() => null);
     await listGithubRepos("o/a%b");
     expect(calls.map((c) => c.path)).toEqual([
       "/repos/o/a%20b",

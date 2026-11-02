@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { lstat, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { promisify } from "node:util";
+import { gunzip } from "node:zlib";
 
 import { aliasesFromTsconfig, CODE_EXTENSIONS, MAX_CODE_FILES, parseImports, type FileImports } from "./projects-architecture.ts";
 import { cachedForPush, githubTarball, type GithubRepo } from "./projects-github.ts";
@@ -161,16 +162,24 @@ export async function readSshImports(host: string, projectPath: string, run: Ssh
 }
 
 export const MAX_TARBALL_BYTES = 200 * 1024 * 1024;
-const MB = 1024 * 1024;
+const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 const CONFIG_FILES = new Set(["tsconfig.json", "tsconfig.app.json", "go.mod"]);
 
-function unpackGithubTarball(fullName: string, gz: Uint8Array): ImportSet {
+const gunzipAsync = promisify(gunzip);
+
+export function formatBytes(bytes: number): string {
+  const MB = 1024 * 1024;
+  if (bytes >= MB && bytes % MB === 0) return `${bytes / MB} MB`;
+  return bytes >= 1024 && bytes % 1024 === 0 ? `${bytes / 1024} KB` : `${bytes} bytes`;
+}
+
+export async function unpackGithubTarball(fullName: string, gz: Uint8Array, maxBytes = MAX_TARBALL_BYTES): Promise<ImportSet> {
   let tarBytes: Uint8Array;
   try {
-    tarBytes = gunzipSync(gz, { maxOutputLength: MAX_TARBALL_BYTES });
+    tarBytes = await gunzipAsync(gz, { maxOutputLength: maxBytes });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") {
-      throw new Error(`GitHub archive of ${fullName} is larger than ${MAX_TARBALL_BYTES / MB} MB unpacked`);
+    if ((error as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE" || error instanceof RangeError) {
+      throw new Error(`GitHub archive of ${fullName} is larger than ${formatBytes(maxBytes)} unpacked`);
     }
     throw new Error(`GitHub archive of ${fullName} could not be read`);
   }
@@ -191,5 +200,5 @@ function unpackGithubTarball(fullName: string, gz: Uint8Array): ImportSet {
 }
 
 export function readGithubImports(repo: GithubRepo): Promise<ImportSet> {
-  return cachedForPush(repo, "imports", async () => unpackGithubTarball(repo.fullName, await githubTarball(repo.fullName, repo.defaultBranch)));
+  return cachedForPush(repo, "imports", async () => unpackGithubTarball(repo.fullName, await githubTarball(repo.fullName, repo.defaultBranch, MAX_DOWNLOAD_BYTES)));
 }
