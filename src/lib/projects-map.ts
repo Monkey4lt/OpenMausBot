@@ -6,13 +6,6 @@ export type Rect = { x: number; y: number; w: number; h: number };
 export const BLOCK_W = 320;
 const DEFAULT_BLOCK_H = 120;
 
-/** A dot grid in the theme's hairline color; `local` makes it scroll with the map. */
-export const DOT_GRID_STYLE = {
-  backgroundImage: "radial-gradient(circle at 1px 1px, var(--color-hairline) 1px, transparent 1.5px)",
-  backgroundSize: "22px 22px",
-  backgroundAttachment: "local",
-} as const;
-
 export function edgePoint(from: Rect, to: Rect, gap = 8): [number, number] {
   const ax = from.x + from.w / 2, ay = from.y + from.h / 2, dx = to.x + to.w / 2 - ax, dy = to.y + to.h / 2 - ay;
   if (!dx && !dy) return [ax, ay];

@@ -2832,6 +2832,7 @@
   "projects.map.error": "Impossible de dessiner la carte : {message}",
   "projects.map.retry": "Réessayer",
   "projects.map.empty": "Rien à montrer ici.",
+  "projects.map.canvas": "Carte du projet",
   "projects.map.pickFile": "Choisissez un fichier pour voir ce qu’il utilise et qui l’utilise.",
   "projects.map.fileList": "Fichiers de {name}",
   "projects.map.brief": "En bref",

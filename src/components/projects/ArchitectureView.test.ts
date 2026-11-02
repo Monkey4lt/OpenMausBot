@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadLocale, setLocale } from "@/lib/i18n";
 import { levelOf, type Architecture, type ArchitectureWithPieces } from "@/lib/projects-architecture-view";
-import { ArchitectureView } from "./ArchitectureView";
+import { fitRects, worldToScreen } from "@/lib/canvas/geometry";
+import { ArchitectureView, mapLayout } from "./ArchitectureView";
 
 const arch: Architecture = {
   families: [
@@ -58,9 +59,40 @@ describe("ArchitectureView", () => {
     const html = render();
     expect(html).toContain("Retour aux projets");
     expect(html).toContain(">api<");
-    expect(html.match(/data-edge="ui-&gt;server"/g)).toHaveLength(1);
+    expect(html.match(/data-canvas-edge="ui-&gt;server"/g)).toHaveLength(1);
     expect(html).toContain('stroke-width="3"');
-    expect(html).toContain("animate-link-flow");
+    expect(html).toMatch(/marker-end="url\(#[^"]*-default\)"/);
+  });
+
+  it("the detailed map is the shared canvas, read-only: no block can be dragged", () => {
+    const html = render();
+    expect(html).toContain('data-canvas="true"');
+    expect(html).toContain('data-readonly="true"');
+    expect(html).toContain('data-canvas-node="ui"');
+    expect(html).not.toContain("cursor-grab");
+    expect(html).toContain('aria-label="Afficher la mini-carte"');
+    expect(html).not.toContain('aria-label="Crayon"');
+  });
+
+  it("import links are solid and piece links dashed in the accent colour", () => {
+    const html = render({ initial: { ...withPieces, edges: [...arch.edges, { level: "family" as const, from: "server", to: "ui", weight: 1 }], pieceLinks: [{ from: "api", to: "ui", count: 1, examples: [] }] } });
+    const imports = renderToStaticMarkup(createElement(ArchitectureView, { project, onBack: () => {}, initial: arch }));
+    expect(imports).toMatch(/data-edge-line[^>]*stroke-width="3"/);
+    expect(imports).not.toContain("stroke-dasharray");
+    expect(html).toMatch(/data-edge-line[^>]*stroke-dasharray="4 4"[^>]*stroke:var\(--color-accent\)/);
+  });
+
+  it("fitting frames every block of the level", () => {
+    const viewport = { w: 900, h: 500 };
+    for (const focus of [{}, { family: "ui" as const }]) {
+      const { rects } = mapLayout(withPieces, focus, undefined);
+      const view = fitRects(Object.values(rects), viewport);
+      for (const r of Object.values(rects)) {
+        const a = worldToScreen(view, r), b = worldToScreen(view, { x: r.x + r.w, y: r.y + r.h });
+        expect(a.x).toBeGreaterThanOrEqual(0); expect(a.y).toBeGreaterThanOrEqual(0);
+        expect(b.x).toBeLessThanOrEqual(viewport.w); expect(b.y).toBeLessThanOrEqual(viewport.h);
+      }
+    }
   });
 
   it("lists outside tools at the family level", () => {
@@ -104,10 +136,10 @@ describe("ArchitectureView", () => {
   it("merges links both ways between two families into one double-headed arrow", () => {
     const both = { ...arch, edges: [...arch.edges, { level: "family" as const, from: "server", to: "ui", weight: 2 }] };
     const html = render({ initial: both });
-    expect(html.match(/data-edge=/g)).toHaveLength(1);
-    expect(html).toContain('data-edge="ui&lt;-&gt;server"');
-    expect(html).toContain('marker-start="url(#pa-arrow)"');
-    expect(html).toContain(">6</text>");
+    expect(html.match(/data-canvas-edge=/g)).toHaveLength(1);
+    expect(html).toContain('data-canvas-edge="ui&lt;-&gt;server"');
+    expect(html).toMatch(/marker-start="url\(#[^"]*-default\)"/);
+    expect(html).toContain(">6</span>");
   });
 
   it("shows each family with its own icon, never two letters, and no all-caps labels", () => {
@@ -197,13 +229,12 @@ describe("ArchitectureView", () => {
       pieces: [withPieces.pieces[1]!, { ...withPieces.pieces[2]!, modules: ["(root)/config", "server/routes"] }],
       pieceLinks: [{ from: "api", to: "database", count: 2, examples: [] }],
     };
-    expect(render({ initial: mixed })).not.toContain("data-piece-arrow");
+    expect(render({ initial: mixed })).not.toMatch(/data-edge-line[^>]*stroke:var\(--color-accent\)/);
     const apart: ArchitectureWithPieces = { ...withPieces };
     const html = render({ initial: apart });
-    expect(html).toContain('data-piece-arrow="ui-&gt;api"');
-    expect(html.match(/stroke-dasharray="2 5"/g)).toHaveLength(1);
-    expect(html).not.toContain('stroke-dasharray="6 4"');
-    expect(html).toContain("stroke:var(--color-accent)");
+    expect(html).toContain('data-canvas-edge="ui-&gt;server"');
+    expect(html.match(/stroke-dasharray="4 4"/g)).toHaveLength(1);
+    expect(html).toMatch(/data-edge-line[^>]*stroke-dasharray="4 4"[^>]*stroke:var\(--color-accent\)/);
   });
 
   it("draws piece links with the legend", () => {

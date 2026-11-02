@@ -7414,6 +7414,7 @@
   "projects.map.error": "Could not draw the map: {message}",
   "projects.map.retry": "Try again",
   "projects.map.empty": "Nothing to show here.",
+  "projects.map.canvas": "Project map",
   "projects.map.pickFile": "Choose a file to see what it uses and what uses it.",
   "projects.map.fileList": "Files of {name}",
   "projects.map.brief": "In short",
