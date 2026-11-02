@@ -16,6 +16,16 @@ describe("readTar", () => {
     expect(text(out)).toEqual([{ path: "a.ts", data: 'import "./b";' }, { path: long, data: "x".repeat(600) }]);
   });
 
+  it("PAX record lengths count bytes, so a multibyte path is read whole", () => {
+    const long = `${"é/".repeat(60)}ü.ts`;
+    const out = readTar(tar([
+      { name: "PaxHeader", type: "x", data: pax({ path: long, comment: "ça" }) },
+      { name: "short", data: "x" },
+      { name: "b.ts", data: "b" },
+    ]));
+    expect(text(out)).toEqual([{ path: long, data: "x" }, { path: "b.ts", data: "b" }]);
+  });
+
   it("joins the ustar prefix and the name", () => {
     expect(text(readTar(tar([{ name: "c.ts", prefix: "repo/src/lib", data: "c" }])))).toEqual([{ path: "repo/src/lib/c.ts", data: "c" }]);
   });

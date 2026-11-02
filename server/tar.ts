@@ -25,16 +25,21 @@ function checksumOk(header: Uint8Array): boolean {
   return sum === octal(header, 148, 8);
 }
 
+const SPACE = 0x20;
+const NEWLINE = 0x0a;
+const PATH_KEY = new TextEncoder().encode("path=");
+
+/** POSIX pax: each record is "<length> <key>=<value>\\n" and the length counts bytes, not characters. */
 function paxPath(data: Uint8Array): string | null {
-  const text = decoder.decode(data);
   let at = 0;
   let path: string | null = null;
-  while (at < text.length) {
-    const space = text.indexOf(" ", at);
-    const len = Number(text.slice(at, space));
-    if (space < 0 || !Number.isInteger(len) || len <= 0) break;
-    const record = text.slice(space + 1, at + len - 1);
-    if (record.startsWith("path=")) path = record.slice(5);
+  while (at < data.length) {
+    const space = data.indexOf(SPACE, at);
+    if (space < 0) break;
+    const len = Number(decoder.decode(data.subarray(at, space)));
+    if (!Number.isInteger(len) || len <= space - at || at + len > data.length || data[at + len - 1] !== NEWLINE) break;
+    const record = data.subarray(space + 1, at + len - 1);
+    if (PATH_KEY.every((byte, i) => record[i] === byte)) path = decoder.decode(record.subarray(PATH_KEY.length));
     at += len;
   }
   return path;

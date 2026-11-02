@@ -40,8 +40,9 @@ export function tar(entries: Entry[], end = 2): Uint8Array {
 export function pax(records: Record<string, string>): string {
   return Object.entries(records).map(([k, v]) => {
     const body = ` ${k}=${v}\n`;
-    let len = body.length + 1;
-    while (`${len}${body}`.length !== len) len = `${len}${body}`.length;
+    const bytes = (text: string) => new TextEncoder().encode(text).length;
+    let len = bytes(body) + 1;
+    while (bytes(`${len}${body}`) !== len) len = bytes(`${len}${body}`);
     return `${len}${body}`;
   }).join("");
 }
