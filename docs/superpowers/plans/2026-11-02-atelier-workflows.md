@@ -175,7 +175,15 @@
 - Produces: `POST /api/workflows/:id/run` → `{ run }` ; `POST /api/workflows/:id/run-step` `{ nodeId }` ; `POST /api/workflows/runs/:runId/retry` `{ nodeId }` ; `POST /api/workflows/runs/:runId/cancel` ; `GET /api/workflows/:id/runs` (historique) ; `GET /api/workflows/runs/:runId`. Événement `{ kind: "workflow-run", run }`.
 - Interface : blocs colorés par `StepStatus` (en attente, en cours, réussi, échoué, ignoré — jetons de thème) ; clic → entrée/sortie gardées (4 Ko), coût ou « coût inconnu » ; « Lancer », « Lancer cette étape », « Réessayer cette étape », « Arrêter » ; historique des exécutions.
 
-- [ ] Tests (`it("run answers 400 with problems for an invalid workflow")`, `it("a second run of the same workflow answers 409")`, `it("cancel answers 404 for an unknown run")`, rendu des couleurs) → FAIL → implémenter → PASS + `verify-omb` (moteur factice) → commit `feat(workflows): run routes and run colours`.
+- [x] **Serveur** : tests (`it("run answers 400 with problems for an invalid workflow")`, `it("a second run of the same workflow answers 409")`, `it("cancel answers 404 for an unknown run, and stops a running one")`, + `server/workflows/host.test.ts`) → FAIL → implémenter → PASS (routes 16, hôte 10) → commit `feat(workflows): run routes and live frames`.
+- [ ] `verify-omb` (moteur factice) : pas possible dans ce bac à sable (dépendances absentes, p. ex. `tldts`, le serveur ne démarre pas) — à faire.
+- [ ] **Interface** (couleurs, panneau d'étape, boutons, historique) → commit `feat(workflows): run colours`.
+
+**Livré (serveur) :**
+- Routes (hors `CLIENT_ALLOW`) : `POST /api/workflows/:id/run {text?}` → `{ run }` | 400 `{ error, problems }` | 404 | 409 `{ error, runId }` ; `POST /api/workflows/:id/run-step {nodeId}` → `{ run }` ; `POST /api/workflows/runs/:runId/retry {nodeId}` → `{ run }` (nouvelle exécution) ; `POST /api/workflows/runs/:runId/cancel` → `{ ok: true }` | 404 ; `GET /api/workflows/:id/runs` → `{ runs }` (plus récentes d'abord) ; `GET /api/workflows/runs/:runId` → `{ run }` | 404 ; sans moteur branché → 503. `DELETE` d'un workflow en cours arrête d'abord son exécution.
+- Trames (flux admin) : `{ kind: "workflow-run", run: WorkflowRun }` à chaque changement (début, chaque étape, fin) ; `{ kind: "workflow", id, rev }`.
+- `server/workflows/host.ts` branche `StepDeps` : IA / Condition → `sideJobs.text("workflow", <MausBot>, { instance })` (nouvelle tâche annexe `"workflow"`, appel ponctuel sans outils, comptée et plafonnée comme les autres ; `model` du bloc = `instanceId[/modèle]`, coût lu des `onUsage`, `null` si un rapport manque) ; Bot → `store.createTask` + `startTurn(…, { automationSource: "webhook", onSettled })` (enveloppe de données du système, `WEBHOOK_PROMPT` nomme maintenant les blocs `USER-CONFIGURED WORKFLOW INSTRUCTIONS` / `UNTRUSTED WORKFLOW STEP DATA`), arrêt → `interruptDirectThread`, coût lu dans le registre d'usage du fil (`null` si rien ou non chiffré) ; Approbation → carte Allow/Deny (`tool: "workflow_approval"`, `outboundRequest`) dans la discussion de MausBot via `OutboundRequestService` (24 h) + notification `approval` ; Envoyer → notification `notice` ou message du bot ; échec → notification `routine-failed` « Le workflow {name} a échoué à l'étape {step} » (`server.workflow.failed`, nom du bloc par sa sorte, fr/en).
+
 
 ---
 
@@ -217,9 +225,19 @@
 
 ---
 
+## Décisions (coordinateur, 2026-11-02)
+
+1. IA et Condition sans modèle choisi : le moteur des tâches annexes (`server/side-jobs.ts`) du MausBot de l'endroit (à défaut, son premier bot affiché) : son propre moteur s'il a un appel ponctuel, sinon le modèle d'aide (`helper`). Le coût est compté et plafonné comme les autres tâches annexes.
+2. Condition et Approbation transmettent leur propre entrée à la branche prise. Confirmé.
+3. Budget global : `assertWithinBudget(cfg, DATA_DIR)` (`server/spend.ts`) existe ; `budgetAllows()` l'appelle avant chaque étape (et chaque appel d'IA annexe le vérifie aussi).
+4. Les blocs Bot agissent au niveau d'accès de leur bot sans demander (choix explicite de l'utilisateur) ; le texte des fils entre comme **données** par le mécanisme `automationSource` existant (source `"webhook"` : tour marqué « sans personne », jamais en Auto hérité).
+5. Limites par exécution : `maxSteps`, `maxCostUsd` ; un coût inconnu reste inconnu, jamais zéro ; arrêt dès que le total connu dépasse la limite.
+6. Échec : notification existante « Le workflow {nom} a échoué à l'étape {bloc} » (fr/en).
+7. Routes réservées au propriétaire (hors `CLIENT_ALLOW`), sur le modèle `server/routes/*.ts`.
+
 ## Questions ouvertes
 
 1. Déclencheur `ai-reset` : quel moteur surveiller ? Le schéma n'a pas encore de champ (`engine?` à ajouter en Task 11).
-2. Contrôle du budget global de l'appli : le point d'entrée exact reste à identifier (Task 8).
-3. Condition et IA sans bot choisi : quel moteur/modèle par défaut pour `generateText` (le bot par défaut de l'appli ?).
-4. Sortie d'une Condition / Approbation sur « Oui » / « Non » : le texte transmis est l'entrée du bloc (choix de ce plan) ; à confirmer.
+2. Bloc Bot : le réglage `model` n'est pas encore appliqué (le tour part sur le modèle du bot).
+3. La carte d'approbation montre un extrait (400 caractères, nettoyé) des données dans la discussion de MausBot : vérifier que le modèle de MausBot ne lit pas ces cartes comme consignes ; une carte rendue « indisponible » par l'arrêt d'un tour de MausBot laisse l'étape attendre jusqu'à 24 h.
+4. Notification d'échec : pas encore de lien direct vers l'exécution (la notification ouvre la discussion de MausBot).

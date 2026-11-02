@@ -12,8 +12,8 @@ export interface StepDeps {
    * engine the app uses for its side jobs. */
   generateText(input: { prompt: string; model?: string; signal: AbortSignal }): Promise<{ text: string; costUsd: Cost }>;
   /** A turn of `botId` at its own access level, without asking; resolves with its final reply. */
-  runBot(input: { botId: string; model?: string; prompt: string; runId: string; signal: AbortSignal }): Promise<{ text: string; costUsd: Cost }>;
-  askApproval(input: { message: string; data: string; runId: string; nodeId: string; signal: AbortSignal; timeoutMs: number }): Promise<"yes" | "no" | "timeout">;
+  runBot(input: { botId: string; model?: string; prompt: string; runId: string; workflowName: string; signal: AbortSignal }): Promise<{ text: string; costUsd: Cost }>;
+  askApproval(input: { message: string; data: string; runId: string; nodeId: string; workflowName: string; signal: AbortSignal; timeoutMs: number }): Promise<"yes" | "no" | "timeout">;
   notify(input: { title: string; body: string; runId: string }): Promise<void>;
   postToBotChat(input: { botId: string; text: string }): Promise<void>;
 }
@@ -106,6 +106,7 @@ export async function runStep(node: WorkflowNode, input: string, deps: StepDeps,
         ...(node.data.model ? { model: node.data.model } : {}),
         prompt: botPrompt(node.data.instruction, input),
         runId: ctx.runId,
+        workflowName: ctx.workflowName,
         signal,
       });
       return { port: "out", output: text, costUsd };
@@ -117,7 +118,7 @@ export async function runStep(node: WorkflowNode, input: string, deps: StepDeps,
       return { port: answer, output: input, costUsd };
     }
     case "approval": {
-      const answer = await deps.askApproval({ message: node.data.message, data: input, runId: ctx.runId, nodeId: node.id, signal, timeoutMs: APPROVAL_TIMEOUT_MS });
+      const answer = await deps.askApproval({ message: node.data.message, data: input, runId: ctx.runId, nodeId: node.id, workflowName: ctx.workflowName, signal, timeoutMs: APPROVAL_TIMEOUT_MS });
       if (answer === "timeout") throw new StepError(line("server.workflow.noApproval"));
       return { port: answer, output: input, costUsd: 0 };
     }

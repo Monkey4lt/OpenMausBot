@@ -1,6 +1,7 @@
 import type { RunStatus, Workflow } from "../../shared/workflows.ts";
 import { PASS, type RouteContext, type RouteHandler } from "../routes/table.ts";
 import { validateWorkflow, type Problem } from "./graph.ts";
+import { WorkflowBusyError, WorkflowInvalidError, WorkflowNotFoundError, type WorkflowRunner } from "./runner.ts";
 import { WorkflowConflictError, WorkflowInputError, type WorkflowStore } from "./store.ts";
 
 export interface WorkflowSummary {
@@ -15,6 +16,8 @@ export interface WorkflowSummary {
 export interface WorkflowRouteDeps {
   store: WorkflowStore;
   botExists(id: string): boolean;
+  /** Absent: the run routes answer 503. */
+  runner?: WorkflowRunner;
   /** After a save or a delete; `rev` 0 means the workflow is gone. */
   onChanged?(id: string, rev: number): void;
 }
@@ -28,8 +31,16 @@ const ID = /^[\w-]{1,64}$/;
  * POST   /api/workflows {workflow}         → 200 { workflow, problems } | 400 { error, issues }
  * GET    /api/workflows/:id                → { workflow, problems } | 404
  * PUT    /api/workflows/:id {workflow, baseRev} → 200 { workflow, problems } | 409 { error, rev } | 400 { error, issues }
- * DELETE /api/workflows/:id?baseRev=       → { ok: true } | 404 | 409 { error, rev }; its runs go with it
+ * DELETE /api/workflows/:id?baseRev=       → { ok: true } | 404 | 409 { error, rev }; stops its run, its runs go with it
  * A draft with problems is saved and its problems returned; only running it is refused.
+ *
+ * POST /api/workflows/:id/run {text?}            → { run } | 400 { error, problems } | 404 | 409 { error, runId }
+ * POST /api/workflows/:id/run-step {nodeId}      → { run }: that block alone, on its input from the last run
+ * POST /api/workflows/runs/:runId/retry {nodeId} → { run }: a new run, that block and everything after it again
+ * POST /api/workflows/runs/:runId/cancel         → { ok: true } | 404 when the run is not going on
+ * GET  /api/workflows/:id/runs                   → { runs } newest first
+ * GET  /api/workflows/runs/:runId                → { run } | 404
+ * Runs move on as `{ kind: "workflow-run", run }` frames.
  */
 export function createWorkflowRoutes(deps: WorkflowRouteDeps): RouteHandler {
   const { store } = deps;
@@ -56,8 +67,26 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): RouteHandler {
     }
   };
 
+  /** Answers the runner's refusals; anything else is thrown on. */
+  const runAnswer = (ctx: RouteContext, act: () => unknown) => {
+    if (!deps.runner) return ctx.json(ctx.res, 503, { error: "Workflows cannot run here" });
+    try {
+      return ctx.json(ctx.res, 200, { run: act() });
+    } catch (error) {
+      if (error instanceof WorkflowInvalidError) return ctx.json(ctx.res, 400, { error: error.message, problems: error.problems });
+      if (error instanceof WorkflowBusyError) return ctx.json(ctx.res, 409, { error: error.message, runId: error.runId });
+      if (error instanceof WorkflowNotFoundError) return ctx.json(ctx.res, 404, { error: error.message });
+      throw error;
+    }
+  };
+
   const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
   const validRev = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0;
+  const readObject = async (ctx: RouteContext): Promise<Record<string, unknown>> => {
+    const body = await ctx.readBody(ctx.req, MAX_BODY).catch(() => null);
+    return isObject(body) ? body : {};
+  };
+  const nodeIdOf = (body: Record<string, unknown>) => (typeof body.nodeId === "string" && ID.test(body.nodeId) ? body.nodeId : null);
 
   return async (ctx) => {
     const { path, method, req, res, json, readBody } = ctx;
@@ -71,9 +100,45 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): RouteHandler {
       }
       return PASS;
     }
-    const match = /^\/api\/workflows\/([^/]+)$/.exec(path);
-    if (!match || !ID.test(match[1]!)) return PASS;
-    const id = match[1]!;
+
+    const runPath = /^\/api\/workflows\/runs\/([\w-]{1,64})(?:\/(retry|cancel))?$/.exec(path);
+    if (runPath) {
+      const [, runId, action] = runPath as unknown as [string, string, "retry" | "cancel" | undefined];
+      if (!action && method === "GET") {
+        const run = store.getRun(runId);
+        return run ? json(res, 200, { run }) : json(res, 404, { error: "Unknown run" });
+      }
+      if (action === "cancel" && method === "POST") {
+        if (!deps.runner) return json(res, 503, { error: "Workflows cannot run here" });
+        return deps.runner.cancel(runId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "This run is not going on" });
+      }
+      if (action === "retry" && method === "POST") {
+        const nodeId = nodeIdOf(await readObject(ctx));
+        if (!nodeId) return json(res, 400, { error: "Expected { nodeId }" });
+        return runAnswer(ctx, () => deps.runner!.retryFrom(runId, nodeId));
+      }
+      return PASS;
+    }
+
+    const workflowPath = /^\/api\/workflows\/([\w-]{1,64})(?:\/(run|run-step|runs))?$/.exec(path);
+    if (!workflowPath) return PASS;
+    const [, id, action] = workflowPath as unknown as [string, string, "run" | "run-step" | "runs" | undefined];
+    if (action === "runs" && method === "GET") {
+      if (!store.get(id)) return json(res, 404, { error: "Unknown workflow" });
+      return json(res, 200, { runs: store.listRuns(id) });
+    }
+    if (action === "run" && method === "POST") {
+      const body = await readObject(ctx);
+      const text = typeof body.text === "string" ? body.text : undefined;
+      return runAnswer(ctx, () => deps.runner!.start(id, { source: "manual", ...(text !== undefined ? { text } : {}) }));
+    }
+    if (action === "run-step" && method === "POST") {
+      const nodeId = nodeIdOf(await readObject(ctx));
+      if (!nodeId) return json(res, 400, { error: "Expected { nodeId }" });
+      return runAnswer(ctx, () => deps.runner!.runStep(id, nodeId));
+    }
+    if (action) return PASS;
+
     if (method === "GET") {
       const workflow = store.get(id);
       if (!workflow) return json(res, 404, { error: "Unknown workflow" });
@@ -88,6 +153,10 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): RouteHandler {
       const raw = ctx.url.searchParams.get("baseRev");
       const baseRev = raw === null || raw === "" ? undefined : Number(raw);
       if (baseRev !== undefined && !validRev(baseRev)) return json(res, 400, { error: "Invalid baseRev" });
+      const existing = store.get(id);
+      if (!existing) return json(res, 404, { error: "Unknown workflow" });
+      if (baseRev !== undefined && baseRev !== existing.rev) return json(res, 409, { error: "This workflow changed elsewhere", rev: existing.rev });
+      for (const runId of deps.runner?.active() ?? []) if (store.getRun(runId)?.workflowId === id) deps.runner!.cancel(runId);
       try {
         if (!store.delete(id, baseRev)) return json(res, 404, { error: "Unknown workflow" });
       } catch (error) {

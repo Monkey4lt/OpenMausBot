@@ -18,7 +18,7 @@ export interface GraphContext {
   botExists(id: string): boolean;
 }
 
-const KIND_NAME: Record<NodeKind, { fr: string; en: string }> = {
+export const KIND_NAME: Record<NodeKind, { fr: string; en: string }> = {
   trigger: { fr: "Déclencheur", en: "Trigger" },
   ai: { fr: "IA", en: "AI" },
   bot: { fr: "Bot", en: "Bot" },
