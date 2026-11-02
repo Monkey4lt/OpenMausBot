@@ -8,18 +8,20 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
-import { prependComposerDraft } from "@/lib/drafts";
+import { leadComposerDraft } from "@/lib/drafts";
 import { t } from "@/lib/i18n";
 import { listenLiveFrames } from "@/lib/live-events";
 import { summaryPreview, type ArchOverrides } from "@/lib/projects-architecture-view";
 import { arrangeByGroup, edgePoint, groupZone } from "@/lib/projects-map";
 import { createMapSync } from "@/lib/projects-map-sync";
+import { panelDraft, panelLayout, readPanelOpen, writePanelOpen } from "@/lib/projects-panel";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { api } from "@/state/api";
 import { GROUP_PALETTE as PALETTE } from "../../shared/project-groups";
 import { openBot, useStore } from "@/state/store";
 
 import { ArchitectureView } from "./projects/ArchitectureView";
+import { ChatView } from "./ChatView";
 
 // ---------- types (mirror server/projects.ts) ----------
 interface ProjectNode { n: string; t: "d" | "f" | "more"; c?: ProjectNode[] }
@@ -267,6 +269,16 @@ export function ProjectsPage() {
   }, [sync]);
 
   const cartographe = data?.cartographeBotId ? appState.bots.find((bot) => bot.id === data.cartographeBotId) ?? null : null;
+  const [panelOpen, setPanelOpen] = useState(() => readPanelOpen(browserStorage()));
+  const width = useWindowWidth();
+  const togglePanel = useCallback((open: boolean, projectName?: string) => {
+    if (open && cartographe) leadComposerDraft(`bot:${cartographe.id}:${cartographe.threadId}`, panelDraft({ projectName }));
+    setPanelOpen(open);
+    writePanelOpen(browserStorage(), open);
+  }, [cartographe]);
+  const openInChat = useCallback(() => {
+    if (cartographe) openBot(dispatch, cartographe, showThreads);
+  }, [cartographe, dispatch, showThreads]);
 
   const projects = useMemo(() => data?.projects ?? [], [data]);
   const sourceLabel = useCallback((id: string) => S?.sources.find((s) => s.id === id)?.label ?? "", [S?.sources]);
@@ -417,7 +429,7 @@ export function ProjectsPage() {
           <ToolButton onClick={() => setZoom(zoom + 0.1)} label={t("projects.zoomIn")}><Plus size={15} /></ToolButton>
           <ToolButton onClick={() => void load()} label={t("projects.refresh")}><RefreshCw size={15} className={cn(loading && "animate-spin")} /></ToolButton>
           <ToolButton onClick={() => update((s) => ({ ...s, help: !s.help }))} label={t("projects.help.button")}><CircleHelp size={15} /></ToolButton>
-          <CartographeButton bot={cartographe} onAsk={(bot) => askCartographe(bot, { prependDraft: prependComposerDraft, showChat: () => dispatch({ type: "showChat" }), openBot: (opened) => openBot(dispatch, opened, showThreads) })} />
+          <CartographeButton bot={cartographe} onAsk={() => togglePanel(!panelOpen, mapOf?.name)} />
           <span className={cn("ml-1 flex min-w-[90px] items-center justify-end gap-1.5 text-[12px]", saveState === "error" ? "text-danger" : "text-ink-tertiary")}>
             {saveLabel && <span className={cn("size-[7px] rounded-full", saveState === "error" ? "bg-danger" : saveState === "saving" ? "bg-warning" : "bg-success")} />}{saveLabel}
           </span>
@@ -425,7 +437,7 @@ export function ProjectsPage() {
       </header>
       {mapChanged && <MapChangedNotice onClose={() => setMapChanged(false)} />}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         {/* pôles */}
         <aside className="flex w-56 shrink-0 flex-col border-r border-hairline/40 bg-panel">
           <div className="flex items-center justify-between px-4 pb-2 pt-4 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-tertiary">
@@ -456,7 +468,7 @@ export function ProjectsPage() {
         </aside>
 
         {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow}
-          onAskCartographe={cartographe ? () => askCartographe(cartographe, { prependDraft: prependComposerDraft, showChat: () => dispatch({ type: "showChat" }), openBot: (opened) => openBot(dispatch, opened, showThreads) }) : undefined} />}
+          onAskCartographe={cartographe ? () => togglePanel(true, mapOf.name) : undefined} />}
         {/* toile */}
         <div ref={wrapRef} className={cn("relative min-w-0 flex-1 overflow-auto", mapOf && "hidden")}
           style={{ backgroundImage: "linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)", backgroundSize: "28px 28px" }}>
@@ -568,6 +580,10 @@ export function ProjectsPage() {
             })}
           </div>
         </div>
+        {panelOpen && (
+          <CartographePanel botId={data?.cartographeBotId ?? null} bot={cartographe} width={width}
+            chat={cartographe ? <ChatView bot={cartographe} /> : null} onClose={() => togglePanel(false)} onOpenInChat={openInChat} />
+        )}
       </div>
 
       {linkFrom && (
@@ -607,12 +623,46 @@ export function ProjectsPage() {
 
 type CartographeBot = { id: string; threadId: string; mainThreadId?: string; tasks?: { threadId: string }[] };
 
-/** Opens the Cartographe's chat with a request ready in its composer, ahead of anything typed there. Never sends it. */
-export function askCartographe<B extends CartographeBot>(bot: B, deps: { prependDraft: (id: string, text: string) => void; showChat: () => void; openBot: (bot: B) => void }): void {
-  deps.prependDraft(`bot:${bot.id}:${bot.threadId}`, t("projects.cartographe.draft"));
-  deps.showChat();
-  deps.openBot(bot);
+function browserStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }
+
+function useWindowWidth(): number {
+  const [width, setWidth] = useState(() => (typeof window === "undefined" ? 1440 : window.innerWidth));
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return width;
+}
+
+/** The Cartographe's real chat beside the map, or over it on a narrow window; null without a Cartographe. */
+export function CartographePanel({ botId, bot, width, chat, onClose, onOpenInChat }: {
+  botId: string | null; bot: CartographeBot | null; width: number; chat: ReactNode; onClose: () => void; onOpenInChat: () => void;
+}) {
+  if (!botId) return null;
+  const layout = panelLayout(width);
+  return (
+    <aside className={layout.className} data-cartographe-panel={layout.narrow ? "overlay" : "side"} aria-label={t("projects.cartographe.ask")}>
+      <div className="flex items-center gap-2 border-b border-hairline/40 px-3 py-2">
+        <Sparkles size={15} className="shrink-0 text-ink-secondary" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{t("projects.cartographe.ask")}</span>
+        <button type="button" onClick={onOpenInChat} className="rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink">{t("projects.cartographe.openInChat")}</button>
+        <button type="button" onClick={onClose} aria-label={t("projects.cartographe.close")} title={t("projects.cartographe.close")}
+          className="grid size-7 place-items-center rounded-lg text-ink-tertiary hover:bg-raised-hover hover:text-ink"><X size={15} /></button>
+      </div>
+      {bot
+        ? <div className="flex min-h-0 flex-1 flex-col">{chat}</div>
+        : <p className="flex flex-1 items-center justify-center gap-2 text-[13px] text-ink-secondary"><Loader2 size={15} className="animate-spin" />{t("projects.cartographe.loading")}</p>}
+    </aside>
+  );
+}
+
 
 export function CartographeButton<B extends CartographeBot>({ bot, onAsk }: { bot: B | null; onAsk: (bot: B) => void }) {
   if (!bot) return null;

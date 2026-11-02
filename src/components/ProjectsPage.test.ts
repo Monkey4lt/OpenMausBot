@@ -2,8 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { loadLocale, setLocale, t } from "@/lib/i18n";
-import { askCartographe, CartographeButton, MapChangedNotice, ProjectBlockHeaderActions, ProjectBlockSummary } from "./ProjectsPage";
+import { loadLocale, setLocale } from "@/lib/i18n";
+import { CartographeButton, CartographePanel, MapChangedNotice, ProjectBlockHeaderActions, ProjectBlockSummary } from "./ProjectsPage";
 
 beforeEach(async () => { await loadLocale("fr"); });
 afterEach(() => { setLocale("en"); });
@@ -41,19 +41,30 @@ describe("the Cartographe button", () => {
     expect(renderToStaticMarkup(createElement(CartographeButton, { bot: null, onAsk: () => {} }))).toBe("");
   });
 
-  it("the button prepends the draft to the Cartographe's thread and opens it, never sending it", () => {
-    const calls: unknown[] = [];
-    askCartographe(bot, {
-      prependDraft: (id, text) => calls.push(["draft", id, text]),
-      showChat: () => calls.push(["showChat"]),
-      openBot: (opened) => calls.push(["open", opened.id]),
-    });
-    expect(calls).toEqual([
-      ["draft", "bot:carto:t-carto", "Range mes projets et propose-moi les changements."],
-      ["showChat"],
-      ["open", "carto"],
-    ]);
-    expect(t("projects.cartographe.draft")).toBe("Range mes projets et propose-moi les changements.");
+});
+
+describe("the Cartographe panel", () => {
+  const chat = createElement("div", { "data-chat": "carto" });
+
+  it("is hidden without cartographeBotId", () => {
+    expect(renderToStaticMarkup(createElement(CartographePanel, { botId: null, bot: null, width: 1400, chat, onClose: () => {}, onOpenInChat: () => {} }))).toBe("");
+  });
+
+  it("shows the real chat beside the map, with a link to the full discussion and a close button", () => {
+    const html = renderToStaticMarkup(createElement(CartographePanel, { botId: "carto", bot: { id: "carto", threadId: "t" }, width: 1400, chat, onClose: () => {}, onOpenInChat: () => {} }));
+    expect(html).toContain('data-chat="carto"');
+    expect(html).toContain("Ouvrir dans la discussion");
+    expect(html).toContain('aria-label="Fermer"');
+    expect(html).toContain("w-[420px]");
+    expect(html).toContain("border-l");
+    expect(html).not.toContain("absolute");
+  });
+
+  it("overlays the map on a narrow window, and says it is loading before the bot is known", () => {
+    expect(renderToStaticMarkup(createElement(CartographePanel, { botId: "carto", bot: { id: "carto", threadId: "t" }, width: 700, chat, onClose: () => {}, onOpenInChat: () => {} }))).toContain("absolute");
+    const loading = renderToStaticMarkup(createElement(CartographePanel, { botId: "carto", bot: null, width: 1400, chat, onClose: () => {}, onOpenInChat: () => {} }));
+    expect(loading).toContain("Chargement de la discussion");
+    expect(loading).not.toContain('data-chat="carto"');
   });
 });
 

@@ -144,6 +144,19 @@ it("draws piece links with the legend", () => {});
 - [x] **Step 2:** FAIL. **Step 3:** Implémenter ; `generate-locale --check` PASS. **Step 4:** PASS ; captures (sans skin et Aurora) avec la fixture multi-langages enrichie d'une base et d'appels front → API.
 - [x] **Step 5:** Commit `feat(cartographe): a plain-language project map`.
 
+### Task 13b: Parler au Cartographe depuis l'onglet Projets
+
+**Files:**
+- Create: `src/lib/projects-panel.ts` — Test: `src/lib/projects-panel.test.ts`
+- Modify: `src/components/ProjectsPage.tsx`, `src/locales/en.json`, `src/locales/fr.json` — Test: `src/components/ProjectsPage.test.ts`
+
+**Interfaces:**
+- Produces: `readPanelOpen` / `writePanelOpen` (clé `projects.cartographe.panel`, stockage qui peut lever), `panelDraft({ projectName? })`, `panelLayout(width)` (superposé sous 900 px) ; `CartographePanel` affiche le vrai `ChatView` du Cartographe à droite (420 px), avec « Ouvrir dans la discussion » et Fermer ; le bouton « Demander au Cartographe » ouvre ou ferme le panneau sans quitter Projets ; depuis la carte d'un projet, la demande porte sur ce projet.
+
+- [x] **Step 1: Write the failing tests** — panneau masqué sans Cartographe ; choix ouvert/fermé gardé (stockage qui lève compris) ; brouillon selon le contexte ; panneau superposé sur une fenêtre étroite.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS ; capture `panel.png`.
+- [x] **Step 5:** Commit `feat(cartographe): talk to the Cartographe from the Projects page`.
+
 ### Task 14: Vérification et relecture
 
 - [ ] **Step 1:** Toute la suite projets/cartographe → PASS ; `generate-locale --check` PASS ; tsc strict sur les fichiers serveur touchés.
