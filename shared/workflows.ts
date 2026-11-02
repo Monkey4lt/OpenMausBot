@@ -126,6 +126,8 @@ const io = z.string().transform((s) => cut(s, MAX_IO_CHARS));
 export const stepRunSchema = z.object({
   nodeId: idSchema,
   status: z.enum(["pending", "running", "succeeded", "failed", "skipped"]),
+  /** The output port a succeeded step took; absent for a block with no output. */
+  port: z.enum(OUTPUT_PORTS).optional(),
   input: io.optional(),
   output: io.optional(),
   error: z.string().transform((s) => cut(s, 2000)).optional(),

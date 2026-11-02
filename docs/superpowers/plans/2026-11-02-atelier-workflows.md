@@ -147,7 +147,7 @@
 **Livré (écarts) :** `runStep(node, input, deps, ctx: { runId, workflowName, signal, language? })` ; `generateText` sans `system` (le texte « system » du bloc passe en tête de la consigne : les appels annexes n'en ont pas) ; `runBot` reçoit la consigne déjà composée (`prompt` = bloc `[USER-CONFIGURED WORKFLOW INSTRUCTIONS]` + `wrapAsData(entrée)`, `botPrompt()` exporté) ; enveloppe `[UNTRUSTED WORKFLOW STEP DATA]` … `[/UNTRUSTED WORKFLOW STEP DATA]`, texte passé par `defuse()` de `records-block.ts`, plafonné à 48 000 caractères ; `model` d'un bloc = `"<instanceId>"` ou `"<instanceId>/<modèle>"` ; erreurs lisibles = `StepError(message, costUsd)` (textes `server.workflow.*`) ; étapes sans appel d'IA : coût `0` connu.
 
 
-### Task 8 : Moteur (B2)
+### Task 8 (fait) : Moteur (B2)
 
 **Files:** Create `server/workflows/runner.ts` — Test `server/workflows/runner.test.ts`
 
@@ -161,8 +161,11 @@
   - `active(): string[]`.
 - Règles : ordre `topoOrder` ; une étape s'exécute quand tous ses fils entrants pris ont livré ; entrées = textes des fils entrants joints (ordre des fils) ; port non pris → l'aval qui n'est atteint par aucun autre fil pris = `skipped` ; échec → aval `skipped`, exécution `failed` ; avant chaque étape : `maxSteps`, total connu des coûts vs `maxCostUsd`, `budgetAllows()` ; arrêt → raison en clair (« Limite de 20 étapes atteinte », « Limite de 1 $ atteinte ») ; chaque changement → `store.saveRun` + `onRunChanged` ; échec sans personne devant l'écran → `onRunFailed` → notification « Le workflow {nom} a échoué à l'étape {bloc} » avec lien vers l'exécution.
 
-- [ ] **Step 1: Write the failing tests** — `it("runs blocks in order and passes text along wires")`, `it("a branch not taken is skipped")`, `it("a failed step skips everything downstream")`, `it("retry reruns the step and its downstream only")`, `it("cancel stops the run and interrupts the bot")`, `it("stops at maxSteps")`, `it("stops when the known cost passes maxCostUsd, unknown costs never count as zero")`, `it("stops before a step when the app budget is spent")`, `it("refuses to start an invalid workflow")`, `it("a run cut by a restart is marked failed, not resumed")`, `it("notifies once when an unattended run fails")`.
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS. **Step 5:** Commit `feat(workflows): runner`.
+- [x] **Step 1: Write the failing tests** — `it("runs blocks in order and passes text along wires")`, `it("a branch not taken is skipped")`, `it("a failed step skips everything downstream")`, `it("retry reruns the step and its downstream only")`, `it("cancel stops the run and interrupts the bot")`, `it("stops at maxSteps")`, `it("stops when the known cost passes maxCostUsd, unknown costs never count as zero")`, `it("stops before a step when the app budget is spent")`, `it("refuses to start an invalid workflow")`, `it("a run cut by a restart is marked failed, not resumed")`, `it("notifies once when an unattended run fails")`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS (17). **Step 5:** Commit `feat(workflows): runner`.
+
+**Livré (écarts) :** erreurs `WorkflowNotFoundError` (404), `WorkflowInvalidError { problems }` (400), `WorkflowBusyError { runId }` (409) ; `settled(runId): Promise<WorkflowRun>` en plus (tests, routines en B3) ; `language?()` pour les raisons (`server.workflow.*`) ; `stepRunSchema` gagne `port` (port pris, pour les branches et « Réessayer ») ; `onRunFailed(run, step, workflow, trigger)` appelé une fois par exécution échouée (jamais pour une exécution arrêtée), y compris un arrêt sur limite ; un échec arrête toute l'exécution (le reste passe « ignoré ») ; « Réessayer » crée une **nouvelle** exécution qui recopie les étapes hors aval, les entrées venant des sorties gardées (4 Ko) ; « Lancer cette étape » refuse seulement les problèmes de ce bloc ; une exécution arrêtée : l'étape en cours passe « échoué » (« Arrêté », coût inconnu).
+
 
 ### Task 9 : Routes d'exécution et couleurs (B2)
 
