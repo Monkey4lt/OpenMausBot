@@ -8,6 +8,7 @@ import {
   Cloud,
   Download,
   FolderOpen,
+  FolderTree,
   Gauge,
   Info,
   HelpCircle,
@@ -330,11 +331,12 @@ export function phoneMenuItems({
   ];
 }
 
-export function toolMenuItems({ activeView, automationsNeedYou, onAutomations, onTeamMap, onFiles, archived }: {
+export function toolMenuItems({ activeView, automationsNeedYou, onAutomations, onTeamMap, onProjects, onFiles, archived }: {
   activeView: string;
   automationsNeedYou: boolean;
   onAutomations: () => void;
   onTeamMap: () => void;
+  onProjects?: () => void;
   /** set once My Cloud's files are ready to open */
   onFiles?: () => void;
   archived?: ArchivedBots;
@@ -342,6 +344,7 @@ export function toolMenuItems({ activeView, automationsNeedYou, onAutomations, o
   return [
     { key: "automations", label: t("sidebar.nav.automations"), icon: <Zap size={16} />, active: activeView === "routines", attention: automationsNeedYou, onSelect: onAutomations },
     { key: "team-map", label: t("sidebar.nav.teamMap"), icon: <UsersRound size={16} />, active: activeView === "team-map", onSelect: onTeamMap },
+    ...(onProjects ? [{ key: "projects", label: t("sidebar.nav.projects"), icon: <FolderTree size={16} />, active: activeView === "projects", onSelect: onProjects }] : []),
     ...(onFiles ? [{ key: "files", label: t("sidebar.nav.files"), icon: <FolderOpen size={16} />, active: activeView === "files", onSelect: onFiles }] : []),
     ...(archived?.count ? [{ key: "archived", label: t("sidebar.archived.title"), icon: <Archive size={16} />, value: String(archived.count), onSelect: archived.open }] : []),
   ];
@@ -603,6 +606,7 @@ export function SidebarProfileMenu({ iconOnly = false, rail = false, circle = fa
         automationsNeedYou: account.automationsNeedYou,
         onAutomations: () => dispatch({ type: "showRoutines", view: "list" }),
         onTeamMap: () => dispatch({ type: "showTeamMap" }),
+        onProjects: () => dispatch({ type: "showProjects" }),
         onFiles: filesReady ? () => dispatch({ type: "showFiles" }) : undefined,
         archived: account.archived,
       }),
