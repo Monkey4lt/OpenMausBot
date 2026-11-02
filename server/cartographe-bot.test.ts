@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { parseToolScope } from "../shared/tool-scope.ts";
-import { TOOL_SCOPE_SUPPORT } from "../shared/tool-scope-support.ts";
+import { assertToolScopeSupported, TOOL_SCOPE_SUPPORT } from "../shared/tool-scope-support.ts";
 import { approvalModeFor } from "../shared/approval-mode.ts";
 import {
   CARTOGRAPHE_LEDGER, CARTOGRAPHE_NAME, CARTOGRAPHE_SOUL, cartographeBotId, cartographeIntroMessage, cartographeToolScope,
-  engineNeedsNativeTools, ensureCartographeBot,
+  ensureCartographeBot, repairCartographeBot,
 } from "./cartographe-bot.ts";
 import { DATA_DIR } from "./config.ts";
 import type { ModelSelection } from "./contracts.ts";
@@ -16,7 +16,7 @@ import { Store } from "./store.ts";
 
 const selection = (): ModelSelection => ({ instanceId: "claude", model: "claude-sonnet-5" });
 const PROJECT_TOOLS = ["mcp:agents:projects_read_map", "mcp:agents:projects_read_architecture", "mcp:agents:projects_apply_changes"];
-const boot = (store: Store, engine = "claudeAgent") => ensureCartographeBot(store, { dataDir: DATA_DIR, engineOf: (instanceId) => (instanceId === "claude" ? engine : undefined) });
+const boot = (store: Store) => ensureCartographeBot(store, { dataDir: DATA_DIR });
 
 describe("the Cartographe bot", () => {
   beforeEach(() => rmSync(DATA_DIR, { recursive: true, force: true }));
@@ -51,24 +51,38 @@ describe("the Cartographe bot", () => {
     expect(cartographeBotId(DATA_DIR, (id) => store.bot(id) !== null)).toBe(bot.id);
   });
 
-  it("its toolScope passes parseToolScope and lists the exact projects tools, tool_result_read and ask_user", () => {
-    for (const native of [false, true]) {
-      const scope = cartographeToolScope(native);
-      expect(parseToolScope(scope)).toEqual({ ok: true, scope });
-      expect(scope.allow).toEqual([...PROJECT_TOOLS, "mcp:agents:tool_result_read", "mcp:ogb:ask_user", ...(native ? ["native:*"] : [])]);
-      expect(scope.deny).toBeUndefined();
-    }
-    expect(boot(new Store(selection))!.toolScope).toEqual(cartographeToolScope(true));
+  it("its toolScope passes parseToolScope and lists the exact projects tools, tool_result_read, ask_user and native:*", () => {
+    const scope = cartographeToolScope();
+    expect(parseToolScope(scope)).toEqual({ ok: true, scope });
+    expect(scope.allow).toEqual([...PROJECT_TOOLS, "mcp:agents:tool_result_read", "mcp:ogb:ask_user", "native:*"]);
+    expect(scope.deny).toBeUndefined();
+    expect(boot(new Store(selection))!.toolScope).toEqual(scope);
   });
 
-  it("adds native:* exactly when the default engine requires it", () => {
-    for (const [engine, support] of Object.entries(TOOL_SCOPE_SUPPORT)) expect(engineNeedsNativeTools(engine), engine).toBe(support === "mcp");
-    expect(engineNeedsNativeTools("claudeAgent")).toBe(true);
-    expect(engineNeedsNativeTools("codex")).toBe(true);
-    expect(engineNeedsNativeTools("opencodeGo")).toBe(true);
-    expect(engineNeedsNativeTools("grok")).toBe(false);
-    expect(engineNeedsNativeTools("unknown")).toBe(false);
-    expect(boot(new Store(selection), "grok")!.toolScope).toEqual(cartographeToolScope(false));
+  it("keeps native:* even when the app has no default model yet, so every engine accepts the scope", () => {
+    const store = new Store(() => ({ instanceId: "", model: "" }));
+    const bot = boot(store)!;
+    expect(bot.toolScope).toEqual(cartographeToolScope());
+    for (const engine of Object.keys(TOOL_SCOPE_SUPPORT)) expect(() => assertToolScopeSupported(engine, bot.toolScope), engine).not.toThrow();
+  });
+
+  it("repairs a Cartographe saved without native:*, and never creates one", () => {
+    const store = new Store(selection);
+    expect(repairCartographeBot(store, { dataDir: DATA_DIR })).toBeNull();
+    expect(store.bots.some((b) => b.name === CARTOGRAPHE_NAME)).toBe(false);
+    const bot = boot(store)!;
+    const old = { allow: cartographeToolScope().allow!.filter((s) => s !== "native:*") };
+    store.patchBot(bot.id, { toolScope: old });
+    expect(() => assertToolScopeSupported("claudeAgent", store.bot(bot.id)!.toolScope)).toThrow();
+    expect(repairCartographeBot(new Store(selection), { dataDir: DATA_DIR })!.toolScope).toEqual(cartographeToolScope());
+    const reloaded = new Store(selection);
+    expect(reloaded.bot(bot.id)!.toolScope).toEqual(cartographeToolScope());
+    expect(() => assertToolScopeSupported("claudeAgent", reloaded.bot(bot.id)!.toolScope)).not.toThrow();
+    reloaded.patchBot(bot.id, { toolScope: undefined });
+    expect(repairCartographeBot(reloaded, { dataDir: DATA_DIR })!.toolScope).toBeUndefined();
+    reloaded.deleteBot(bot.id);
+    expect(repairCartographeBot(reloaded, { dataDir: DATA_DIR })).toBeNull();
+    expect(reloaded.bots.some((b) => b.name === CARTOGRAPHE_NAME)).toBe(false);
   });
 
   it("is not the default bot, has approvalMode ask, and uses the app's default model", () => {

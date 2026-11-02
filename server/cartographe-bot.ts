@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { ToolScope } from "../shared/tool-scope.ts";
-import { TOOL_SCOPE_SUPPORT } from "../shared/tool-scope-support.ts";
 import type { MausColor } from "../shared/wire.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import type { BotRecord, Message, Store } from "./store.ts";
@@ -39,13 +38,9 @@ export function cartographeIntroMessage(name: string): Omit<Message, "id" | "at"
 
 const PROJECT_TOOLS = ["mcp:agents:projects_read_map", "mcp:agents:projects_read_architecture", "mcp:agents:projects_apply_changes"];
 
-/** Engines that cannot narrow their native tools need native:* kept in the selection; the soul keeps the bot off them. */
-export function engineNeedsNativeTools(engine: string | undefined): boolean {
-  return engine !== undefined && TOOL_SCOPE_SUPPORT[engine as keyof typeof TOOL_SCOPE_SUPPORT] === "mcp";
-}
-
-export function cartographeToolScope(engineNeedsNative: boolean): ToolScope {
-  return { allow: [...PROJECT_TOOLS, "mcp:agents:tool_result_read", "mcp:ogb:ask_user", ...(engineNeedsNative ? ["native:*"] : [])] };
+/** native:* stays in so every engine accepts the selection; the soul and approvalMode "ask" keep the bot off files and the terminal. */
+export function cartographeToolScope(): ToolScope {
+  return { allow: [...PROJECT_TOOLS, "mcp:agents:tool_result_read", "mcp:ogb:ask_user", "native:*"] };
 }
 
 function ledgerId(dataDir: string): string | null {
@@ -65,17 +60,25 @@ export function cartographeBotId(dataDir: string, exists?: (botId: string) => bo
   return id && (!exists || exists(id)) ? id : null;
 }
 
+/** Gives back native:* to a Cartographe saved without it; never makes one. */
+export function repairCartographeBot(store: CartographeStore, options: { dataDir: string }): BotRecord | null {
+  const id = ledgerId(options.dataDir);
+  const bot = id ? store.bot(id) : undefined;
+  if (!bot) return null;
+  const allow = bot.toolScope?.allow;
+  if (!allow || allow.includes("native:*")) return bot;
+  return store.patchBot(bot.id, { toolScope: { ...bot.toolScope, allow: [...allow, "native:*"] } }) ?? bot;
+}
+
 /** Makes the Cartographe once per place, on the app's default model; one that is gone is never made again. */
-export function ensureCartographeBot(store: CartographeStore, options: { dataDir: string; engineOf: (instanceId: string) => string | undefined }): BotRecord | null {
+export function ensureCartographeBot(store: CartographeStore, options: { dataDir: string }): BotRecord | null {
   if (existsSync(join(options.dataDir, CARTOGRAPHE_LEDGER))) {
     const id = ledgerId(options.dataDir);
     return id ? store.bot(id) ?? null : null;
   }
-  const created = store.createBot({ name: CARTOGRAPHE_NAME, color: CARTOGRAPHE_COLOR, soul: CARTOGRAPHE_SOUL, toolScope: cartographeToolScope(false) }, { seedMessages: false });
+  const created = store.createBot({ name: CARTOGRAPHE_NAME, color: CARTOGRAPHE_COLOR, soul: CARTOGRAPHE_SOUL, toolScope: cartographeToolScope() }, { seedMessages: false });
   writeFileAtomic(join(options.dataDir, CARTOGRAPHE_LEDGER), JSON.stringify({ v: 1, botId: created.id }), { mode: 0o600 });
-  const native = engineNeedsNativeTools(options.engineOf(created.modelSelection.instanceId));
-  const bot = native ? store.patchBot(created.id, { toolScope: cartographeToolScope(true) }) ?? created : created;
-  const asked = store.setAllThreadApprovalMode(bot.id, "ask") ?? bot;
+  const asked = store.setAllThreadApprovalMode(created.id, "ask") ?? created;
   store.appendMessage(asked.threadId, cartographeIntroMessage(asked.name));
   return asked;
 }
