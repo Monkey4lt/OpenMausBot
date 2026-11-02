@@ -31,7 +31,7 @@ export function cartographeIntroMessage(name: string): Omit<Message, "id" | "at"
     role: "bot",
     kind: "text",
     text: [
-      `Bonjour ! Je suis ${name}. Je range les cartes de l'onglet Projets : les pôles, les projets dans chaque pôle et les liens entre eux, et à l'intérieur d'un projet, ses familles et ses modules.`,
+      `Bonjour ! Je suis ${name}, l'assistant de l'Atelier. J'y range vos cartes : les pôles, les projets dans chaque pôle et les liens entre eux, et à l'intérieur d'un projet, ses familles et ses modules.`,
       "Je ne touche jamais aux fichiers de vos projets. Avant tout changement, je vous montre la liste complète sur une carte : rien ne change tant que vous n'avez pas cliqué sur Autoriser.",
       "Bon à savoir : pour travailler, les noms de projets et de fichiers sont envoyés à l'IA utilisée par l'appli. Quand je lis un fichier pour comprendre un projet, le contenu de certains fichiers est envoyé à l'IA aussi. Je ne lis jamais les clés ni les mots de passe.",
       "Essayez par exemple : « range mes projets », « relie ce qui va ensemble », « arrange la carte de shop » ou « explique-moi la carte de billing ».",
@@ -82,11 +82,15 @@ export function repairCartographeBot(store: CartographeStore, options: { dataDir
   return store.patchBot(bot.id, patch) ?? bot;
 }
 
-/** Makes the Cartographe once per place, on the app's default model; one that is gone is never made again. */
-export function ensureCartographeBot(store: CartographeStore, options: { dataDir: string }): BotRecord | null {
+/**
+ * Makes the Cartographe once per place, on the app's default model; one that is gone is never made again automatically.
+ * `recreate` is for an explicit person action only: it makes a new one when the ledger's bot is gone, and rewrites the ledger.
+ */
+export function ensureCartographeBot(store: CartographeStore, options: { dataDir: string; recreate?: boolean }): BotRecord | null {
   if (existsSync(join(options.dataDir, CARTOGRAPHE_LEDGER))) {
     const id = ledgerId(options.dataDir);
-    return id ? store.bot(id) ?? null : null;
+    const bot = id ? store.bot(id) ?? null : null;
+    if (bot || !options.recreate) return bot;
   }
   const created = store.createBot({ name: CARTOGRAPHE_NAME, color: CARTOGRAPHE_COLOR, soul: CARTOGRAPHE_SOUL, toolScope: cartographeToolScope() }, { seedMessages: false });
   writeFileAtomic(join(options.dataDir, CARTOGRAPHE_LEDGER), JSON.stringify({ v: 1, botId: created.id }), { mode: 0o600 });

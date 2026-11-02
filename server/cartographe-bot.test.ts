@@ -45,6 +45,28 @@ describe("the Cartographe bot", () => {
     expect(boot(new Store(selection))).toBeNull();
   });
 
+  it("recreate: true makes a new one after deletion, with the same setup, and rewrites the ledger", () => {
+    const store = new Store(selection);
+    const first = boot(store)!;
+    store.deleteBot(first.id);
+    const again = ensureCartographeBot(store, { dataDir: DATA_DIR, recreate: true })!;
+    expect(again.id).not.toBe(first.id);
+    expect(again).toMatchObject({ name: CARTOGRAPHE_NAME, color: "teal", soul: CARTOGRAPHE_SOUL, approvalMode: "ask" });
+    expect(again.toolScope).toEqual(cartographeToolScope());
+    expect(store.messagesFor(again.threadId).filter((m) => m.role === "bot").map((m) => m.text)).toEqual([cartographeIntroMessage(again.name).text]);
+    expect(JSON.parse(readFileSync(join(DATA_DIR, CARTOGRAPHE_LEDGER), "utf8"))).toEqual({ v: 1, botId: again.id });
+    expect(boot(store)!.id).toBe(again.id);
+    expect(store.bots.filter((b) => b.name === CARTOGRAPHE_NAME)).toHaveLength(1);
+  });
+
+  it("recreate: true keeps an existing one and makes one when there never was any", () => {
+    const store = new Store(selection);
+    const made = ensureCartographeBot(store, { dataDir: DATA_DIR, recreate: true })!;
+    expect(made.name).toBe(CARTOGRAPHE_NAME);
+    expect(ensureCartographeBot(store, { dataDir: DATA_DIR, recreate: true })!.id).toBe(made.id);
+    expect(store.bots.filter((b) => b.name === CARTOGRAPHE_NAME)).toHaveLength(1);
+  });
+
   it("knows the bot by id after a rename, and gives no id without a ledger", () => {
     expect(cartographeBotId(DATA_DIR)).toBeNull();
     const store = new Store(selection);

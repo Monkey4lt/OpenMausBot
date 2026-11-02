@@ -122,6 +122,45 @@ describe("projects routes", () => {
     expect(named()).toHaveLength(0);
   });
 
+  it("POST /api/projects/cartographe brings back a deleted Cartographe; GET still does not", async () => {
+    rmSync(DATA_DIR, { recursive: true, force: true });
+    const store = new Store(() => ({ instanceId: "", model: "" }));
+    const dataDir = tmp();
+    mkdirSync(join(dataDir, "proj"));
+    const route = createProjectRoutes({
+      dataDir,
+      cartographeBotId: () => cartographeBotId(DATA_DIR, (id) => Boolean(store.bot(id))),
+      ensureCartographe: () => ensureCartographeBot(store, { dataDir: DATA_DIR })?.id ?? null,
+      recreateCartographe: () => ensureCartographeBot(store, { dataDir: DATA_DIR, recreate: true })?.id ?? null,
+    });
+    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "x", kind: "local", path: join(dataDir, "proj") }], baseRev: 0 });
+    const first = ((await call(route, "GET", "/api/projects")).body as { cartographeBotId: string }).cartographeBotId;
+    store.deleteBot(first);
+    expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ cartographeBotId: null });
+    const made = await call(route, "POST", "/api/projects/cartographe");
+    expect(made.status).toBe(200);
+    const id = (made.body as { cartographeBotId: string }).cartographeBotId;
+    expect(id).toBeTruthy();
+    expect(id).not.toBe(first);
+    expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ cartographeBotId: id });
+    expect((await call(route, "POST", "/api/projects/cartographe")).body).toEqual({ cartographeBotId: id });
+    expect(store.bots.filter((b) => b.name === CARTOGRAPHE_NAME)).toHaveLength(1);
+  });
+
+  it("POST /api/projects/cartographe answers 404 where no Cartographe can be made, 500 when making it fails", async () => {
+    expect((await call(createProjectRoutes({ dataDir: tmp() }), "POST", "/api/projects/cartographe")).status).toBe(404);
+    expect((await call(createProjectRoutes({ dataDir: tmp(), recreateCartographe: () => null }), "POST", "/api/projects/cartographe")).status).toBe(404);
+    const warn = console.warn; console.warn = () => {};
+    try {
+      expect((await call(createProjectRoutes({ dataDir: tmp(), recreateCartographe: () => { throw new Error("EBUSY"); } }), "POST", "/api/projects/cartographe")).status).toBe(500);
+    } finally { console.warn = warn; }
+  });
+
+  it("POST /api/projects/cartographe is not open to client tokens", async () => {
+    const { CLIENT_ALLOW } = await import("../request-auth.ts");
+    expect(CLIENT_ALLOW.some((rule) => rule.methods.includes("POST") && rule.path.test("/api/projects/cartographe"))).toBe(false);
+  });
+
   it("GET /api/projects still answers, with no Cartographe, when making it fails", async () => {
     const dataDir = tmp();
     mkdirSync(join(dataDir, "proj"));

@@ -25,6 +25,8 @@ export interface ProjectRouteDeps {
   cartographeBotId?: () => string | null;
   /** Makes the Cartographe if this place never had one; called once the map has a source. */
   ensureCartographe?: () => string | null;
+  /** Makes the Cartographe again when the person asks for it, even after it was deleted; null where there can be none. */
+  recreateCartographe?: () => string | null;
 }
 
 const ARCHITECTURE_CACHE_SIZE = 32;
@@ -32,6 +34,8 @@ const ARCHITECTURE_CACHE_SIZE = 32;
 /**
  * GET /api/projects        → the saved layout plus a fresh scan of every source, and the Cartographe's bot id or null
  * PUT /api/projects/state {...layout, baseRev} → 200 {ok, rev}; 409 {error, rev} when baseRev is not the saved rev
+ * POST /api/projects/cartographe → 200 {cartographeBotId}, making it again if it was deleted; 404 where there can be none.
+ *   Not in CLIENT_ALLOW: only the owner and admins.
  * GET /api/projects/github → the GitHub login Git keeps on this computer, if any
  * POST /api/projects/github/signin {switch?} → open Git's GitHub sign-in window on this computer
  * GET /api/projects/architecture?id=<sourceId:name> → 200 Architecture with `pieces` and `pieceLinks` (shared/projects-pieces.ts),
@@ -74,6 +78,16 @@ export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
       const { rev } = writeProjectMapState(deps.dataDir, parsed.data);
       deps.onChanged?.(rev);
       return json(res, 200, { ok: true, rev });
+    }
+    if (path === "/api/projects/cartographe" && method === "POST") {
+      let id: string | null;
+      try {
+        id = deps.recreateCartographe?.() ?? null;
+      } catch (error) {
+        console.warn("could not make the Cartographe", error);
+        return json(res, 500, { error: "Could not make the Cartographe" });
+      }
+      return id ? json(res, 200, { cartographeBotId: id }) : json(res, 404, { error: "No Cartographe here" });
     }
     if (path === "/api/projects/github" && method === "GET") {
       return json(res, 200, { login: await githubLogin() });
