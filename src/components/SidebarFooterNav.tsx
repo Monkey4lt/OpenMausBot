@@ -1,4 +1,4 @@
-import { FolderOpen, Globe, Puzzle, UsersRound, Zap } from "lucide-react";
+import { FolderOpen, FolderTree, Globe, Puzzle, UsersRound, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { useAppTriggers } from "@/lib/app-triggers";
@@ -168,6 +168,14 @@ export function SidebarFooterNav({
           onClick={() => dispatch({ type: "showTeamMap" })}
         />
       )}
+      <NavRow
+        id="projects"
+        label={t("sidebar.nav.projects")}
+        iconsOnly={iconsOnly || toolbar}
+        active={state.activeView === "projects"}
+        icon={(active) => <FolderTree size={iconSize} className={tone(active)} />}
+        onClick={() => dispatch({ type: "showProjects" })}
+      />
       {filesRow}
       {advanced && webPanels.map((panel) => (
         <NavRow
