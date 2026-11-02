@@ -452,3 +452,36 @@ describe("code extensions", () => {
     expect(buildArchitecture(paths, [{ path: "a.ts", imports: [] }], {}, undefined, 1).truncated).toBe(true);
   });
 });
+
+describe("minor resolution rules", () => {
+  it("duplicate paths count once", () => {
+    const arch = buildArchitecture(["a/x.ts", "a/x.ts", "a/y.ts", "a/z.ts"], [], {});
+    expect(arch.files.map((f) => f.path)).toEqual(["a/x.ts", "a/y.ts", "a/z.ts"]);
+    expect(arch.modules).toEqual([{ id: "a", family: "server", files: 3 }]);
+  });
+
+  it("URL imports are neither project files nor external packages", () => {
+    const arch = buildArchitecture(["a.ts"], [{ path: "a.ts", imports: ["https://esm.sh/react", "http://x/y.js", "data:text/javascript,1", "react"].map((spec, i) => ({ spec, line: i + 1 })) }], {});
+    expect(arch.external).toEqual([{ name: "react", count: 1 }]);
+  });
+
+  it.each([
+    ["@/lib", "src/lib/index.ts"], ["~/lib/util", "src/lib/util.ts"], ["@/top", "top.ts"], ["@/gone", null],
+  ])("%s resolves without a configured alias", (spec, to) => {
+    expect(resolveImport("src/a.ts", spec, new Set(["src/lib/index.ts", "src/lib/util.ts", "top.ts", "src/a.ts"]), {})).toBe(to);
+  });
+
+  it("@/ and ~/ imports that find nothing are not external packages", () => {
+    const arch = buildArchitecture(["src/a.ts"], [{ path: "src/a.ts", imports: [{ spec: "@/gone", line: 1 }, { spec: "~/gone", line: 2 }, { spec: "@scope/pkg", line: 3 }] }], {});
+    expect(arch.external).toEqual([{ name: "@scope/pkg", count: 1 }]);
+  });
+
+  it("Go resolution stays fast on a large project", () => {
+    const files = new Set(Array.from({ length: 3000 }, (_, i) => `pkg/p${i % 300}/f${i}.go`));
+    const aliases = { "example.com/app/": "" };
+    const start = performance.now();
+    for (let i = 0; i < 3000; i++) resolveImport("cmd/main.go", `example.com/app/pkg/p${i % 300}`, files, aliases);
+    expect(performance.now() - start).toBeLessThan(200);
+    expect(resolveImport("cmd/main.go", "example.com/app/pkg/p7", files, aliases)).toBe("pkg/p7/f1207.go");
+  });
+});

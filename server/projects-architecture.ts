@@ -354,10 +354,19 @@ function applyAlias(spec: string, aliases: Record<string, string>): string | nul
   return null;
 }
 
+const CONVENTIONAL_ROOT_ALIAS = /^[@~]\//;
+
 function resolveScript(from: string, spec: string, files: ReadonlySet<string>, aliases: Record<string, string>): string | null {
-  const target = spec.startsWith("./") || spec.startsWith("../") ? joinPath(dirnameOf(from), spec)
-    : spec.startsWith("/") ? normalizeWithinRoot(spec)
-    : applyAlias(spec, aliases);
+  if (spec.startsWith("./") || spec.startsWith("../")) return resolveScriptPath(joinPath(dirnameOf(from), spec), files);
+  if (spec.startsWith("/")) return resolveScriptPath(spec, files);
+  const aliased = applyAlias(spec, aliases);
+  if (aliased !== null) return resolveScriptPath(aliased, files);
+  if (!CONVENTIONAL_ROOT_ALIAS.test(spec)) return null;
+  const rest = spec.slice(2);
+  return resolveScriptPath(`src/${rest}`, files) ?? resolveScriptPath(rest, files);
+}
+
+function resolveScriptPath(target: string | null, files: ReadonlySet<string>): string | null {
   if (target === null) return null;
   const base = normalizeWithinRoot(target);
   if (base === null) return null;
@@ -419,13 +428,31 @@ function resolveRust(from: string, spec: string, files: ReadonlySet<string>): st
   return firstExisting([`${base}.rs`, `${own}mod.rs`, `${own}lib.rs`, `${own}main.rs`], files);
 }
 
+const goPackages = new WeakMap<ReadonlySet<string>, Map<string, string>>();
+
+function goPackageFiles(files: ReadonlySet<string>): Map<string, string> {
+  let index = goPackages.get(files);
+  if (index) return index;
+  const byDir = new Map<string, string[]>();
+  for (const file of files) {
+    if (!file.endsWith(".go")) continue;
+    const dir = dirnameOf(file);
+    byDir.set(dir, [...byDir.get(dir) ?? [], file]);
+  }
+  index = new Map([...byDir].map(([dir, list]) => {
+    const sorted = list.sort();
+    return [dir, sorted.find((f) => !f.endsWith("_test.go")) ?? sorted[0]];
+  }));
+  goPackages.set(files, index);
+  return index;
+}
+
 function resolveGo(spec: string, files: ReadonlySet<string>, aliases: Record<string, string>): string | null {
   const target = applyAlias(spec, aliases);
   if (target === null) return null;
   const dir = normalizeWithinRoot(target);
   if (dir === null) return null;
-  const inDir = [...files].filter((f) => f.endsWith(".go") && dirnameOf(f) === dir).sort();
-  return inDir.find((f) => !f.endsWith("_test.go")) ?? inDir[0] ?? null;
+  return goPackageFiles(files).get(dir) ?? null;
 }
 
 export function resolveImport(from: string, spec: string, files: ReadonlySet<string>, aliases: Record<string, string>): string | null {
@@ -484,12 +511,15 @@ export interface Architecture {
 
 export const MAX_CODE_FILES = 3000;
 
-function isProjectSpec(from: string, spec: string, aliases: Record<string, string>): boolean {
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:(?!:)/i;
+
+function isProjectOrUrlSpec(from: string, spec: string, aliases: Record<string, string>): boolean {
   if (/^\.{1,2}(\/|$)|^\//.test(spec)) return true;
   switch (extensionOf(from)) {
     case ".py": return spec.startsWith(".");
     case ".rs": return /^(crate|self|super)(::|$)/.test(spec);
-    default: return applyAlias(spec, aliases) !== null;
+    case ".go": return applyAlias(spec, aliases) !== null;
+    default: return (URL_SCHEME.test(spec) && !spec.startsWith("node:")) || CONVENTIONAL_ROOT_ALIAS.test(spec) || applyAlias(spec, aliases) !== null;
   }
 }
 
@@ -511,12 +541,13 @@ function packageName(from: string, spec: string): string {
 const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 export function buildArchitecture(
-  paths: string[],
+  allPaths: string[],
   read: FileImports[],
   aliases: Record<string, string>,
   overrides?: ArchOverrides,
   limit = MAX_CODE_FILES,
 ): Architecture {
+  const paths = [...new Set(allPaths)];
   const modules = modulesOf(paths, overrides);
   const moduleOf = new Map<string, ModuleInfo>();
   for (const m of modules) for (const file of m.files) moduleOf.set(file, m);
@@ -539,7 +570,7 @@ export function buildArchitecture(
     for (const { spec, line } of imports) {
       const target = resolveImport(path, spec, files, aliases);
       if (target === null) {
-        if (!isProjectSpec(path, spec, aliases)) {
+        if (!isProjectOrUrlSpec(path, spec, aliases)) {
           const name = packageName(path, spec);
           external.set(name, (external.get(name) ?? 0) + 1);
         }
