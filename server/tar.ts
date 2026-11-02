@@ -29,7 +29,7 @@ const SPACE = 0x20;
 const NEWLINE = 0x0a;
 const PATH_KEY = new TextEncoder().encode("path=");
 
-/** POSIX pax: each record is "<length> <key>=<value>\\n" and the length counts bytes, not characters. */
+/** POSIX pax: each record is "<length> <key>=<value>\n" and the length counts bytes, not characters. */
 function paxPath(data: Uint8Array): string | null {
   let at = 0;
   let path: string | null = null;

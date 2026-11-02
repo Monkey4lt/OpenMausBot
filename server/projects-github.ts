@@ -106,13 +106,15 @@ async function ghResponse(path: string, auth: string | null, retryAnonymous: boo
   return res;
 }
 
+const repoPath = (fullName: string) => fullName.split("/").map(encodeURIComponent).join("/");
+
 async function gh<T>(path: string, auth: string | null, retryAnonymous = true): Promise<T> {
   return (await ghResponse(path, auth, retryAnonymous, 20_000)).json() as Promise<T>;
 }
 
 /** The gzipped tarball of `ref`; the API answers with a redirect to codeload.github.com, which fetch follows. */
 export async function githubTarball(fullName: string, ref: string): Promise<Uint8Array> {
-  const res = await ghResponse(`/repos/${fullName}/tarball/${encodeURIComponent(ref)}`, await token(), true, 120_000);
+  const res = await ghResponse(`/repos/${repoPath(fullName)}/tarball/${encodeURIComponent(ref)}`, await token(), true, 120_000);
   return new Uint8Array(await res.arrayBuffer());
 }
 
@@ -123,7 +125,7 @@ const toRepo = (r: ApiRepo): GithubRepo => ({ name: r.name, fullName: r.full_nam
 export async function listGithubRepos(target: string): Promise<GithubRepo[]> {
   const auth = await token();
   const [owner, repo] = target.split("/");
-  if (repo) return [toRepo(await gh<ApiRepo>(`/repos/${owner}/${repo}`, auth))];
+  if (repo) return [toRepo(await gh<ApiRepo>(`/repos/${repoPath(`${owner}/${repo}`)}`, auth))];
 
   let me: string | null = null;
   if (auth) me = await gh<{ login: string }>("/user", auth).then((u) => u.login, () => null);
@@ -131,7 +133,7 @@ export async function listGithubRepos(target: string): Promise<GithubRepo[]> {
   for (let page = 1; repos.length < MAX_REPOS && page <= Math.ceil(MAX_REPOS / 100); page++) {
     const path = me && me.toLowerCase() === owner.toLowerCase()
       ? `/user/repos?affiliation=owner&sort=pushed&per_page=100&page=${page}`
-      : `/users/${owner}/repos?type=owner&sort=pushed&per_page=100&page=${page}`;
+      : `/users/${encodeURIComponent(owner)}/repos?type=owner&sort=pushed&per_page=100&page=${page}`;
     const batch = await gh<ApiRepo[]>(path, auth);
     repos.push(...batch.map(toRepo));
     if (batch.length < 100) break;
@@ -145,7 +147,7 @@ export async function listGithubRepos(target: string): Promise<GithubRepo[]> {
 }
 
 export async function githubRepo(fullName: string): Promise<GithubRepo> {
-  return toRepo(await gh<ApiRepo>(`/repos/${fullName}`, await token()));
+  return toRepo(await gh<ApiRepo>(`/repos/${repoPath(fullName)}`, await token()));
 }
 
 const trees = new Map<string, { pushedAt: string; lines: string[] }>();
@@ -168,7 +170,7 @@ export async function githubRepoLines(repo: GithubRepo): Promise<string[]> {
   if (cached && cached.pushedAt === repo.pushedAt) return cached.lines;
   const auth = await token();
   const tree = await gh<{ tree: { path: string; type: string }[] }>(
-    `/repos/${repo.fullName}/git/trees/${encodeURIComponent(repo.defaultBranch)}?recursive=1`, auth,
+    `/repos/${repoPath(repo.fullName)}/git/trees/${encodeURIComponent(repo.defaultBranch)}?recursive=1`, auth,
   ).catch((error: Error) => {
     if (/Git Repository is empty/i.test(error.message)) return { tree: [] };
     throw error;

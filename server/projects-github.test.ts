@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { githubLogin, githubRepoLines, githubSignIn, listGithubRepos, scanGithubLines, setGithubTransport } from "./projects-github.ts";
+import { githubLogin, githubRepo, githubRepoLines, githubSignIn, githubTarball, listGithubRepos, scanGithubLines, setGithubTransport } from "./projects-github.ts";
 
 type Reply = { status?: number; body: unknown };
 type Call = { path: string; auth: string | null };
@@ -129,5 +129,21 @@ describe("projects GitHub source", () => {
     setGithubTransport({ fetch: (async () => new Response("{}", { status: 500 })) as typeof globalThis.fetch, credential: async () => null });
     expect(await githubLogin()).toBeNull();
     expect(await githubSignIn(true)).toBeNull();
+  });
+
+  it("encodes every path segment it sends to the API", async () => {
+    const calls = fakeGithub((path) => (path.startsWith("/repos/") && !path.includes("/git/") && !path.includes("/tarball/")
+      ? { body: apiRepo("o", "r") }
+      : { body: { tree: [] } }));
+    await githubRepo("o/a b");
+    await githubRepoLines({ name: "r", fullName: "o/x?y", defaultBranch: "feat/x", pushedAt: "1" });
+    await githubTarball("o/x#y", "feat/x").catch(() => null);
+    await listGithubRepos("o/a%b");
+    expect(calls.map((c) => c.path)).toEqual([
+      "/repos/o/a%20b",
+      "/repos/o/x%3Fy/git/trees/feat%2Fx?recursive=1",
+      "/repos/o/x%23y/tarball/feat%2Fx",
+      "/repos/o/a%25b",
+    ]);
   });
 });

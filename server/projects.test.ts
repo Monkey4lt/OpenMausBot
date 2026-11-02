@@ -71,6 +71,10 @@ describe("projects map", () => {
     expect(findProject(state, "g1:web")?.source.id).toBe("g1");
     expect(findProject(state, "g2:Web")?.name).toBe("Web");
     for (const id of ["g2:other", "s1:a/b", "s1:..", "s1:.git", "s1:node_modules", "zz:api", "s1:", "nocolon", ""]) expect(findProject(state, id)).toBeNull();
+    for (const id of ["g1:we b", "g1:a?b", "g1:a#b", "g1:%2e%2e", "g1:é", `g1:${"x".repeat(101)}`, "g1:..", "g1:."]) expect(findProject(state, id)).toBeNull();
+    expect(findProject(state, "g1:my.repo-2_x")?.name).toBe("my.repo-2_x");
+    expect(findProject(state, "s1:mon projet")?.name).toBe("mon projet");
+    for (const id of [`s1:${"x".repeat(200)}`, "s1:a\u0000b", "s1:a\nb", "s1:a\u007fb"]) expect(findProject(state, id)).toBeNull();
   });
 
   it("saves and reads the layout, and starts empty without a file", () => {

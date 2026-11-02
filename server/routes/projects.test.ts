@@ -147,7 +147,7 @@ describe("GET /api/projects/architecture", () => {
     expect((await architecture(route, "s1:api")).body.families).toEqual([{ id: "ui", name: "Front", files: 1, modules: ["(root)/ui"] }]);
   });
 
-  it.each([["s1:nope"], ["s9:api"], ["s1:../api"], ["s1:.hidden"], ["s1:node_modules"], ["s1"], [""]])("unknown project %s → 404", async (id) => {
+  it.each([["s1:nope"], ["s9:api"], ["s1:../api"], ["s1:.hidden"], ["s1:node_modules"], ["s1"], [""], ["s1:api\u0000"], [`s1:${"a".repeat(200)}`]])("unknown project %s → 404", async (id) => {
     const root = localProject({ "a.ts": "" });
     mkdirSync(join(root, ".hidden"));
     const route = await withSources([{ id: "s1", label: "Here", kind: "local", path: root }]);

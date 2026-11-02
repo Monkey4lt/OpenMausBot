@@ -198,13 +198,18 @@ export async function scanSource(source: ProjectSource): Promise<Project[]> {
 }
 
 /** The source and first-level folder a project id names; null for an id no scan could have produced. */
+const GITHUB_REPO_NAME = /^(?!\.\.?$)[\w.-]{1,100}$/;
+const CONTROL_CHAR = /[\u0000-\u001f\u007f]/;
+
 export function findProject(state: ProjectMapState, id: string): { source: ProjectSource; name: string } | null {
+  if (id.length > 200 || CONTROL_CHAR.test(id)) return null;
   const colon = id.indexOf(":");
   if (colon < 0) return null;
   const source = state.sources.find((s) => s.id === id.slice(0, colon));
   const name = id.slice(colon + 1);
   if (!source || !name || name.includes("/") || name.includes("\\") || skipped(name)) return null;
   if (source.kind === "github") {
+    if (!GITHUB_REPO_NAME.test(name)) return null;
     const [, repo] = githubTarget(source.path).split("/");
     if (repo && repo.toLowerCase() !== name.toLowerCase()) return null;
   }
