@@ -64,7 +64,7 @@ describe("modulesOf", () => {
 
   it("a folder shared by two families gives the smaller one its own id", () => {
     const m = modulesOf(["src/ui/A.tsx", "src/ui/B.tsx", "src/ui/C.tsx", "src/ui/D.tsx", "src/ui/A.test.tsx", "src/ui/B.test.tsx", "src/ui/C.test.tsx"]);
-    expect(m.map((x) => [x.id, x.family, x.files.length])).toEqual([["src/ui#tests", "tests", 3], ["src/ui", "ui", 4]]);
+    expect(m.map((x) => [x.id, x.family, x.files.length])).toEqual([["src/ui", "tests", 3], ["src/ui#ui", "ui", 4]]);
   });
 
   it("an override moves a whole module to another family", () => {
@@ -406,5 +406,35 @@ describe("source text", () => {
   it("has no invisible characters", () => {
     const source = readFileSync(new URL("./projects-architecture.ts", import.meta.url), "utf8");
     expect(source.match(/[\u00A0\u200B-\u200F\u2028\u2029\u2060\uFEFF]/g)).toBeNull();
+  });
+});
+
+describe("module ids", () => {
+  const shared = (ui: number, tests: number) => [
+    ...Array.from({ length: ui }, (_, i) => `src/ui/C${i}.tsx`),
+    ...Array.from({ length: tests }, (_, i) => `src/ui/C${i}.test.tsx`),
+  ];
+  const ids = (paths: string[]) => Object.fromEntries(modulesOf(paths).map((m) => [m.family, m.id]));
+
+  it("changing file counts never swaps the ids of two families sharing a folder", () => {
+    for (const [ui, tests] of [[3, 3], [10, 3], [3, 10], [4, 7]]) {
+      expect(ids(shared(ui, tests))).toEqual({ tests: "src/ui", ui: "src/ui#ui" });
+    }
+  });
+
+  it("leftover files next to a carved sub-module land in (root)/<family>", () => {
+    const m = modulesOf(["src/lib/a.ts", "src/lib/deep/x.ts", "src/lib/deep/y.ts", "src/lib/deep/z.ts"]);
+    expect(m).toEqual([
+      { id: "(root)/server", family: "server", files: ["src/lib/a.ts"] },
+      { id: "src/lib/deep", family: "server", files: ["src/lib/deep/x.ts", "src/lib/deep/y.ts", "src/lib/deep/z.ts"] },
+    ]);
+  });
+
+  it("an override never reads inherited object keys", () => {
+    const paths = ["constructor/a.ts", "constructor/b.ts", "constructor/c.ts", "toString/a.ts", "toString/b.ts", "toString/c.ts"];
+    const m = modulesOf(paths, { moduleFamily: {}, familyNames: {} });
+    expect(m.map((x) => [x.id, x.family])).toEqual([["constructor", "server"], ["toString", "server"]]);
+    const arch = buildArchitecture(paths, [], {}, { moduleFamily: {}, familyNames: {} });
+    expect(arch.families).toEqual([{ id: "server", name: "server", files: 6, modules: ["constructor", "toString"] }]);
   });
 });

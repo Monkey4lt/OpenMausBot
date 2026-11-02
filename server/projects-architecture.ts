@@ -95,6 +95,10 @@ function carveModulesBottomUp(node: DirNode, prefix: string[], out: { prefix: st
   return loose;
 }
 
+function overrideOf<T>(table: Partial<Record<string, T>> | undefined, key: string): T | undefined {
+  return table && Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
 export function modulesOf(paths: string[], overrides?: ArchOverrides): ModuleInfo[] {
   const byFamily = new Map<Family, string[]>();
   for (const path of paths) {
@@ -108,18 +112,16 @@ export function modulesOf(paths: string[], overrides?: ArchOverrides): ModuleInf
     if (rest.length) carved.push({ prefix: `${ROOT_MODULE}/${family}`, files: rest });
     found.push(...carved.map((m) => ({ ...m, family })));
   }
-  const owner = new Map<string, { family: Family; size: number }>();
+  const rank = (f: Family) => FAMILY_ORDER.indexOf(f);
+  const owner = new Map<string, Family>();
   for (const m of found) {
     const best = owner.get(m.prefix);
-    if (!best || m.files.length > best.size || (m.files.length === best.size && FAMILY_ORDER.indexOf(m.family) < FAMILY_ORDER.indexOf(best.family))) {
-      owner.set(m.prefix, { family: m.family, size: m.files.length });
-    }
+    if (!best || rank(m.family) < rank(best)) owner.set(m.prefix, m.family);
   }
-  const rank = (f: Family) => FAMILY_ORDER.indexOf(f);
   return found
     .map((m) => {
-      const id = owner.get(m.prefix)!.family === m.family ? m.prefix : `${m.prefix}#${m.family}`;
-      return { id, family: overrides?.moduleFamily[id] ?? m.family, files: [...m.files].sort() };
+      const id = owner.get(m.prefix) === m.family ? m.prefix : `${m.prefix}#${m.family}`;
+      return { id, family: overrideOf(overrides?.moduleFamily, id) ?? m.family, files: [...m.files].sort() };
     })
     .sort((a, b) => rank(a.family) - rank(b.family) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
@@ -556,7 +558,7 @@ export function buildArchitecture(
     families: FAMILY_ORDER.flatMap((family) => {
       const own = modules.filter((m) => m.family === family);
       if (!own.length) return [];
-      return [{ id: family, name: overrides?.familyNames[family] ?? family, files: own.reduce((n, m) => n + m.files.length, 0), modules: own.map((m) => m.id) }];
+      return [{ id: family, name: overrideOf(overrides?.familyNames, family) ?? family, files: own.reduce((n, m) => n + m.files.length, 0), modules: own.map((m) => m.id) }];
     }),
     modules: modules.map((m) => ({ id: m.id, family: m.family, files: m.files.length })),
     files: [...paths].sort(byText).map((path) => ({ path, module: moduleOf.get(path)!.id, uses: sorted(uses.get(path)), usedBy: sorted(usedBy.get(path)) })),
