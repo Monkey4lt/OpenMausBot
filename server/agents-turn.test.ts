@@ -44,6 +44,17 @@ async function everyTurn(conversation: AgentsConversation, extra: Record<string,
 }
 
 describe("one conversation's agents tools", () => {
+  it("lists the projects tools only to the Cartographe, by its bot id", async () => {
+    const turn = CHAT_TURNS["the person's own message, which may pick its computer"]!;
+    const env = (conversation: AgentsConversation) => agentsServerEnv(conversation, turn, bearer, "http://127.0.0.1:9");
+    expect(env({ ...CHAT, cartographeBotId: "bot-1" }).OMB_CARTOGRAPHE).toBe("1");
+    expect(env({ ...CHAT, cartographeBotId: "bot-2" }).OMB_CARTOGRAPHE).toBe("0");
+    expect(env({ ...CHAT, cartographeBotId: null }).OMB_CARTOGRAPHE).toBe("0");
+    expect(env(CHAT).OMB_CARTOGRAPHE).toBe("0");
+    const names = JSON.parse(await toolsList(env({ ...CHAT, cartographeBotId: "bot-1" }))).tools.map((tool: { name: string }) => tool.name);
+    expect(names.slice(-3)).toEqual(["projects_read_map", "projects_read_architecture", "projects_apply_changes"]);
+  });
+
   for (const [name, conversation] of [["a direct chat", CHAT], ["a room", ROOM]] as const) {
     for (const bridged of [false, true]) {
       it(`lists ${name} the same tools on every kind of turn, byte for byte${bridged ? ", with the tool bridge on" : ""}`, async () => {

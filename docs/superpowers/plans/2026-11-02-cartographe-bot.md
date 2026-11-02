@@ -197,7 +197,7 @@ it("the apply schema caps the batch at 100 changes", () => {});
 **Interfaces:**
 - Produces: `CARTOGRAPHE_LEDGER = "cartographe.json"`, `ensureCartographeBot(store, { dataDir, engineSupport }): BotRecord | null`, `cartographeBotId(dataDir: string): string | null`, `cartographeToolScope(engineNeedsNative: boolean): ToolScope`, `CARTOGRAPHE_SOUL: string` (consignes de la spec, en anglais pour le modèle, avec la règle « reply in the user's language »), message d'accueil en français.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it("creates the bot once and writes the ledger", () => {});
@@ -208,8 +208,8 @@ it("is not the default bot and has approvalMode ask", () => {});
 it("the intro says file and project names are sent to the AI in use", () => {});
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter et brancher. **Step 4:** PASS ; `node --experimental-strip-types -e "import('./server/cartographe-bot.ts')"` charge sans erreur.
-- [ ] **Step 5:** Commit `feat(cartographe): the built-in Cartographe bot`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter et brancher. **Step 4:** PASS ; `node --experimental-strip-types -e "import('./server/cartographe-bot.ts')"` charge sans erreur.
+- [x] **Step 5:** Commit `feat(cartographe): the built-in Cartographe bot`.
 
 ### Task 7: Interface
 
