@@ -12,11 +12,19 @@ export interface MapSyncDeps<S extends { rev?: number }> {
   delayMs: number;
 }
 
-/** The page's saves: each carries the rev it was based on, and a change made elsewhere drops the save that would undo it. */
+/**
+ * The page's saves: each carries the rev it was based on, and a change made elsewhere drops the save that would undo it.
+ * Saves go one at a time; a projects.changed frame that lands during a save is weighed against the rev the save answers,
+ * since the server sends the frame for that save before its answer.
+ */
 export function createMapSync<S extends { rev?: number }>(deps: MapSyncDeps<S>) {
   let rev = 0;
   let timer: unknown = null;
   let pending = false;
+  let saving = 0;
+  let heldRev = 0;
+  let epoch = 0;
+  let queue: Promise<void> = Promise.resolve();
 
   const cancel = () => {
     if (timer !== null) deps.clearTimer(timer);
@@ -28,7 +36,23 @@ export function createMapSync<S extends { rev?: number }>(deps: MapSyncDeps<S>) 
 
   const stale = (error: unknown) => (error as { status?: unknown } | null)?.status === 409;
 
-  async function send(next: S): Promise<void> {
+  function changedElsewhere(): void {
+    epoch++;
+    const lost = cancel();
+    deps.reload();
+    if (lost) {
+      deps.changedElsewhere();
+      deps.status("idle");
+    }
+  }
+
+  function settleHeld(): void {
+    const newest = heldRev;
+    heldRev = 0;
+    if (newest > rev) changedElsewhere();
+  }
+
+  async function put(next: S): Promise<void> {
     deps.status("saving");
     try {
       const answer = await deps.put({ ...next, baseRev: rev });
@@ -36,6 +60,8 @@ export function createMapSync<S extends { rev?: number }>(deps: MapSyncDeps<S>) 
       deps.status("saved");
     } catch (error) {
       if (stale(error)) {
+        epoch++;
+        heldRev = 0;
         deps.reload();
         deps.changedElsewhere();
         deps.status("idle");
@@ -46,10 +72,25 @@ export function createMapSync<S extends { rev?: number }>(deps: MapSyncDeps<S>) 
     }
   }
 
+  function send(next: S): Promise<void> {
+    const queuedAt = epoch;
+    const start = saving ? queue.catch(() => {}).then(() => (epoch === queuedAt ? put(next) : undefined)) : put(next);
+    saving++;
+    const run = start.finally(() => {
+      saving--;
+      if (!saving) settleHeld();
+    });
+    queue = run;
+    return run;
+  }
+
   return {
     rev: () => rev,
     loaded(state: S) {
-      cancel();
+      if (cancel()) {
+        deps.changedElsewhere();
+        deps.status("idle");
+      }
       rev = state.rev ?? 0;
     },
     later(next: S) {
@@ -68,12 +109,11 @@ export function createMapSync<S extends { rev?: number }>(deps: MapSyncDeps<S>) 
     },
     frame(frame: { kind?: unknown; rev?: unknown }) {
       if (frame.kind !== "projects.changed" || typeof frame.rev !== "number" || frame.rev <= rev) return;
-      const lost = cancel();
-      deps.reload();
-      if (lost) {
-        deps.changedElsewhere();
-        deps.status("idle");
+      if (saving) {
+        heldRev = Math.max(heldRev, frame.rev);
+        return;
       }
+      changedElsewhere();
     },
   };
 }

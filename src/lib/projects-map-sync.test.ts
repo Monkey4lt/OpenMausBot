@@ -99,4 +99,62 @@ describe("the Projects page's saves", () => {
     await flush();
     expect(events).toEqual(["status:saving", "status:saving", "reload", "notice", "status:idle"]);
   });
+
+  it("its own save's frame arriving before the save's answer neither reloads nor drops the next edit", async () => {
+    let answer: (value: { rev: number }) => void = () => {};
+    const { sync, timers, puts, events } = setup({ put: (body) => (puts.length === 1 ? new Promise((resolve) => { answer = resolve; }) : Promise.resolve({ rev: (body as { baseRev: number }).baseRev + 1 })) });
+    sync.loaded({ rev: 2, groups: [] });
+    const first = sync.now({ rev: 2, groups: ["a"] });
+    sync.later({ rev: 2, groups: ["a", "b"] });
+    sync.frame({ kind: "projects.changed", rev: 3 });
+    answer({ rev: 3 });
+    await first;
+    expect(events).not.toContain("reload");
+    expect(events).not.toContain("notice");
+    expect(timers[0]!.cleared).toBe(false);
+    timers[0]!.fn();
+    await flush();
+    expect(puts.at(-1)).toEqual({ rev: 2, groups: ["a", "b"], baseRev: 3 });
+    expect(sync.rev()).toBe(4);
+  });
+
+  it("a frame held during a save still reloads when it is newer than the save's answer", async () => {
+    let answer: (value: { rev: number }) => void = () => {};
+    const { sync, timers, events } = setup({ put: () => new Promise((resolve) => { answer = resolve; }) });
+    sync.loaded({ rev: 2, groups: [] });
+    const first = sync.now({ rev: 2, groups: ["a"] });
+    sync.later({ rev: 2, groups: ["a", "b"] });
+    sync.frame({ kind: "projects.changed", rev: 4 });
+    expect(events).not.toContain("reload");
+    answer({ rev: 3 });
+    await first;
+    expect(events).toContain("reload");
+    expect(events).toContain("notice");
+    expect(timers[0]!.cleared).toBe(true);
+  });
+
+  it("a delayed save due while another is on its way waits for it and uses its rev", async () => {
+    let answer: (value: { rev: number }) => void = () => {};
+    const { sync, timers, puts } = setup({ put: (body) => (puts.length === 1 ? new Promise((resolve) => { answer = resolve; }) : Promise.resolve({ rev: (body as { baseRev: number }).baseRev + 1 })) });
+    sync.loaded({ rev: 2, groups: [] });
+    const first = sync.now({ rev: 2, groups: ["a"] });
+    sync.later({ rev: 2, groups: ["b"] });
+    timers[0]!.fn();
+    await flush();
+    expect(puts).toHaveLength(1);
+    answer({ rev: 3 });
+    await first;
+    await flush();
+    expect(puts.at(-1)).toEqual({ rev: 2, groups: ["b"], baseRev: 3 });
+  });
+
+  it("a reload that lands on an edit not saved yet shows the notice instead of dropping it silently", () => {
+    const { sync, timers, events } = setup();
+    sync.loaded({ rev: 2, groups: [] });
+    sync.later({ rev: 2, groups: ["mine"] });
+    events.length = 0;
+    sync.loaded({ rev: 2, groups: [] });
+    expect(timers[0]!.cleared).toBe(true);
+    expect(events).toEqual(["notice", "status:idle"]);
+  });
 });
