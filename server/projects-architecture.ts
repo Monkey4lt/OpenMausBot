@@ -192,7 +192,8 @@ function findAll(re: RegExp, code: string, group: number): Found[] {
 
 function pythonFromSpecs(module: string, names: string): string[] {
   const listed = names.replace(/[()]/g, " ").split(",").map((part) => part.trim().split(/\s+/)[0]).filter((name) => /^\w+$/.test(name));
-  return /^\.+$/.test(module) && listed.length ? listed.map((name) => `${module}${name}`) : [module];
+  if (!listed.length) return [module];
+  return listed.map((name) => (/^\.+$/.test(module) ? `${module}${name}` : `${module}.${name}`));
 }
 
 function expandRustUse(tree: string): string[] {
@@ -482,7 +483,8 @@ export function buildArchitecture(
   for (const { path, imports } of read.slice(0, limit)) {
     const source = moduleOf.get(path);
     if (!source) continue;
-    for (const { spec } of imports) {
+    const counted = new Set<string>();
+    for (const { spec, line } of imports) {
       const target = resolveImport(path, spec, files, aliases);
       if (target === null) {
         if (!isProjectSpec(path, spec, aliases)) {
@@ -491,7 +493,8 @@ export function buildArchitecture(
         }
         continue;
       }
-      if (target === path) continue;
+      if (target === path || counted.has(`${line}\n${target}`)) continue;
+      counted.add(`${line}\n${target}`);
       const dest = moduleOf.get(target)!;
       uses.set(path, (uses.get(path) ?? new Set()).add(target));
       usedBy.set(target, (usedBy.get(target) ?? new Set()).add(path));

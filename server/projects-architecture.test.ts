@@ -79,7 +79,7 @@ describe("parseImports", () => {
     ["a.ts", 'const m = await import("./lazy");', ["./lazy"]],
     ["a.js", 'const fs = require("fs");', ["fs"]],
     ["a.ts", '// import x from "./no"\n/* import y from "./no2" */', []],
-    ["a.py", "import os\nfrom .models import User\nfrom app.db import x", ["os", ".models", "app.db"]],
+    ["a.py", "import os\nfrom .models import User\nfrom app.db import x", ["os", ".models.User", "app.db.x"]],
     ["main.go", 'import (\n  "fmt"\n  "example.com/app/db"\n)', ["fmt", "example.com/app/db"]],
     ["lib.rs", "mod db;\nuse crate::api::routes;", ["self::db", "crate::api::routes"]],
     ["s.css", '@import "./theme.css";', ["./theme.css"]],
@@ -91,7 +91,7 @@ describe("parseImports", () => {
     ["a URL inside a string is not a comment", "a.ts", 'const u = "http://x"; import y from "./y";', ["./y"]],
     ["words that only look like imports", "a.ts", 'const s = "import x from y"; myimport("./no"); x.require("./no");', []],
     ["Vue single-file component", "A.vue", '<script setup>\nimport B from "./B.vue";\n</script>', ["./B.vue"]],
-    ["Python lists, aliases, relative parents and comments", "a.py", "import os, sys as system  # import nope\nfrom .. import x\nfrom ..pkg.mod import (a, b)\n# import gone", ["os", "sys", "..x", "..pkg.mod"]],
+    ["Python lists, aliases, relative parents and comments", "a.py", "import os, sys as system  # import nope\nfrom .. import x\nfrom ..pkg.mod import (a, b)\n# import gone", ["os", "sys", "..x", "..pkg.mod.a", "..pkg.mod.b"]],
     ["Python docstring", "a.py", '"""\nimport nope\n"""\nimport real', ["real"]],
     ["Go single import with alias", "a.go", 'package main\n\nimport f "fmt"\nimport (\n  db "example.com/app/db" // the store\n  _ "embed"\n)', ["fmt", "example.com/app/db", "embed"]],
     ["Rust pub mod, grouped use and external crates", "lib.rs", "pub mod api;\nmod inline { }\nuse crate::api::{routes, auth};\nuse serde::Serialize;\n// use crate::gone;", ["self::api", "crate::api::routes", "crate::api::auth", "serde::Serialize"]],
@@ -99,7 +99,7 @@ describe("parseImports", () => {
   ])("%s", (_name, path, text, specs) => expect(parseImports(path, text).map((r) => r.spec)).toEqual(specs));
 
   it("gives the 1-based line of each import", () => {
-    expect(parseImports("a.py", "import os\n\nfrom x import y\n")).toEqual([{ spec: "os", line: 1 }, { spec: "x", line: 3 }]);
+    expect(parseImports("a.py", "import os\n\nfrom x import y\n")).toEqual([{ spec: "os", line: 1 }, { spec: "x.y", line: 3 }]);
     expect(parseImports("main.go", 'import (\n  "fmt"\n  "os"\n)')).toEqual([{ spec: "fmt", line: 2 }, { spec: "os", line: 3 }]);
   });
 
@@ -346,8 +346,8 @@ describe("Python imported names", () => {
     ["x = 1; import json  # import nope", ["json"]],
     ["from . import views, models as m", [".views", ".models"]],
     ["from .. import (\n  a,\n  b,\n)", ["..a", "..b"]],
-    ["from .pkg import mod", [".pkg"]],
-    ["from app.db import Session", ["app.db"]],
+    ["from .pkg import mod", [".pkg.mod"]],
+    ["from app.db import Session", ["app.db.Session"]],
     ["from x import *", ["x"]],
   ])("%s", (text, specs) => expect(parseImports("app/x.py", text).map((r) => r.spec)).toEqual(specs));
 
@@ -360,4 +360,15 @@ describe("Python imported names", () => {
     ["a class from a module falls back to the module", "app.db.Session", "app/db.py"],
     ["a missing module stays external", "requests.get", null],
   ])("%s", (_name, spec, to) => expect(resolveImport("app/x.py", spec, files, {})).toBe(to));
+});
+
+describe("Python names in the architecture", () => {
+  it("from .pkg import mod links to the module, and two names of one line count once", () => {
+    const paths = ["app/x.py", "app/pkg/__init__.py", "app/pkg/mod.py", "app/db.py"];
+    const read = [{ path: "app/x.py", imports: parseImports("app/x.py", "from .pkg import mod\nfrom .db import A, B\nfrom os.path import join") }];
+    const arch = buildArchitecture(paths, read, {});
+    expect(arch.files.find((f) => f.path === "app/x.py")?.uses).toEqual(["app/db.py", "app/pkg/mod.py"]);
+    expect(arch.files.find((f) => f.path === "app/db.py")?.usedBy).toEqual(["app/x.py"]);
+    expect(arch.external).toEqual([{ name: "os", count: 1 }]);
+  });
 });
