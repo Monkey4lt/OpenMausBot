@@ -93,7 +93,7 @@
 **Livré :** montage par `server/workflows/host.ts` (`createWorkflowHost({ dataDir, language, botExists, broadcast })`, une ligne dans `index.ts`) ; trame `{ kind: "workflow", id, rev }` (`rev` 0 : supprimé) ajoutée à `ServerFrame` ; l'id du chemin l'emporte sur celui du corps ; `DELETE` sans `baseRev` accepté ; textes serveur `server.workflow.*` (fr/en).
 
 
-### Task 5 : Éditeur sur la toile (B1, interface)
+### Task 5 (fait) : Éditeur sur la toile (B1, interface)
 
 **Files:** Create `src/lib/workflows/editor.ts` (pur), `src/components/workflows/WorkflowEditor.tsx`, `src/components/workflows/WorkflowNodeCard.tsx`, `src/components/workflows/NodeSettings.tsx`, `src/components/workflows/useWorkflow.ts` — Modify `src/components/ProjectsPage.tsx` (section « Workflows » de la barre de gauche, fil d'Ariane « Atelier › {workflow} », `lazy(() => import("./workflows/WorkflowEditor"))`), `src/lib/i18n` (fr/en) — Test `src/lib/workflows/editor.test.ts`, `src/components/workflows/WorkflowEditor.test.ts`
 
@@ -107,11 +107,13 @@
   - `problemsByTarget(problems): { nodes: Record<string, Problem[]>; edges: Record<string, Problem[]> }`.
 - Interface : bloc = `NodeFrame` + étiquette au-dessus (icône + « IA », « Bot »…) ; réglages dans la carte (`NodeField`) : sélecteur de modèle de l'appli, sélecteur de bot, heure HH:MM, jours ; Déclencheur affiche « Prochaine exécution » (calculée côté serveur en B3, « — » avant) et « Lancer maintenant » (désactivé avant B2) ; problèmes en clair sous le bloc / sur le fil ; bandeau « Les bots de ce workflow agissent sans te demander » dès qu'il y a un bloc Bot, avec un lien « Ajouter une approbation » ; limites (étapes, coût) dans le panneau du workflow ; enregistrement automatique (anti-rebond 800 ms) avec `baseRev`, 409 → « Ce workflow a changé ailleurs. Recharger » ; « + Nouveau workflow » crée Déclencheur (à la main) seul.
 
-- [ ] **Step 1: Write the failing tests** — `editor.test.ts` : `it("adds a block with default settings at the given point")`, `it("refuses a wire to a note, to a trigger, from a send block")`, `it("refuses a wire that would close a loop")`, `it("removing a block removes its wires")`, `it("duplicate keeps settings and gets a new id, no wires")`, `it("groups problems by block and wire")`. `WorkflowEditor.test.ts` : rendu d'un workflow à 3 blocs (ports, fils), clic sur un fil → supprimé, 409 → message de rechargement, bandeau Bot visible.
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS + `generate-locale --check` + vérification visuelle (thème clair, sombre, Aurora).
-- [ ] **Step 5:** Commit `feat(workflows): editor on the Atelier canvas`.
+- [x] **Step 1: Write the failing tests** — `editor.test.ts` : `it("adds a block with default settings at the given point")`, `it("refuses a wire to a note, to a trigger, from a send block")`, `it("refuses a wire that would close a loop")`, `it("removing a block removes its wires")`, `it("duplicate keeps settings and gets a new id, no wires")`, `it("groups problems by block and wire")`. `WorkflowEditor.test.ts` : rendu d'un workflow à 3 blocs (ports, fils), clic sur un fil → supprimé, 409 → message de rechargement, bandeau Bot visible.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS + `generate-locale --check` + vérification visuelle (défaut, Aurora, téléphone).
+- [x] **Step 5:** Commit (avec les tâches 6 et 9 interface).
 
-### Task 6 : Workflows dans la vue d'ensemble (B1)
+**Livré (écarts) :** `src/lib/workflows/{editor,run,schedule,overview}.ts` ; `RunPanel.tsx` en plus ; `createMapSync` gagne `frameRev` (trames `workflow`) ; « Prochaine exécution » calculée côté client (`schedule.ts`, fuseau du navigateur ; `croner` absent du bac à sable) ; `wouldCycle` côté client dans `editor.ts` ; sélecteur de modèle = liste native des modèles des IA configurées (`modelOptions`), pas le `ModelPicker` de l'appli (lié à un bot) ; « Ajouter une approbation » insère le bloc devant le premier bot ; tsc impossible ici (types React/zod absents).
+
+### Task 6 (fait) : Workflows dans la vue d'ensemble (B1)
 
 **Files:** Modify `src/components/ProjectsPage.tsx` — Test `src/components/ProjectsPage.test.ts`
 
@@ -119,7 +121,7 @@
 - Consumes: Task 4 `GET /api/workflows` (`projectId`, `lastRun`).
 - Produces: petit bloc « workflow » accroché au projet (`projectId`) avec pastille d'état de la dernière exécution ; clic → ouvre l'éditeur ; un workflow sans projet n'apparaît que dans la barre de gauche.
 
-- [ ] Tests (`it("shows a workflow attached to its project with its last run state")`, `it("a workflow whose project is gone is listed but not drawn")`) → FAIL → implémenter → PASS → commit `feat(workflows): workflows on the Atelier overview`.
+- [x] Tests (`it("shows a workflow attached to its project with its last run state")`, `it("a workflow whose project is gone is listed but not drawn")`) → FAIL → implémenter → PASS → commit (avec la tâche 5). Petits blocs suspendus sous le projet (la zone du pôle et « Ranger » leur gardent la place).
 
 ---
 
@@ -177,7 +179,7 @@
 
 - [x] **Serveur** : tests (`it("run answers 400 with problems for an invalid workflow")`, `it("a second run of the same workflow answers 409")`, `it("cancel answers 404 for an unknown run, and stops a running one")`, + `server/workflows/host.test.ts`) → FAIL → implémenter → PASS (routes 16, hôte 10) → commit `feat(workflows): run routes and live frames`.
 - [ ] `verify-omb` (moteur factice) : pas possible dans ce bac à sable (dépendances absentes, p. ex. `tldts`, le serveur ne démarre pas) — à faire.
-- [ ] **Interface** (couleurs, panneau d'étape, boutons, historique) → commit `feat(workflows): run colours`.
+- [x] **Interface** (couleurs, panneau d'étape, boutons, historique) → livrée avec la tâche 5.
 
 **Livré (serveur) :**
 - Routes (hors `CLIENT_ALLOW`) : `POST /api/workflows/:id/run {text?}` → `{ run }` | 400 `{ error, problems }` | 404 | 409 `{ error, runId }` ; `POST /api/workflows/:id/run-step {nodeId}` → `{ run }` ; `POST /api/workflows/runs/:runId/retry {nodeId}` → `{ run }` (nouvelle exécution) ; `POST /api/workflows/runs/:runId/cancel` → `{ ok: true }` | 404 ; `GET /api/workflows/:id/runs` → `{ runs }` (plus récentes d'abord) ; `GET /api/workflows/runs/:runId` → `{ run }` | 404 ; sans moteur branché → 503. `DELETE` d'un workflow en cours arrête d'abord son exécution.

@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadLocale, setLocale, t } from "@/lib/i18n";
-import { AtelierTitle, CartographeButton, CartographePanel, MapChangedNotice, ProjectBlockHeaderActions, ProjectBlockMeta, ProjectBlockPole, ProjectBlockSummary } from "./ProjectsPage";
+import { projectWorkflowBadges } from "@/lib/workflows/overview";
+import { AtelierTitle, CartographeButton, CartographePanel, MapChangedNotice, ProjectBlockHeaderActions, ProjectBlockMeta, ProjectBlockPole, ProjectBlockSummary, WorkflowBadge, WorkflowList } from "./ProjectsPage";
 
 beforeEach(async () => { await loadLocale("fr"); });
 afterEach(() => { setLocale("en"); });
@@ -122,3 +123,33 @@ describe("the Atelier", () => {
   });
 });
 
+describe("workflows in the Atelier", () => {
+  const list = [
+    { id: "w1", name: "Factures du mois", projectId: "p1", rev: 1, updatedAt: 1, lastRun: { status: "failed" as const, startedAt: 5 } },
+    { id: "w2", name: "Rapport du matin", projectId: "gone", rev: 1, updatedAt: 1 },
+  ];
+
+  it("shows a workflow attached to its project with its last run state", () => {
+    const [badge] = projectWorkflowBadges(list, new Map([["p1", { x: 0, y: 0, w: 320, h: 200 }]]));
+    const html = renderToStaticMarkup(createElement(WorkflowBadge, { name: badge!.name, dot: badge!.dot, rect: badge!.rect, onOpen: () => {} }));
+    expect(html).toContain('data-workflow-badge="failed"');
+    expect(html).toContain("Factures du mois");
+    expect(html).toContain("bg-danger");
+    expect(html).toContain('aria-label="Ouvrir le workflow Factures du mois"');
+    expect(html).toContain("Échouée");
+  });
+
+  it("a workflow whose project is gone is listed but not drawn", () => {
+    expect(projectWorkflowBadges(list, new Map([["p1", { x: 0, y: 0, w: 320, h: 200 }]])).map((b) => b.id)).toEqual(["w1"]);
+    const html = renderToStaticMarkup(createElement(WorkflowList, { workflows: list, activeId: "w2", onOpen: () => {}, onNew: () => {} }));
+    expect(html).toContain("Rapport du matin");
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain('data-run-dot="idle"');
+    expect(html).toContain('data-run-dot="failed"');
+    expect(html).toContain("Nouveau workflow");
+  });
+
+  it("says when there is no workflow yet", () => {
+    expect(renderToStaticMarkup(createElement(WorkflowList, { workflows: [], activeId: null, onOpen: () => {}, onNew: () => {} }))).toContain("Aucun workflow pour l&#x27;instant");
+  });
+});

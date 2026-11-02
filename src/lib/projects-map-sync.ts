@@ -10,6 +10,8 @@ export interface MapSyncDeps<S extends { rev?: number }> {
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(timer: unknown): void;
   delayMs: number;
+  /** The rev a live frame announces for this state, or null when the frame is about something else. */
+  frameRev?(frame: { kind?: unknown; rev?: unknown; id?: unknown }): number | null;
 }
 
 /**
@@ -17,6 +19,10 @@ export interface MapSyncDeps<S extends { rev?: number }> {
  * Saves go one at a time; a projects.changed frame that lands during a save is weighed against the rev the save answers,
  * since the server sends the frame for that save before its answer.
  */
+function projectsFrameRev(frame: { kind?: unknown; rev?: unknown }): number | null {
+  return frame.kind === "projects.changed" && typeof frame.rev === "number" ? frame.rev : null;
+}
+
 export function createMapSync<S extends { rev?: number }>(deps: MapSyncDeps<S>) {
   let rev = 0;
   let timer: unknown = null;
@@ -107,10 +113,11 @@ export function createMapSync<S extends { rev?: number }>(deps: MapSyncDeps<S>) 
       cancel();
       return send(next);
     },
-    frame(frame: { kind?: unknown; rev?: unknown }) {
-      if (frame.kind !== "projects.changed" || typeof frame.rev !== "number" || frame.rev <= rev) return;
+    frame(frame: { kind?: unknown; rev?: unknown; id?: unknown }) {
+      const announced = (deps.frameRev ?? projectsFrameRev)(frame);
+      if (announced === null || announced <= rev) return;
       if (saving) {
-        heldRev = Math.max(heldRev, frame.rev);
+        heldRev = Math.max(heldRev, announced);
         return;
       }
       changedElsewhere();

@@ -4,7 +4,7 @@ import { createMapSync, type MapSyncDeps } from "./projects-map-sync";
 
 type State = { rev: number; groups: string[] };
 
-function setup(options: { put?: (body: unknown) => Promise<{ rev: number }> } = {}) {
+function setup(options: { put?: (body: unknown) => Promise<{ rev: number }>; frameRev?: MapSyncDeps<State>["frameRev"] } = {}) {
   const puts: unknown[] = [];
   const timers: Array<{ fn: () => void; ms: number; cleared: boolean }> = [];
   const events: string[] = [];
@@ -16,6 +16,7 @@ function setup(options: { put?: (body: unknown) => Promise<{ rev: number }> } = 
     setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; },
     clearTimer: (timer) => { if (timer) (timer as { cleared: boolean }).cleared = true; },
     delayMs: 400,
+    ...(options.frameRev ? { frameRev: options.frameRev } : {}),
   };
   return { sync: createMapSync(deps), puts, timers, events };
 }
@@ -156,5 +157,15 @@ describe("the Projects page's saves", () => {
     sync.loaded({ rev: 2, groups: [] });
     expect(timers[0]!.cleared).toBe(true);
     expect(events).toEqual(["notice", "status:idle"]);
+  });
+
+  it("reads the rev of another kind of frame through frameRev, such as one workflow's", () => {
+    const { sync, events } = setup({ frameRev: (frame) => (frame.kind === "workflow" && frame.id === "w1" && typeof frame.rev === "number" ? frame.rev : null) });
+    sync.loaded({ rev: 2, groups: [] });
+    sync.frame({ kind: "projects.changed", rev: 9 });
+    sync.frame({ kind: "workflow", id: "w2", rev: 9 });
+    expect(events).toEqual([]);
+    sync.frame({ kind: "workflow", id: "w1", rev: 3 });
+    expect(events).toEqual(["reload"]);
   });
 });

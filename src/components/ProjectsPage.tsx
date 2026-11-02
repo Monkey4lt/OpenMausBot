@@ -3,9 +3,9 @@
 // Shown in place of the chat, like Team map. Layout is saved on the server; the view is kept per device.
 import {
   ChevronDown, ChevronRight, CircleHelp, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
-  Network, Pencil, Plus, RefreshCw, Search, Server, Sparkles, Trash2, X,
+  Network, Pencil, Plus, RefreshCw, Search, Server, Sparkles, Trash2, Workflow as WorkflowIcon, X,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 import { leadComposerDraft } from "@/lib/drafts";
@@ -18,6 +18,9 @@ import { annotationBounds, annotationText, type Annotation } from "@/lib/canvas/
 import { BLOCK_W, arrangeByGroup, blockRect, groupZone, linkEdges, openingView, placeBlock } from "@/lib/projects-map";
 import { createMapSync } from "@/lib/projects-map-sync";
 import { panelDraft, panelLayout, readPanelOpen, writePanelOpen } from "@/lib/projects-panel";
+import { MAUS_COLORS } from "@/lib/mascot";
+import { modelOptions, newEditorId, newWorkflowInput } from "@/lib/workflows/editor";
+import { badgeHooks, badgeStackHeight, projectWorkflowBadges, runDot, withRun, type RunDot, type WorkflowSummary } from "@/lib/workflows/overview";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { api } from "@/state/api";
 import { GROUP_PALETTE as PALETTE } from "../../shared/project-groups";
@@ -32,6 +35,9 @@ import { Toolbar } from "./canvas/Toolbar";
 import { readStoredView, useCanvasView } from "./canvas/useCanvasView";
 import { ArchitectureView } from "./projects/ArchitectureView";
 import { ChatView } from "./ChatView";
+import type { WorkflowRun } from "../../shared/workflows";
+
+const WorkflowEditor = lazy(() => import("./workflows/WorkflowEditor"));
 
 // ---------- types (mirror server/projects.ts) ----------
 interface ProjectNode { n: string; t: "d" | "f" | "more"; c?: ProjectNode[] }
@@ -238,6 +244,9 @@ export function ProjectsPage() {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [mapOf, setMapOf] = useState<Project | null>(null);
+  const [workflows, setWorkflows] = useState<WorkflowSummary[] | null>(null);
+  const [openWorkflow, setOpenWorkflow] = useState<string | null>(null);
+  const [workflowMenu, setWorkflowMenu] = useState(false);
   const [mapChanged, setMapChanged] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
@@ -279,7 +288,18 @@ export function ProjectsPage() {
   }, [sync, stored, setView]);
   loadRef.current = load;
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => listenLiveFrames({ onFrame: (frame) => sync.frame(frame), onMissedFrames: () => { void loadRef.current(); } }), [sync]);
+  const loadWorkflows = useCallback(() => {
+    api<{ workflows: WorkflowSummary[] }>("/api/workflows").then((r) => setWorkflows(r.workflows), () => setWorkflows((list) => list ?? []));
+  }, []);
+  useEffect(() => { loadWorkflows(); }, [loadWorkflows]);
+  useEffect(() => listenLiveFrames({
+    onFrame: (frame) => {
+      sync.frame(frame);
+      if (frame.kind === "workflow") loadWorkflows();
+      if (frame.kind === "workflow-run") setWorkflows((list) => list && withRun(list, (frame as unknown as { run: WorkflowRun }).run));
+    },
+    onMissedFrames: () => { void loadRef.current(); loadWorkflows(); },
+  }), [sync, loadWorkflows]);
 
   // Every change goes through here and is saved shortly after.
   const update = useCallback((fn: (s: MapState) => MapState) => {
@@ -332,11 +352,16 @@ export function ProjectsPage() {
 
   const rects = useMemo(() => new Map(projects.map((p, i) => [p.id, blockRect(S?.pos ?? {}, p.id, i, sizes[p.id])])), [projects, S?.pos, sizes]);
   const zones = useMemo(() => (S?.groups ?? []).flatMap((g) => {
-    const zone = groupZone(projects.filter((p) => S?.member[p.id] === g.id).map((p) => rects.get(p.id)!));
+    const withWorkflows = (id: string) => {
+      const r = rects.get(id)!;
+      return { ...r, h: r.h + badgeStackHeight((workflows ?? []).filter((w) => w.projectId === id).length) };
+    };
+    const zone = groupZone(projects.filter((p) => S?.member[p.id] === g.id).map((p) => withWorkflows(p.id)));
     return zone ? [{ group: g, zone }] : [];
-  }), [S?.groups, S?.member, projects, rects]);
+  }), [S?.groups, S?.member, projects, rects, workflows]);
   const annotations = useMemo(() => S?.annotations ?? [], [S?.annotations]);
-  const frame = useMemo(() => [...rects.values(), ...zones.map((z) => z.zone), ...annotations.map(annotationBounds)], [rects, zones, annotations]);
+  const badges = useMemo(() => projectWorkflowBadges(workflows ?? [], rects), [workflows, rects]);
+  const frame = useMemo(() => [...rects.values(), ...zones.map((z) => z.zone), ...annotations.map(annotationBounds), ...badges.map((b) => b.rect)], [rects, zones, annotations, badges]);
 
   const measured = projects.length > 0 && projects.every((p) => sizes[p.id]);
   useEffect(() => {
@@ -398,9 +423,23 @@ export function ProjectsPage() {
   };
   const arrange = () => {
     const buckets = [...S.groups.map((g) => projects.filter((p) => S.member[p.id] === g.id)), projects.filter((p) => !groupOf(p.id))];
-    const next: MapState["pos"] = { ...S.pos, ...arrangeByGroup(buckets.map((list) => list.map((p) => ({ id: p.id, h: sizes[p.id]?.h ?? 200 })))) };
+    const next: MapState["pos"] = { ...S.pos, ...arrangeByGroup(buckets.map((list) => list.map((p) => ({ id: p.id, h: (sizes[p.id]?.h ?? 200) + badgeStackHeight((workflows ?? []).filter((w) => w.projectId === p.id).length) })))) };
     update((s) => ({ ...s, pos: next }));
   };
+  const newWorkflow = async () => {
+    setWorkflowMenu(false);
+    const name = await ask({ title: t("workflows.new"), text: t("workflows.new.text"), placeholder: t("workflows.new.placeholder"), ok: t("workflows.new.create") });
+    if (!name) return;
+    try {
+      const r = await api<{ workflow: { id: string; name: string; rev: number; updatedAt: number } }>("/api/workflows", { method: "POST", body: JSON.stringify({ workflow: newWorkflowInput(name.slice(0, 120), newEditorId("t")) }) });
+      setWorkflows((list) => [...(list ?? []).filter((w) => w.id !== r.workflow.id), { id: r.workflow.id, name: r.workflow.name, rev: r.workflow.rev, updatedAt: r.workflow.updatedAt }]);
+      setMapOf(null);
+      setOpenWorkflow(r.workflow.id);
+    } catch (error) {
+      await ask({ title: t("workflows.new.failed", { message: (error as Error).message }), ok: t("projects.close"), input: false });
+    }
+  };
+  const openFlow = (id: string) => { setWorkflowMenu(false); setMapOf(null); setOpenWorkflow(id); };
   const searchItems: CanvasSearchItem[] = [
     ...projects.map((p) => ({ id: p.id, label: p.name, rect: rects.get(p.id)! })),
     ...annotations.flatMap((a) => {
@@ -440,6 +479,14 @@ export function ProjectsPage() {
             <ToolButton onClick={() => void load()} label={t("projects.refresh")}><RefreshCw size={15} className={cn(loading && "animate-spin")} /></ToolButton>
             <ToolButton onClick={() => update((s) => ({ ...s, help: !s.help }))} label={t("projects.help.button")}><CircleHelp size={15} /></ToolButton>
           </ToolGroup>
+          <div className="relative md:hidden">
+            <ToolGroup>
+              <ToolButton onClick={() => setWorkflowMenu(!workflowMenu)} label={t("workflows.section")}><WorkflowIcon size={15} /></ToolButton>
+            </ToolGroup>
+            {workflowMenu && <Menu onClose={() => setWorkflowMenu(false)} className="right-0 top-10 w-[min(280px,calc(100vw-2rem))]">
+              <WorkflowList workflows={workflows} activeId={openWorkflow} onOpen={openFlow} onNew={() => void newWorkflow()} />
+            </Menu>}
+          </div>
           <CartographeButton bot={cartographe} onAsk={() => togglePanel(!panelOpen, mapOf?.name)} />
         </div>
       </header>
@@ -471,12 +518,26 @@ export function ProjectsPage() {
                 </ul>
               </div>
             ))}
+            <div className="mt-3 border-t border-hairline/40 pt-1">
+              <div className="flex items-center justify-between pb-1 pl-2 pr-0 pt-2 text-[13px] font-medium text-ink-tertiary">
+                {t("workflows.section")}
+                <button className="ui-icon-button" aria-label={t("workflows.new")} title={t("workflows.new")} onClick={() => void newWorkflow()}><Plus size={15} /></button>
+              </div>
+              <WorkflowList workflows={workflows} activeId={openWorkflow} onOpen={openFlow} onNew={() => void newWorkflow()} />
+            </div>
           </div>
         </aside>
 
-        {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow}
+        {mapOf && !openWorkflow && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow}
           onAskCartographe={cartographe ? () => togglePanel(true, mapOf.name) : undefined} />}
-        <div ref={setBox} className={cn("relative flex min-w-0 flex-1", mapOf && "hidden")}
+        {openWorkflow && <Suspense fallback={<div className="flex flex-1 items-center justify-center"><Loader2 size={20} className="animate-spin text-ink-secondary" /></div>}>
+          <WorkflowEditor key={openWorkflow} workflowId={openWorkflow} projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+            bots={appState.bots.filter((b) => !b.hidden).map((b) => ({ id: b.id, name: b.name, color: MAUS_COLORS[b.color] }))}
+            models={modelOptions(appState.instances ?? [])}
+            onBack={() => setOpenWorkflow(null)} onDeleted={() => { setOpenWorkflow(null); loadWorkflows(); }}
+            confirm={async (title, text) => Boolean(await ask({ title, text, ok: t("projects.delete"), danger: true, input: false }))} />
+        </Suspense>}
+        <div ref={setBox} className={cn("relative flex min-w-0 flex-1", (mapOf || openWorkflow) && "hidden")}
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && (e.target as Element).closest("[data-canvas]")) { e.preventDefault(); setSearchOpen(true); }
           }}>
@@ -487,7 +548,9 @@ export function ProjectsPage() {
             underlay={<>
               <PoleZones zones={zones} />
               <EdgeLayer edges={linkEdges(S.links, rects)} onEdgeClick={(id) => void deleteLink(S.links[Number(id)])} />
+              <EdgeLayer edges={badgeHooks(badges, rects)} />
             </>}>
+            {badges.map((b) => <WorkflowBadge key={b.id} name={b.name} dot={b.dot} rect={b.rect} onOpen={() => openFlow(b.id)} />)}
             {projects.map((p) => {
               const r = rects.get(p.id)!;
               const g = groupOf(p.id);
@@ -603,6 +666,55 @@ export function ProjectsPage() {
       )}
       {askNode}
     </main>
+  );
+}
+
+const RUN_DOT_CLASS: Record<RunDot, string> = {
+  idle: "bg-hairline", running: "bg-accent animate-pulse", succeeded: "bg-success", failed: "bg-danger", cancelled: "bg-warning",
+};
+const RUN_DOT_LABEL = {
+  idle: "workflows.lastRun.idle", running: "workflows.run.status.running", succeeded: "workflows.run.status.succeeded",
+  failed: "workflows.run.status.failed", cancelled: "workflows.run.status.cancelled",
+} as const;
+
+/** The left bar's workflows, each with the state of its last run; null while loading. */
+export function WorkflowList({ workflows, activeId, onOpen, onNew }: { workflows: readonly WorkflowSummary[] | null; activeId: string | null; onOpen: (id: string) => void; onNew: () => void }) {
+  return (
+    <ul className="flex flex-col" data-workflow-list>
+      {workflows === null && <li className="px-2 py-1"><Loader2 size={13} className="animate-spin text-ink-tertiary" /></li>}
+      {workflows?.length === 0 && <li className="px-2 py-1 text-[12px] italic text-ink-tertiary">{t("workflows.none")}</li>}
+      {workflows?.map((w) => {
+        const dot = runDot(w.lastRun);
+        return (
+          <li key={w.id}>
+            <button type="button" onClick={() => onOpen(w.id)} aria-current={activeId === w.id ? "page" : undefined} title={t(RUN_DOT_LABEL[dot])}
+              className={cn("flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] hover:bg-raised", activeId === w.id ? "bg-raised font-medium text-ink" : "text-ink-secondary hover:text-ink")}>
+              <WorkflowIcon size={14} className="shrink-0 text-ink-tertiary" />
+              <span className="min-w-0 flex-1 truncate">{w.name}</span>
+              <span data-run-dot={dot} className={cn("size-2 shrink-0 rounded-full", RUN_DOT_CLASS[dot])} />
+            </button>
+          </li>
+        );
+      })}
+      <li>
+        <button type="button" onClick={onNew} className="mt-0.5 flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] text-ink-tertiary hover:bg-raised hover:text-ink">
+          <Plus size={14} className="shrink-0" />{t("workflows.new")}
+        </button>
+      </li>
+    </ul>
+  );
+}
+
+/** A workflow hung under its project on the overview, with the state of its last run. */
+export function WorkflowBadge({ name, dot, rect, onOpen }: { name: string; dot: RunDot; rect: { x: number; y: number; w: number; h: number }; onOpen: () => void }) {
+  return (
+    <button type="button" data-workflow-badge={dot} onClick={onOpen} aria-label={t("workflows.open", { name })} title={`${name} · ${t(RUN_DOT_LABEL[dot])}`}
+      className="absolute flex items-center gap-2 rounded-[10px] border border-hairline/80 bg-card px-2.5 text-left text-[12.5px] text-ink hover:border-ink/40"
+      style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}>
+      <WorkflowIcon size={13} className="shrink-0 text-ink-tertiary" />
+      <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
+      <span className={cn("size-2 shrink-0 rounded-full", RUN_DOT_CLASS[dot])} />
+    </button>
   );
 }
 
