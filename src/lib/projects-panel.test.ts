@@ -27,10 +27,10 @@ describe("the Cartographe panel", () => {
   });
 
   it("drafts a request about the project open, or the overview one", () => {
-    expect(panelDraft({ projectName: "shop" })).toBe("Cartographie «shop» : explique-moi ses grands blocs, dessine-moi le schéma et propose-moi les changements.");
+    expect(panelDraft({ projectName: "shop" })).toBe("Décris «shop» : à quoi il sert en une phrase, puis chaque grand bloc en une ligne.");
     expect(panelDraft({})).toBe("Range mes projets et propose-moi les changements.");
     setLocale("en");
-    expect(panelDraft({ projectName: "shop" })).toBe("Map «shop»: explain its big blocks, draw me the diagram and propose the changes.");
+    expect(panelDraft({ projectName: "shop" })).toBe("Describe «shop»: what it is for in one sentence, then each big part in one line.");
   });
 
   it("overlays the map below 900 px and sits beside it above", () => {

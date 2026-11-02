@@ -173,7 +173,7 @@ describe("ArchitectureView", () => {
   });
 
   it("before a file is chosen, the panel says how to use it", () => {
-    expect(render({ initialFocus: { family: "ui", module: "src/components" } })).toContain("Choisissez un fichier");
+    expect(render({ initialFocus: { family: "ui", module: "src/components" } })).toContain("Choisis un fichier");
   });
 
   it("without data yet, says it is reading and that a big project takes a while", () => {

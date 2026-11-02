@@ -14,8 +14,8 @@ const LABEL_MAX = 60;
 const REF_PREFIX = "ref:";
 
 const FAMILY_LABEL: Record<Family, string> = {
-  tests: "Tests", docs: "Documentation", i18n: "Traductions", data: "Données", config: "Configuration",
-  scripts: "Scripts", assets: "Ressources", ui: "Interface", server: "Serveur", other: "Autre",
+  tests: "Tests", docs: "Documentation", i18n: "Traductions", data: "Données", config: "Réglages",
+  scripts: "Petits programmes", assets: "Images et fichiers", ui: "Interface", server: "Serveur", other: "Autre",
 };
 
 const text = z.string().max(500);
