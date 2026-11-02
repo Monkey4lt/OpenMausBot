@@ -116,7 +116,7 @@ it("GET /api/projects returns cartographeBotId from the dependency, or null", as
   - `createProjectsHold(deps: { outboundRequests: OutboundRequestService; appendCard(threadId: string, card: { title: string; lines: string[]; requestId: string }): void; dismissCard(threadId: string, requestId: string): void; notify(botId: string, text: string): void; maxMs: number }): { ask(input: { botId: string; threadId: string; lines: string[]; timeoutMs?: number }): Promise<"allow" | "deny" | "timeout"> }`
   - Titre de carte : `Appliquer ces {n} changements à la carte ?` (`ce changement` si n = 1). Délai effectif `min(timeoutMs ?? maxMs, maxMs)`. La carte réutilise la forme `outboundRequest` (`calls[]` = une entrée par ligne) pour que la réponse passe par `resolveAndSendTrust` sans code nouveau.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it("always appends a card, whatever the bot's access level", async () => {});
@@ -127,8 +127,8 @@ it("a second answer to the same card is ignored", async () => {});
 it("the card title counts the changes", () => {});
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS.
-- [ ] **Step 5:** Commit `feat(cartographe): an approval card shown at every access level`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS.
+- [x] **Step 5:** Commit `feat(cartographe): an approval card shown at every access level`.
 
 ### Task 4: Routes internes du Cartographe
 
