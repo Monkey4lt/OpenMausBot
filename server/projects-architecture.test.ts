@@ -284,3 +284,34 @@ describe("buildArchitecture", () => {
     expect(arch.edges.filter((e) => e.level === "family")).toEqual([{ level: "family", from: "ui", to: "data", weight: 1 }]);
   });
 });
+
+describe("parseImports on hostile input", () => {
+  it.each([
+    ["a.ts", "export /*" + "x".repeat(50_000) + "*/ a"],
+    ["a.ts", "import" + "\n".repeat(50_000)],
+    ["a.ts", "import" + " ".repeat(50_000)],
+    ["a.ts", "import " + "a, ".repeat(20_000)],
+    ["a.ts", "import type" + " ".repeat(50_000) + "x"],
+    ["a.ts", "import(".repeat(10_000)],
+    ["a.ts", "'x' ".repeat(20_000) + 'import a from "./a"'],
+    ["a.py", "from " + ".".repeat(50_000)],
+    ["a.py", "import" + " ".repeat(50_000) + "#"],
+    ["a.py", "from x import " + "a, ".repeat(20_000)],
+    ["main.go", "import(".repeat(10_000)],
+    ["main.go", "import " + "a".repeat(50_000)],
+    ["lib.rs", "pub(" + "x".repeat(50_000)],
+    ["lib.rs", "use " + ":".repeat(50_000) + "!"],
+    ["lib.rs", "use crate::{" + "a, ".repeat(20_000)],
+    ["s.css", "@import" + " ".repeat(50_000)],
+    ["s.css", "@import url(" + " ".repeat(50_000)],
+    ["dense.ts", 'import a from "./a";\n'.repeat(5_000)],
+  ])("%s stays fast", (path, text) => {
+    const start = performance.now();
+    parseImports(path, text);
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+
+  it("a long but legal import list is still read", () => {
+    expect(parseImports("a.ts", `import {${" a,".repeat(300)} } from "./many";`).map((r) => r.spec)).toEqual(["./many"]);
+  });
+});

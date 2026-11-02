@@ -136,9 +136,13 @@ const LANGUAGE_OF: Partial<Record<string, Language>> = {
 };
 
 function blankCommentsKeepingOffsets(text: string, syntax: Syntax): { code: string; strings: [number, number][] } {
-  const out = text.split("");
+  const parts: string[] = [];
   const strings: [number, number][] = [];
-  const blank = (from: number, to: number) => { for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " "; };
+  let kept = 0;
+  const blank = (from: number, to: number) => {
+    parts.push(text.slice(kept, from), text.slice(from, to).replace(/[^\n]/g, " "));
+    kept = to;
+  };
   let i = 0;
   while (i < text.length) {
     const ch = text[i];
@@ -164,19 +168,20 @@ function blankCommentsKeepingOffsets(text: string, syntax: Syntax): { code: stri
     }
     i++;
   }
-  return { code: out.join(""), strings };
+  parts.push(text.slice(kept));
+  return { code: parts.join(""), strings };
 }
 
 type Found = { spec: string; at: number };
 
-const JS_STATIC = /(?<![.\w$])(?:import|export)\s+(?:type\s+)?(?:[\w$*{}\s,]+?\s+from\s*)?(["'])([^"'\n]+)\1/g;
+const JS_STATIC = /(?<![.\w$])(?:import|export)\s+(?:type\s+)?(?:[\w$*{},][\w$*{},\s]{0,2000}?\bfrom\s*)?(["'])([^"'\n]+)\1/g;
 const JS_CALL = /(?<![.\w$])(?:import|require)\s*\(\s*(["'`])([^"'`\n]+)\1\s*\)/g;
 const CSS_IMPORT = /@(?:import|use|forward)\s+(?:url\(\s*)?(["'])([^"'\n]+)\1/g;
 const CSS_URL = /@import\s+url\(\s*([^"'\s)]+)\s*\)/g;
 const PY_IMPORT = /^[ \t]*import[ \t]+([^\n]+)/gm;
-const PY_FROM = /^[ \t]*from[ \t]+(\.+[\w.]*|[\w.]+)[ \t]+import\b/gm;
+const PY_FROM = /^[ \t]*from[ \t]+(\.*\w[\w.]*|\.+)[ \t]+import\b/gm;
 const GO_SINGLE = /\bimport[ \t]+(?:[\w.]+[ \t]+)?"([^"\n]+)"/g;
-const GO_BLOCK = /\bimport\s*\(([^)]*)\)/g;
+const GO_BLOCK = /\bimport\s*\(([^()]*)\)/g;
 const GO_SPEC = /(?:[\w.]+[ \t]+)?"([^"\n]+)"/g;
 const RS_MOD = /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?mod[ \t]+(\w+)[ \t]*;/gm;
 const RS_USE = /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?use[ \t]+((?:::)?[\w:]+)/gm;
@@ -222,7 +227,15 @@ export function parseImports(path: string, text: string): ImportRef[] {
     while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lineStarts[mid] <= at) lo = mid; else hi = mid - 1; }
     return lo + 1;
   };
-  const insideString = (at: number) => strings.some(([from, to]) => at > from && at <= to);
+  const insideString = (at: number) => {
+    let lo = 0, hi = strings.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const [from, to] = strings[mid];
+      if (at <= from) hi = mid - 1; else if (at > to) lo = mid + 1; else return true;
+    }
+    return false;
+  };
   return findImports(language, code)
     .filter((found) => !insideString(found.at))
     .sort((a, b) => a.at - b.at)
