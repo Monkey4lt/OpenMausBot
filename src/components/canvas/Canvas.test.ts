@@ -39,6 +39,14 @@ describe("Canvas", () => {
     expect(renderToStaticMarkup(createElement(Canvas, { tool: "select", readOnly: true }))).toContain('data-readonly="true"');
   });
 
+  it("with minimap, the zoom pill gets a minimap toggle; the minimap opens on demand", () => {
+    expect(renderToStaticMarkup(createElement(Canvas, { tool: "select" }))).not.toContain("Afficher la mini-carte");
+    const html = renderToStaticMarkup(createElement(Canvas, { tool: "select", minimap: true, rects: [{ x: 0, y: 0, w: 100, h: 100 }] }));
+    expect(html).toContain('aria-label="Afficher la mini-carte"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain("data-canvas-chrome");
+  });
+
   it("ZoomControls shows minus, the percentage, plus and fit, in French", () => {
     const html = renderToStaticMarkup(createElement(ZoomControls, { view: { x: 0, y: 0, scale: 0.8 }, onChange: () => {}, viewport: { w: 800, h: 600 }, rects: [] }));
     expect(html).toContain("80%");

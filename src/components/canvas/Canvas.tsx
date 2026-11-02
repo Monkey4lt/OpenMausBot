@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
-import { DEFAULT_VIEW, type Point, type Rect, type View } from "@/lib/canvas/geometry";
+import { centerOn, DEFAULT_VIEW, type Point, type Rect, type View } from "@/lib/canvas/geometry";
 import { keyToView, passedThreshold, startsPan, wheelToView, type Tool } from "@/lib/canvas/gestures";
 import { t } from "@/lib/i18n";
+import { Minimap } from "./Minimap";
 import { ZoomControls } from "./ZoomControls";
 
 /** What a piece inside the canvas needs: the current view (to turn screen moves into world moves) and the gesture state. */
@@ -23,13 +24,15 @@ export function dotGrid(view: View): CSSProperties {
   };
 }
 
+/** The floating controls over the canvas: presses there never pan. */
+const CHROME = "[data-canvas-chrome]";
 const EDITABLE = "input, textarea, select, [contenteditable]";
 /** Inner fields that scroll on their own keep the plain wheel. */
 const SCROLLS = "textarea, [data-canvas-scroll]";
 
 type Gesture = { id: number; start: Point; view: View; moved: boolean; background: boolean };
 
-export function Canvas({ view: controlled, onViewChange, tool, readOnly = false, rects = [], underlay, overlay, children, toolbar, bottomLeft, onBackgroundClick, label, className }: {
+export function Canvas({ view: controlled, onViewChange, tool, readOnly = false, rects = [], underlay, overlay, children, toolbar, bottomLeft, minimap = false, onBackgroundClick, label, className }: {
   view?: View;
   onViewChange?: (view: View) => void;
   tool: Tool;
@@ -42,6 +45,8 @@ export function Canvas({ view: controlled, onViewChange, tool, readOnly = false,
   children?: ReactNode;
   toolbar?: ReactNode;
   bottomLeft?: ReactNode;
+  /** Adds a minimap toggle to the zoom pill. */
+  minimap?: boolean;
   onBackgroundClick?: () => void;
   label?: string;
   className?: string;
@@ -54,6 +59,7 @@ export function Canvas({ view: controlled, onViewChange, tool, readOnly = false,
   const gesture = useRef<Gesture | null>(null);
   const space = useRef(false);
   const [panning, setPanning] = useState(false);
+  const [minimapOpen, setMinimapOpen] = useState(false);
   const latest = useRef({ view, setView });
   latest.current = { view, setView };
 
@@ -86,6 +92,7 @@ export function Canvas({ view: controlled, onViewChange, tool, readOnly = false,
   const down = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (gesture.current || !event.isPrimary) return;
     const target = event.target as Element;
+    if (target.closest(CHROME)) return;
     if (!startsPan(target, tool, event.button, space.current)) return;
     if (event.button === 1) event.preventDefault();
     gesture.current = { id: event.pointerId, start: { x: event.clientX, y: event.clientY }, view, moved: false, background: !target.closest("[data-canvas-node], [data-canvas-edge], button") };
@@ -143,12 +150,14 @@ export function Canvas({ view: controlled, onViewChange, tool, readOnly = false,
         {children}
         {overlay}
       </div>
-      <div className="pointer-events-none absolute inset-x-3 bottom-3 grid grid-cols-[1fr_auto_1fr] items-end gap-3 sm:inset-x-4 sm:bottom-4">
-        <div className="flex min-w-0 flex-col items-start gap-2">
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-col-reverse gap-2 sm:inset-x-4 sm:bottom-4 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:gap-3">
+        <div data-canvas-chrome className="flex min-w-0 flex-col items-start gap-2">
           {bottomLeft}
-          <ZoomControls view={view} onChange={setView} viewport={viewport} rects={rects} />
+          {minimap && minimapOpen && <Minimap rects={rects} view={view} viewport={viewport} onJump={(point) => setView(centerOn(view, point, viewport))} />}
+          <ZoomControls view={view} onChange={setView} viewport={viewport} rects={rects}
+            minimapOpen={minimapOpen} onToggleMinimap={minimap ? () => setMinimapOpen((open) => !open) : undefined} />
         </div>
-        <div className="pointer-events-auto min-w-0">{toolbar}</div>
+        <div data-canvas-chrome className="pointer-events-auto flex min-w-0 justify-center">{toolbar}</div>
         <div />
       </div>
     </div>
