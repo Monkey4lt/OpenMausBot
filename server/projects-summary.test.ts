@@ -4,6 +4,8 @@ import type { Architecture } from "../shared/projects-architecture.ts";
 import { projectMapStateSchema, type Project } from "./projects.ts";
 import { summarizeArchitecture, summarizeMap } from "./projects-summary.ts";
 
+const within = (value: unknown, limit = 20_000) => expect(JSON.stringify(value).length).toBeLessThanOrEqual(limit);
+
 const state = projectMapStateSchema.parse({
   sources: [{ id: "s1", label: "VPS", kind: "ssh", host: "me@vps", path: "~/secret/projets" }],
   groups: [{ id: "g1", name: "Clients", color: "#38d591" }],
@@ -118,5 +120,47 @@ describe("summarizeArchitecture", () => {
     expect(JSON.stringify(wide).length).toBeLessThanOrEqual(20_000);
     expect(wide.truncated).toBe(true);
     expect(wide.edges[0]).toEqual(arch.edges[0]);
+  });
+});
+
+describe("the 20 000-character guarantee", () => {
+  it("cuts one huge error to a short flat line without hosts or paths", () => {
+    const message = `ssh: connect to host me@vps.example.com port 22 failed in /home/raph/secret/projets\n${"x".repeat(30_000)}`;
+    const out = summarizeMap(state, [project("shop")], [{ sourceId: "s1", message }]);
+    within(out);
+    expect(out.errors[0]!.message.length).toBeLessThanOrEqual(300);
+    expect(out.errors[0]!.message.includes("\n")).toBe(false);
+    expect(out.errors[0]!.message).not.toContain("/home/raph");
+    expect(out.errors[0]!.message).not.toContain("me@vps.example.com");
+    expect(out.errors[0]!.message).not.toContain("secret");
+  });
+
+  it("cleans group and source names and stays under the limit with 50 groups and 20 sources", () => {
+    const groups = Array.from({ length: 50 }, (_, i) => ({ id: `g${i}`, name: `Pôle\u0007\u202e ${i} ${"n".repeat(40)}`, color: "#38d591" }));
+    const sources = Array.from({ length: 20 }, (_, i) => ({ id: `s${i}`, label: `Src\u0000\n${i}${"l".repeat(50)}`, kind: "local", path: `/srv/${i}` }));
+    const big = projectMapStateSchema.parse({ sources, groups });
+    const projects = Array.from({ length: 3000 }, (_, i) => project(`p${i}`));
+    const errors = Array.from({ length: 200 }, (_, i) => ({ sourceId: `s${i % 20}`, message: "e".repeat(1000) }));
+    const out = summarizeMap(big, projects, errors);
+    within(out);
+    expect(out.truncated).toBe(true);
+    for (const g of out.groups) expect(/[\u0000-\u001f\u202e]/.test(g.name)).toBe(false);
+    for (const src of out.sources) expect(/[\u0000-\u001f]/.test(src.label)).toBe(false);
+    for (const limit of [2_000, 500, 100]) within(summarizeMap(big, projects, errors, limit), limit);
+  });
+
+  it("keeps only the saved corrections of modules that still exist, and stays under the limit with 2 000 of them", () => {
+    const moduleFamily = Object.fromEntries(Array.from({ length: 2000 }, (_, i) => [`src/gone-${i}-${"m".repeat(40)}`, "data" as const]));
+    const overrides = { moduleFamily: { ...moduleFamily, "src/components": "ui" as const }, familyNames: { ui: "Front" } };
+    const out = summarizeArchitecture(arch, overrides, false);
+    within(out);
+    expect(out.overrides).toEqual({ moduleFamily: { "src/components": "ui" }, familyNames: { ui: "Front" } });
+  });
+
+  it("never passes the limit, even when every module is kept and the limit is tiny", () => {
+    const modules = Array.from({ length: 2000 }, (_, i) => ({ id: `src/m${i}-${"z".repeat(60)}`, family: "server" as const, files: 1 }));
+    const moduleFamily = Object.fromEntries(modules.map((m) => [m.id, "data" as const]));
+    const wide = { ...arch, modules, families: [{ id: "server" as const, name: "server", files: 2000, modules: modules.map((m) => m.id) }] };
+    for (const limit of [20_000, 1_000, 200]) within(summarizeArchitecture(wide, { moduleFamily, familyNames: {} }, true, limit), limit);
   });
 });

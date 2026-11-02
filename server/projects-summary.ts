@@ -1,7 +1,9 @@
 import type { ArchOverrides, Architecture } from "../shared/projects-architecture.ts";
+import { cleanLabel } from "./projects-changes.ts";
 import type { Project, ProjectMapState, ProjectNode } from "./projects.ts";
 
 export const SUMMARY_LIMIT = 20_000;
+const ERROR_MAX = 300;
 
 export interface MapSummary {
   sources: { id: string; label: string; kind: string }[];
@@ -25,16 +27,35 @@ export interface ArchitectureSummary {
 }
 
 const size = (value: unknown) => JSON.stringify(value).length;
+const fits = (value: unknown, limit: number) => size(value) <= limit;
 
-/** The largest n in [0, max] for which make(n) fits; make(0) is assumed to fit or to be the best that can be done. */
+/** The largest n in [0, max] for which make(n) fits, as make(n). */
 function largestFitting<T>(max: number, limit: number, make: (n: number) => T): T {
   let lo = 0;
   let hi = max;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (size(make(mid)) <= limit) lo = mid; else hi = mid - 1;
+    if (fits(make(mid), limit)) lo = mid; else hi = mid - 1;
   }
   return make(lo);
+}
+
+/** The first candidate that fits; the last one is built to always fit. */
+function firstFitting<T>(limit: number, candidates: Array<() => T>): T {
+  for (const make of candidates.slice(0, -1)) {
+    const value = make();
+    if (fits(value, limit)) return value;
+  }
+  return candidates.at(-1)!();
+}
+
+const HOST = /\b[\w.-]+@[\w.-]+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/gi;
+const PATH = /(?:~|\.{1,2})?(?:[\\/][^\s\\/:'"]+){2,}[\\/]?|[A-Za-z]:\\[^\s'"]*/g;
+
+/** A source's error as one short line, with hosts and paths taken out. */
+function errorLine(message: string): string {
+  const flat = message.replace(/\s+/g, " ").replace(HOST, "<host>").replace(PATH, "<path>");
+  return [...flat].filter((ch) => cleanLabel(ch) === ch || ch === " ").join("").trim().slice(0, ERROR_MAX);
 }
 
 function folders(tree: ProjectNode[], depth: number): string[] {
@@ -52,52 +73,53 @@ export function summarizeMap(
   state: ProjectMapState, projects: Project[], errors: { sourceId: string; message: string }[], limit = SUMMARY_LIMIT,
 ): MapSummary {
   const groupIds = new Set(state.groups.map((g) => g.id));
-  const base = {
-    sources: state.sources.map((s) => ({ id: s.id, label: s.label, kind: s.kind })),
-    groups: state.groups.map((g) => ({ id: g.id, name: g.name, color: g.color })),
-  };
+  const sources = state.sources.map((s) => ({ id: s.id, label: cleanLabel(s.label), kind: s.kind }));
+  const groups = state.groups.map((g) => ({ id: g.id, name: cleanLabel(g.name), color: g.color }));
   const rows = (depth: number) => projects.map((p) => {
     const groupId = Object.hasOwn(state.member, p.id) ? state.member[p.id] : undefined;
     return { id: p.id, name: p.name, source: p.sourceId, groupId: groupId && groupIds.has(groupId) ? groupId : null, dirs: p.dirs, files: p.files, folders: folders(p.tree, depth) };
   });
-  const links = state.links.map((l) => ({ a: l.a, b: l.b, label: l.label }));
-  const full: MapSummary = { ...base, projects: rows(2), links, errors, truncated: false };
-  if (size(full) <= limit) return full;
-
-  for (const depth of [1, 0]) {
-    const shallow: MapSummary = { ...full, projects: rows(depth), truncated: true };
-    if (size(shallow) <= limit) return shallow;
-  }
+  const links = state.links.map((l) => ({ a: l.a, b: l.b, label: cleanLabel(l.label) }));
+  const errs = errors.map((e) => ({ sourceId: e.sourceId, message: errorLine(e.message) }));
   const bare = rows(0);
-  const withProjects = largestFitting(bare.length, limit, (n) => ({ ...base, projects: bare.slice(0, n), links, errors, truncated: true }));
-  if (size(withProjects) <= limit) return withProjects;
-  const withLinks = largestFitting(links.length, limit, (n) => ({ ...base, projects: [], links: links.slice(0, n), errors, truncated: true }));
-  if (size(withLinks) <= limit) return withLinks;
-  return largestFitting(errors.length, limit, (n) => ({ ...base, projects: [], links: [], errors: errors.slice(0, n), truncated: true }));
+  const cut = (part: Partial<MapSummary>): MapSummary => ({ sources, groups, projects: bare, links, errors: errs, ...part, truncated: true });
+
+  return firstFitting<MapSummary>(limit, [
+    () => ({ sources, groups, projects: rows(2), links, errors: errs, truncated: false }),
+    () => cut({ projects: rows(1) }),
+    () => cut({}),
+    () => largestFitting(bare.length, limit, (n) => cut({ projects: bare.slice(0, n) })),
+    () => largestFitting(links.length, limit, (n) => cut({ projects: [], links: links.slice(0, n) })),
+    () => largestFitting(errs.length, limit, (n) => cut({ projects: [], links: [], errors: errs.slice(0, n) })),
+    () => largestFitting(groups.length, limit, (n) => cut({ projects: [], links: [], errors: [], groups: groups.slice(0, n) })),
+    () => largestFitting(sources.length, limit, (n) => cut({ projects: [], links: [], errors: [], groups: [], sources: sources.slice(0, n) })),
+  ]);
 }
 
 /** One project's architecture for the Cartographe; file paths only when asked for, at most `limit` characters of JSON. */
 export function summarizeArchitecture(arch: Architecture, overrides: ArchOverrides | undefined, includeFiles: boolean, limit = SUMMARY_LIMIT): ArchitectureSummary {
-  const base = {
-    families: arch.families.map((f) => ({ id: f.id, name: f.name, files: f.files })),
-    modules: arch.modules,
-    external: arch.external,
-    overrides: overrides ?? { moduleFamily: {}, familyNames: {} },
+  const moduleIds = new Set(arch.modules.map((m) => m.id));
+  const kept: ArchOverrides = {
+    moduleFamily: Object.fromEntries(Object.entries(overrides?.moduleFamily ?? {}).filter(([id]) => moduleIds.has(id))),
+    familyNames: Object.fromEntries(Object.entries(overrides?.familyNames ?? {}).map(([family, name]) => [family, cleanLabel(name ?? "")])),
   };
+  const families = arch.families.map((f) => ({ id: f.id, name: cleanLabel(f.name), files: f.files }));
   const familyEdges = arch.edges.filter((e) => e.level === "family");
   const moduleEdges = arch.edges.filter((e) => e.level === "module");
   const files = arch.files.map((f) => f.path);
-  const full: ArchitectureSummary = { ...base, edges: arch.edges, ...(includeFiles ? { files } : {}), truncated: arch.truncated };
-  if (size(full) <= limit) return full;
+  const noFiles = includeFiles ? { files: [] as string[] } : {};
+  const base = { families, modules: arch.modules, external: arch.external, overrides: kept };
+  const cut = (part: Partial<ArchitectureSummary>): ArchitectureSummary => ({ ...base, edges: arch.edges, ...noFiles, ...part, truncated: true });
+  const overrideEntries = Object.entries(kept.moduleFamily);
+  const withOverrides = (n: number): ArchOverrides => ({ moduleFamily: Object.fromEntries(overrideEntries.slice(0, n)), familyNames: kept.familyNames });
 
-  if (includeFiles) {
-    const someFiles = largestFitting(files.length, limit, (n) => ({ ...base, edges: arch.edges, files: files.slice(0, n), truncated: true }));
-    if (size(someFiles) <= limit) return someFiles;
-  }
-  const extra = includeFiles ? { files: [] as string[] } : {};
-  const someEdges = largestFitting(moduleEdges.length, limit, (n) => ({ ...base, edges: [...familyEdges, ...moduleEdges.slice(0, n)], ...extra, truncated: true }));
-  if (size(someEdges) <= limit) return someEdges;
-  const someExternal = largestFitting(arch.external.length, limit, (n) => ({ ...base, external: arch.external.slice(0, n), edges: familyEdges, ...extra, truncated: true }));
-  if (size(someExternal) <= limit) return someExternal;
-  return largestFitting(arch.modules.length, limit, (n) => ({ ...base, external: [], modules: arch.modules.slice(0, n), edges: familyEdges, ...extra, truncated: true }));
+  return firstFitting<ArchitectureSummary>(limit, [
+    () => ({ ...base, edges: arch.edges, ...(includeFiles ? { files } : {}), truncated: arch.truncated }),
+    ...(includeFiles ? [() => largestFitting(files.length, limit, (n) => cut({ files: files.slice(0, n) }))] : []),
+    () => largestFitting(moduleEdges.length, limit, (n) => cut({ edges: [...familyEdges, ...moduleEdges.slice(0, n)] })),
+    () => largestFitting(arch.external.length, limit, (n) => cut({ edges: familyEdges, external: arch.external.slice(0, n) })),
+    () => largestFitting(overrideEntries.length, limit, (n) => cut({ edges: familyEdges, external: [], overrides: withOverrides(n) })),
+    () => largestFitting(arch.modules.length, limit, (n) => cut({ edges: familyEdges, external: [], overrides: withOverrides(0), modules: arch.modules.slice(0, n) })),
+    () => largestFitting(families.length, limit, (n) => cut({ edges: [], external: [], overrides: { moduleFamily: {}, familyNames: {} }, modules: [], families: families.slice(0, n) })),
+  ]);
 }
