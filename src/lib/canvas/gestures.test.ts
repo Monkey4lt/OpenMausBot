@@ -45,7 +45,7 @@ describe("canvas gestures", () => {
   });
 
   it("a press on a button, an input or a node never starts a pan with the select tool", () => {
-    for (const sel of ["button", "input", "textarea", "select", "[contenteditable]", "[data-canvas-node]", "[data-canvas-edge]"]) {
+    for (const sel of ["button", "input", "textarea", "select", "[contenteditable]", "[data-canvas-node]", "[data-canvas-edge]", "[data-canvas-annotation]"]) {
       expect(startsPan(target([sel]), "select", 0, false), sel).toBe(false);
     }
     expect(startsPan(target([]), "select", 0, false)).toBe(true);

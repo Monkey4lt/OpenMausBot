@@ -2869,5 +2869,22 @@
   "atelier.canvas.delete": "Supprimer",
   "atelier.canvas.port.text": "Texte",
   "atelier.canvas.port.yes": "Oui",
-  "atelier.canvas.port.no": "Non"
+  "atelier.canvas.port.no": "Non",
+  "atelier.note.placeholder": "Écrire une note…",
+  "atelier.note.color": "Couleur {n}",
+  "atelier.text.placeholder": "Texte",
+  "atelier.text.size.s": "Petit",
+  "atelier.text.size.m": "Moyen",
+  "atelier.text.size.l": "Grand",
+  "atelier.shape.rect": "Rectangle",
+  "atelier.shape.ellipse": "Ellipse",
+  "atelier.shape.diamond": "Losange",
+  "atelier.annotation.note": "Note",
+  "atelier.annotation.text": "Texte",
+  "atelier.annotation.ink": "Dessin",
+  "atelier.annotation.actions": "Actions de la note",
+  "atelier.annotation.remove": "Retirer",
+  "atelier.search.placeholder": "Trouver un bloc ou une note",
+  "atelier.search.none": "Rien trouvé",
+  "atelier.search.close": "Fermer la recherche"
 }

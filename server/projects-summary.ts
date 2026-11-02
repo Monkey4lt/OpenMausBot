@@ -1,5 +1,6 @@
 import { DESCRIPTION_MAX, SUMMARY_MAX, type ArchOverrides, type Architecture } from "../shared/projects-architecture.ts";
 import { PIECE_LABELS, type Piece, type PieceKind, type PieceLink } from "../shared/projects-pieces.ts";
+import { MAX_NOTE_CHARS } from "../src/lib/canvas/model.ts";
 import { cleanLabel } from "./projects-changes.ts";
 import type { Project, ProjectMapState, ProjectNode } from "./projects.ts";
 
@@ -12,6 +13,8 @@ export interface MapSummary {
   projects: { id: string; name: string; source: string; groupId: string | null; dirs: number; files: number; folders: string[] }[];
   links: { a: string; b: string; label: string }[];
   errors: { sourceId: string; message: string }[];
+  /** What the person wrote on the canvas (notes and texts), as indications from them. */
+  notes: { kind: "sticky" | "text"; text: string }[];
   /** True when something was left out to stay under the size limit. */
   truncated: boolean;
 }
@@ -90,18 +93,24 @@ export function summarizeMap(
   });
   const links = state.links.map((l) => ({ a: l.a, b: l.b, label: cleanLabel(l.label) }));
   const errs = errors.map((e) => ({ sourceId: e.sourceId, message: errorLine(e.message) }));
+  const notes = (state.annotations ?? []).flatMap((a) => {
+    if (a.kind !== "sticky" && a.kind !== "text") return [];
+    const text = cleanLabel(a.text, { max: MAX_NOTE_CHARS, keepLines: true });
+    return text ? [{ kind: a.kind, text }] : [];
+  });
   const bare = rows(0);
-  const cut = (part: Partial<MapSummary>): MapSummary => ({ sources, groups, projects: bare, links, errors: errs, ...part, truncated: true });
+  const cut = (part: Partial<MapSummary>): MapSummary => ({ sources, groups, projects: bare, links, errors: errs, notes, ...part, truncated: true });
 
   return firstFitting<MapSummary>(limit, [
-    () => ({ sources, groups, projects: rows(2), links, errors: errs, truncated: false }),
+    () => ({ sources, groups, projects: rows(2), links, errors: errs, notes, truncated: false }),
     () => cut({ projects: rows(1) }),
     () => cut({}),
-    () => largestFitting(bare.length, limit, (n) => cut({ projects: bare.slice(0, n) })),
-    () => largestFitting(links.length, limit, (n) => cut({ projects: [], links: links.slice(0, n) })),
-    () => largestFitting(errs.length, limit, (n) => cut({ projects: [], links: [], errors: errs.slice(0, n) })),
-    () => largestFitting(groups.length, limit, (n) => cut({ projects: [], links: [], errors: [], groups: groups.slice(0, n) })),
-    () => largestFitting(sources.length, limit, (n) => cut({ projects: [], links: [], errors: [], groups: [], sources: sources.slice(0, n) })),
+    () => largestFitting(notes.length, limit, (n) => cut({ notes: notes.slice(0, n) })),
+    () => largestFitting(bare.length, limit, (n) => cut({ projects: bare.slice(0, n), notes: [] })),
+    () => largestFitting(links.length, limit, (n) => cut({ projects: [], notes: [], links: links.slice(0, n) })),
+    () => largestFitting(errs.length, limit, (n) => cut({ projects: [], notes: [], links: [], errors: errs.slice(0, n) })),
+    () => largestFitting(groups.length, limit, (n) => cut({ projects: [], notes: [], links: [], errors: [], groups: groups.slice(0, n) })),
+    () => largestFitting(sources.length, limit, (n) => cut({ projects: [], notes: [], links: [], errors: [], groups: [], sources: sources.slice(0, n) })),
   ]);
 }
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  MAX_ANNOTATIONS, MAX_INK_POINTS, MAX_NOTE_CHARS, STICKY_COLORS, annotationBounds, cleanAnnotation, cleanAnnotations, cleanNoteText,
+  MAX_ANNOTATIONS, MAX_INK_POINTS, MAX_NOTE_CHARS, STICKY_COLORS, annotationBounds, annotationText, cleanAnnotation, cleanAnnotations, cleanNoteText,
+  moveAnnotation, placeSticky, placeText, shapeBetween, strokeFrom,
 } from "./model";
 
 const sticky = { id: "n1", kind: "sticky", x: 10, y: 20, w: 160, h: 120, text: "Penser à la démo", color: "warning" };
@@ -96,3 +97,35 @@ describe("canvas annotation model", () => {
     expect(longer.w).toBeGreaterThan(box.w);
   });
 });
+
+describe("drawing on the canvas", () => {
+  it("the pencil tool stores a simplified stroke", () => {
+    const straight = Array.from({ length: 500 }, (_, i) => ({ x: i, y: 2 * i }));
+    expect(strokeFrom("i1", straight)).toEqual({ id: "i1", kind: "ink", points: [{ x: 0, y: 0 }, { x: 499, y: 998 }] });
+    const wave = Array.from({ length: 6000 }, (_, i) => ({ x: i, y: Math.sin(i / 3) * 50 }));
+    const stroke = strokeFrom("i2", wave);
+    expect(stroke?.kind).toBe("ink");
+    const points = (stroke as { points: { x: number; y: number }[] }).points;
+    expect(points.length).toBeLessThanOrEqual(MAX_INK_POINTS);
+    expect(points[0]).toEqual(wave[0]);
+    expect(strokeFrom("i3", [{ x: 1, y: 1 }])).toBeNull();
+  });
+
+  it("a shape is drawn from a drag in any direction, and a click is not a shape", () => {
+    expect(shapeBetween("s1", { x: 100, y: 80 }, { x: 20.4, y: 10 }, "ellipse")).toEqual({ id: "s1", kind: "shape", shape: "ellipse", x: 20, y: 10, w: 80, h: 70 });
+    expect(shapeBetween("s2", { x: 0, y: 0 }, { x: 3, y: 40 })).toBeNull();
+  });
+
+  it("a note and a text are placed under the pointer, empty, ready to type", () => {
+    expect(placeSticky("n1", { x: 300, y: 200 })).toMatchObject({ kind: "sticky", x: 200, y: 180, w: 200, h: 140, text: "", color: STICKY_COLORS[0] });
+    expect(placeText("t1", { x: 30, y: 40 })).toMatchObject({ kind: "text", x: 30, text: "", size: "m" });
+  });
+
+  it("moving a stroke moves every point; search reads only notes and texts", () => {
+    expect(moveAnnotation(ink as never, 5, -5)).toEqual({ ...ink, points: [{ x: 5, y: -5 }, { x: 15, y: -5 }, { x: 15, y: 5 }] });
+    expect(moveAnnotation(sticky as never, 1, 2)).toMatchObject({ x: 11, y: 22 });
+    expect(annotationText(sticky as never)).toBe("Penser à la démo");
+    expect(annotationText(shape as never)).toBeNull();
+  });
+});
+

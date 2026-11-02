@@ -1,4 +1,4 @@
-import { boundsOf, simplifyStroke, type Point, type Rect } from "./geometry";
+import { boundsOf, simplifyStroke, type Point, type Rect } from "./geometry.ts";
 
 export const MAX_ANNOTATIONS = 500;
 export const MAX_NOTE_CHARS = 2000;
@@ -93,3 +93,41 @@ export function annotationBounds(a: Annotation): Rect {
       return boundsOf(a.points.map((p) => ({ x: p.x, y: p.y, w: 0, h: 0 }))) ?? { x: 0, y: 0, w: 0, h: 0 };
   }
 }
+
+export const STICKY_SIZE = { w: 200, h: 140 };
+const MIN_SHAPE = 6;
+
+export function newAnnotationId(): string {
+  return `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export function placeSticky(id: string, at: Point): Annotation {
+  return { id, kind: "sticky", x: Math.round(at.x - STICKY_SIZE.w / 2), y: Math.round(at.y - 20), ...STICKY_SIZE, text: "", color: STICKY_COLORS[0] };
+}
+
+export function placeText(id: string, at: Point): Annotation {
+  return { id, kind: "text", x: Math.round(at.x), y: Math.round(at.y - TEXT_FONT_PX.m * 0.65), text: "", size: "m" };
+}
+
+/** The shape drawn by dragging from `a` to `b`, in any direction; null when the drag is too small to mean a shape. */
+export function shapeBetween(id: string, a: Point, b: Point, shape: (typeof SHAPES)[number] = "rect"): Annotation | null {
+  const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+  if (w < MIN_SHAPE || h < MIN_SHAPE) return null;
+  return { id, kind: "shape", shape, x: Math.round(Math.min(a.x, b.x)), y: Math.round(Math.min(a.y, b.y)), w: Math.round(w), h: Math.round(h) };
+}
+
+/** A pencil stroke as stored: simplified, then capped. */
+export function strokeFrom(id: string, points: Point[]): Annotation | null {
+  return cleanAnnotation({ id, kind: "ink", points });
+}
+
+export function moveAnnotation(a: Annotation, dx: number, dy: number): Annotation {
+  if (a.kind === "ink") return { ...a, points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
+  return { ...a, x: a.x + dx, y: a.y + dy };
+}
+
+/** The words a note or a text shows, for search; null for shapes and strokes. */
+export function annotationText(a: Annotation): string | null {
+  return a.kind === "sticky" || a.kind === "text" ? a.text : null;
+}
+

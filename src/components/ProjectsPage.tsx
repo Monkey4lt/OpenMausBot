@@ -14,6 +14,7 @@ import { listenLiveFrames } from "@/lib/live-events";
 import { summaryPreview, type ArchOverrides } from "@/lib/projects-architecture-view";
 import { centerOn, clampScale, DEFAULT_VIEW } from "@/lib/canvas/geometry";
 import type { Tool } from "@/lib/canvas/gestures";
+import { annotationBounds, annotationText, type Annotation } from "@/lib/canvas/model";
 import { BLOCK_W, arrangeByGroup, blockRect, groupZone, linkEdges, openingView, placeBlock } from "@/lib/projects-map";
 import { createMapSync } from "@/lib/projects-map-sync";
 import { panelDraft, panelLayout, readPanelOpen, writePanelOpen } from "@/lib/projects-panel";
@@ -22,7 +23,9 @@ import { api } from "@/state/api";
 import { GROUP_PALETTE as PALETTE } from "../../shared/project-groups";
 import { openBot, useStore } from "@/state/store";
 
+import { AnnotationLayer } from "./canvas/AnnotationLayer";
 import { Canvas } from "./canvas/Canvas";
+import { CanvasSearch, type CanvasSearchItem } from "./canvas/CanvasSearch";
 import { EdgeLayer } from "./canvas/EdgeLayer";
 import { NodeFrame } from "./canvas/NodeFrame";
 import { Toolbar } from "./canvas/Toolbar";
@@ -46,6 +49,7 @@ interface MapState {
   zoom: number;
   help: boolean;
   overrides?: Record<string, ArchOverrides>;
+  annotations?: Annotation[];
   rev?: number;
 }
 interface ProjectsResponse { state: MapState; projects: Project[]; errors: { sourceId: string; message: string }[]; cartographeBotId?: string | null }
@@ -237,6 +241,7 @@ export function ProjectsPage() {
   const [mapChanged, setMapChanged] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [view, setView] = useCanvasView(DEFAULT_VIEW, VIEW_KEY);
   const [stored] = useState(() => readStoredView(VIEW_KEY));
   const [box, setBox] = useState<HTMLDivElement | null>(null);
@@ -330,7 +335,8 @@ export function ProjectsPage() {
     const zone = groupZone(projects.filter((p) => S?.member[p.id] === g.id).map((p) => rects.get(p.id)!));
     return zone ? [{ group: g, zone }] : [];
   }), [S?.groups, S?.member, projects, rects]);
-  const frame = useMemo(() => [...rects.values(), ...zones.map((z) => z.zone)], [rects, zones]);
+  const annotations = useMemo(() => S?.annotations ?? [], [S?.annotations]);
+  const frame = useMemo(() => [...rects.values(), ...zones.map((z) => z.zone), ...annotations.map(annotationBounds)], [rects, zones, annotations]);
 
   const measured = projects.length > 0 && projects.every((p) => sizes[p.id]);
   useEffect(() => {
@@ -395,8 +401,15 @@ export function ProjectsPage() {
     const next: MapState["pos"] = { ...S.pos, ...arrangeByGroup(buckets.map((list) => list.map((p) => ({ id: p.id, h: sizes[p.id]?.h ?? 200 })))) };
     update((s) => ({ ...s, pos: next }));
   };
+  const searchItems: CanvasSearchItem[] = [
+    ...projects.map((p) => ({ id: p.id, label: p.name, rect: rects.get(p.id)! })),
+    ...annotations.flatMap((a) => {
+      const text = annotationText(a)?.trim();
+      return text ? [{ id: a.id, label: text.split("\n")[0]!, rect: annotationBounds(a), kind: t(a.kind === "sticky" ? "atelier.annotation.note" : "atelier.annotation.text") }] : [];
+    }),
+  ];
   const focus = (id: string) => {
-    const r = rects.get(id); if (!r) return;
+    const r = rects.get(id) ?? searchItems.find((item) => item.id === id)?.rect; if (!r) return;
     setSelected(id);
     setView(centerOn(view, { x: r.x + r.w / 2, y: r.y + Math.min(r.h, 300) / 2 }, viewport));
   };
@@ -463,9 +476,14 @@ export function ProjectsPage() {
 
         {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow}
           onAskCartographe={cartographe ? () => togglePanel(true, mapOf.name) : undefined} />}
-        <div ref={setBox} className={cn("relative flex min-w-0 flex-1", mapOf && "hidden")}>
+        <div ref={setBox} className={cn("relative flex min-w-0 flex-1", mapOf && "hidden")}
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && (e.target as Element).closest("[data-canvas]")) { e.preventDefault(); setSearchOpen(true); }
+          }}>
           <Canvas view={view} onViewChange={setView} tool={tool} rects={frame} minimap onBackgroundClick={() => setSelected(null)}
-            toolbar={<Toolbar tool={tool} onTool={setTool} tools={["select", "hand"]} />}
+            toolbar={<Toolbar tool={tool} onTool={setTool} search={() => setSearchOpen((open) => !open)} />}
+            overlay={<AnnotationLayer items={annotations} tool={tool} selectedId={selected} onSelect={setSelected} onTool={setTool}
+              onChange={(items) => update((s) => ({ ...s, annotations: items }))} />}
             underlay={<>
               <PoleZones zones={zones} />
               <EdgeLayer edges={linkEdges(S.links, rects)} onEdgeClick={(id) => void deleteLink(S.links[Number(id)])} />
@@ -524,6 +542,11 @@ export function ProjectsPage() {
             })}
           </Canvas>
 
+          {searchOpen && (
+            <div className="absolute inset-x-0 top-3 z-30 flex justify-center px-3">
+              <CanvasSearch items={searchItems} onPick={focus} onClose={() => setSearchOpen(false)} />
+            </div>
+          )}
           {((data?.errors.length ?? 0) > 0 || linkFrom) && (
             <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-col items-center gap-1.5">
               {data!.errors.map((e) => (

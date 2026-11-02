@@ -7451,5 +7451,22 @@
   "atelier.canvas.delete": "Delete",
   "atelier.canvas.port.text": "Text",
   "atelier.canvas.port.yes": "Yes",
-  "atelier.canvas.port.no": "No"
+  "atelier.canvas.port.no": "No",
+  "atelier.note.placeholder": "Write a note…",
+  "atelier.note.color": "Colour {n}",
+  "atelier.text.placeholder": "Text",
+  "atelier.text.size.s": "Small",
+  "atelier.text.size.m": "Medium",
+  "atelier.text.size.l": "Large",
+  "atelier.shape.rect": "Rectangle",
+  "atelier.shape.ellipse": "Ellipse",
+  "atelier.shape.diamond": "Diamond",
+  "atelier.annotation.note": "Note",
+  "atelier.annotation.text": "Text",
+  "atelier.annotation.ink": "Drawing",
+  "atelier.annotation.actions": "Note actions",
+  "atelier.annotation.remove": "Remove",
+  "atelier.search.placeholder": "Find a block or a note",
+  "atelier.search.none": "Nothing found",
+  "atelier.search.close": "Close the search"
 }

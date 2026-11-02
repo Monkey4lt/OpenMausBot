@@ -25,6 +25,25 @@ const project = (name: string, extra: Partial<Project> = {}): Project => ({
 });
 
 describe("summarizeMap", () => {
+  it("the Cartographe map summary lists note texts, cleaned and within the 20 000-char cap", () => {
+    const noted = projectMapStateSchema.parse({ ...state, annotations: [
+      { id: "n1", kind: "sticky", x: 0, y: 0, w: 200, h: 140, text: "Migrer \u202Ela base\u0007 avant juin", color: "accent" },
+      { id: "t1", kind: "text", x: 0, y: 0, text: "Clients", size: "m" },
+      { id: "s1", kind: "shape", shape: "rect", x: 0, y: 0, w: 10, h: 10 },
+      { id: "n2", kind: "sticky", x: 0, y: 0, w: 200, h: 140, text: "   ", color: "accent" },
+    ] });
+    const out = summarizeMap(noted, [project("shop")], []);
+    expect(out.notes).toEqual([{ kind: "sticky", text: "Migrer la base avant juin" }, { kind: "text", text: "Clients" }]);
+    expect(out.truncated).toBe(false);
+    const crowded = projectMapStateSchema.parse({ ...state, annotations: Array.from({ length: 40 }, (_, i) => ({ id: `n${i}`, kind: "sticky", x: 0, y: 0, w: 1, h: 1, text: "é".repeat(2000), color: "accent" })) });
+    const cut = summarizeMap(crowded, [project("shop")], []);
+    within(cut);
+    expect(cut.truncated).toBe(true);
+    expect(cut.notes.length).toBeGreaterThan(0);
+    expect(cut.notes.length).toBeLessThan(40);
+    expect(cut.projects).toHaveLength(1);
+  });
+
   it("lists sources without host or path, groups, each project with two levels of folders, links and errors", () => {
     const out = summarizeMap(state, [project("shop"), project("api")], [{ sourceId: "s2", message: "boom" }]);
     expect(out).toEqual({
@@ -36,6 +55,7 @@ describe("summarizeMap", () => {
       ],
       links: [{ a: "s1:shop", b: "s1:api", label: "utilise" }],
       errors: [{ sourceId: "s2", message: "boom" }],
+      notes: [],
       truncated: false,
     });
     expect(JSON.stringify(out)).not.toContain("secret");

@@ -12,6 +12,7 @@ import { writeFileAtomic } from "./atomic.ts";
 import { FAMILY_ORDER, type Family } from "./projects-architecture.ts";
 import { DESCRIPTION_MAX, SUMMARY_MAX } from "../shared/projects-architecture.ts";
 import { scanGithubLines } from "./projects-github.ts";
+import { cleanAnnotations, MAX_ANNOTATIONS } from "../src/lib/canvas/model.ts";
 
 /** Heavy folders that say nothing about a project's shape. Hidden entries are skipped too. */
 export const PROJECT_IGNORE = ["node_modules", "__pycache__", "target", "venv", "env", "dist", "build", "vendor"];
@@ -68,6 +69,8 @@ export const projectMapStateSchema = z.object({
   zoom: z.number().min(0.2).max(2).default(1),
   help: z.boolean().default(true),
   overrides: z.record(idSchema, archOverridesSchema).default({}),
+  /** Notes, texts, shapes and strokes on the canvas; each one is checked and its text cleaned, an invalid one is dropped. */
+  annotations: z.array(z.unknown()).max(MAX_ANNOTATIONS).default([]).transform(cleanAnnotations),
   /** Bumped by every write; a save based on an older rev is refused. */
   rev: z.number().int().nonnegative().default(0),
 });

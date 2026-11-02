@@ -118,4 +118,39 @@ describe("projects map", () => {
     expect(projectMapStateSchema.safeParse({ rev: -1 }).success).toBe(false);
     expect(projectMapStateSchema.safeParse({ rev: 1.5 }).success).toBe(false);
   });
+
+  it("the server schema accepts the annotations of task 2 and rejects 501 of them", () => {
+    const annotations = [
+      { id: "n1", kind: "sticky", x: 10, y: 20, w: 200, h: 140, text: "Penser aux factures", color: "accent" },
+      { id: "t1", kind: "text", x: -40, y: 5, text: "Clients", size: "l" },
+      { id: "s1", kind: "shape", shape: "diamond", x: 0, y: 0, w: 80, h: 60 },
+      { id: "i1", kind: "ink", points: [{ x: 0, y: 0 }, { x: 10, y: 4 }, { x: 30, y: 30 }] },
+    ];
+    const parsed = projectMapStateSchema.parse({ annotations });
+    expect(parsed.annotations).toEqual(annotations);
+    expect(projectMapStateSchema.parse({}).annotations).toEqual([]);
+    const many = Array.from({ length: 501 }, (_, i) => ({ id: `n${i}`, kind: "text", x: i, y: 0, text: "x", size: "s" }));
+    expect(projectMapStateSchema.safeParse({ annotations: many }).success).toBe(false);
+    expect(projectMapStateSchema.safeParse({ annotations: many.slice(0, 500) }).success).toBe(true);
+  });
+
+  it("a 10 000-char note with control characters is cleaned and cut to 2 000 on save", () => {
+    const dataDir = tmp();
+    const text = `a\u0000b\u202Ec\n${"x".repeat(10_000)}`;
+    const state = projectMapStateSchema.parse({ annotations: [{ id: "n1", kind: "sticky", x: 0, y: 0, w: 200, h: 140, text, color: "nope" }, { id: "bad", kind: "sticky", x: Number.NaN }] });
+    writeProjectMapState(dataDir, state);
+    const [note, ...rest] = readProjectMapState(dataDir).annotations;
+    expect(rest).toEqual([]);
+    expect(note).toMatchObject({ kind: "sticky", color: "warning" });
+    const saved = (note as { text: string }).text;
+    expect(saved).toHaveLength(2000);
+    expect(saved.startsWith("abc\nxxx")).toBe(true);
+  });
+
+  it("an old saved map without annotations reads with none and keeps its zoom", () => {
+    const dataDir = tmp();
+    writeFileSync(join(dataDir, "projects-map.json"), JSON.stringify({ zoom: 0.8, pos: { "s1:a": { x: 40, y: 60 } }, rev: 3 }));
+    expect(readProjectMapState(dataDir)).toMatchObject({ zoom: 0.8, pos: { "s1:a": { x: 40, y: 60 } }, annotations: [], rev: 3 });
+  });
 });
+

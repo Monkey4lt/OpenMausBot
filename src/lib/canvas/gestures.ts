@@ -14,7 +14,7 @@ const ZOOM_SPEED = 0.005;
 const MAX_EVENT_FACTOR = 2;
 
 /** Elements a press must reach unhindered: never the start of a pan with the select tool. */
-export const INTERACTIVE = "button, input, textarea, select, a, [contenteditable], [data-canvas-node], [data-canvas-edge]";
+export const INTERACTIVE = "button, input, textarea, select, a, [contenteditable], [data-canvas-node], [data-canvas-edge], [data-canvas-annotation], [data-annotation-actions]";
 
 export function wheelToView(view: View, e: WheelInput, origin: Point): View {
   const unit = e.deltaMode === 1 ? LINE_PX : e.deltaMode === 2 ? PAGE_PX : 1;
