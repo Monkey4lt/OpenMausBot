@@ -149,6 +149,8 @@ const LANGUAGE_OF: Partial<Record<string, Language>> = {
   ".py": "py", ".go": "go", ".rs": "rs",
 };
 
+export const CODE_EXTENSIONS: readonly string[] = Object.keys(LANGUAGE_OF);
+
 function blankCommentsKeepingOffsets(text: string, syntax: Syntax): { code: string; strings: [number, number][] } {
   const parts: string[] = [];
   const strings: [number, number][] = [];
@@ -519,7 +521,7 @@ export function buildArchitecture(
   const moduleOf = new Map<string, ModuleInfo>();
   for (const m of modules) for (const file of m.files) moduleOf.set(file, m);
   const files = new Set(paths);
-  const codeFiles = paths.filter((p) => LANGUAGE_OF[extensionOf(p)]).length;
+  const codeFiles = paths.filter((p) => CODE_EXTENSIONS.includes(extensionOf(p))).length;
 
   const uses = new Map<string, Set<string>>();
   const usedBy = new Map<string, Set<string>>();

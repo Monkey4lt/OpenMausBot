@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { aliasesFromGoMod, aliasesFromTsconfig, buildArchitecture, classify, FAMILY_ORDER, modulesOf, parseImports, resolveImport } from "./projects-architecture.ts";
+import { aliasesFromGoMod, aliasesFromTsconfig, buildArchitecture, classify, CODE_EXTENSIONS, FAMILY_ORDER, modulesOf, parseImports, resolveImport } from "./projects-architecture.ts";
 import type { FileImports } from "./projects-architecture.ts";
 
 describe("classify", () => {
@@ -436,5 +436,19 @@ describe("module ids", () => {
     expect(m.map((x) => [x.id, x.family])).toEqual([["constructor", "server"], ["toString", "server"]]);
     const arch = buildArchitecture(paths, [], {}, { moduleFamily: {}, familyNames: {} });
     expect(arch.families).toEqual([{ id: "server", name: "server", files: 6, modules: ["constructor", "toString"] }]);
+  });
+});
+
+describe("code extensions", () => {
+  it("lists every extension parseImports reads, including the plan's set", () => {
+    for (const ext of [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".py", ".go", ".rs", ".css", ".scss"]) expect(CODE_EXTENSIONS).toContain(ext);
+    for (const ext of CODE_EXTENSIONS) expect(parseImports(`a${ext}`, 'import "./x";\n@import "./x";\nimport x\nuse crate::x;').length).toBeGreaterThan(0);
+    expect(CODE_EXTENSIONS).not.toContain(".md");
+  });
+
+  it("truncated is false when every code file was read, even past the limit of non-code files", () => {
+    const paths = ["a.ts", "b.ts", "README.md", "docs/x.md", "logo.png"];
+    expect(buildArchitecture(paths, [{ path: "a.ts", imports: [] }, { path: "b.ts", imports: [] }], {}, undefined, 2).truncated).toBe(false);
+    expect(buildArchitecture(paths, [{ path: "a.ts", imports: [] }], {}, undefined, 1).truncated).toBe(true);
   });
 });
