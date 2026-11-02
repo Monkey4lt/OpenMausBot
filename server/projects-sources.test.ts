@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CODE_EXTENSIONS } from "./projects-architecture.ts";
-import { isCodeFile, MAX_FILE_BYTES, readLocalImports, toPosix } from "./projects-sources.ts";
+import { isCodeFile, MAX_FILE_BYTES, parseGrepOutput, parseSshImportOutput, readLocalImports, readSshImports, sshImportCommand, toPosix } from "./projects-sources.ts";
 
 const dirs: string[] = [];
 const tmp = () => { const d = mkdtempSync(join(tmpdir(), "projmap-src-")); dirs.push(d); return d; };
@@ -84,5 +84,124 @@ describe("local import reading", () => {
     expect(isCodeFile("SRC/A.TS")).toBe(true);
     expect(isCodeFile("README.md")).toBe(false);
     expect(isCodeFile("Makefile")).toBe(false);
+  });
+});
+
+describe("SSH import reading", () => {
+  it("quotes the path and keeps ~ for the remote shell", () => {
+    expect(sshImportCommand("~/my proj's/api")).toContain(`cd ~/'my proj'\\''s/api'`);
+    expect(sshImportCommand("/srv/app; rm -rf /")).toContain(`cd '/srv/app; rm -rf /' `);
+    expect(sshImportCommand("~")).toContain("cd ~ ");
+  });
+
+  it("excludes hidden and heavy folders and only greps code extensions", () => {
+    const c = sshImportCommand("/srv/api");
+    expect(c).toContain("--exclude-dir=node_modules");
+    expect(c).toContain("--exclude-dir='.[!.]*'");
+    expect(c).toContain("--include='*.ts'");
+    expect(c).toContain("--include='*.svelte'");
+    expect(c).not.toContain("--include='*.md'");
+    expect(c).toContain("grep -rEnIZ");
+    expect(c).toContain("| head -n 200000");
+    for (const marker of ["---TSCONFIG---", "---TSCONFIG_APP---", "---GOMOD---"]) expect(c).toContain(`printf '\\n${marker}\\n'`);
+    expect(c).toContain("head -c 262144 tsconfig.json 2>/dev/null");
+  });
+
+  it("parses ./path:line:text output into imports per file", () => {
+    expect(parseGrepOutput('./src/a.ts:3:import b from "./b";\n./app/x.py:1:from .m import y\n')).toEqual([
+      { path: "src/a.ts", imports: [{ spec: "./b", line: 3 }] }, { path: "app/x.py", imports: [{ spec: ".m.y", line: 1 }] },
+    ]);
+  });
+
+  it("a path containing a colon is split on the first :<digits>: only", () => {
+    expect(parseGrepOutput('./src/we:ird.ts:12:import x from "./y:2:z";\n')).toEqual([
+      { path: "src/we:ird.ts", imports: [{ spec: "./y:2:z", line: 12 }] },
+    ]);
+  });
+
+  it("with grep -Z the file name ends at the NUL, whatever it contains", () => {
+    expect(parseGrepOutput('./src/a:1:b.ts\u00007:import x from "./y";\n./c.ts\u00001:import "./d";\n')).toEqual([
+      { path: "src/a:1:b.ts", imports: [{ spec: "./y", line: 7 }] },
+      { path: "c.ts", imports: [{ spec: "./d", line: 1 }] },
+    ]);
+  });
+
+  it("ignores lines that are not code files or have no line number", () => {
+    expect(parseGrepOutput('./README.md:1:import x from "./y";\ngrep: warning\n./a.ts:x:import "./b";\n')).toEqual([]);
+  });
+
+  it("joins a file's matched lines so a multi-line import is still found at its line", () => {
+    const out = [
+      "./src/a.tsx:4:import {",
+      './src/a.tsx:9:} from "./ab";',
+      './src/a.tsx:10:const x = require("./r");',
+      "./main.go:3:import (",
+      './main.go:4:  "fmt"',
+      './main.go:5:  db "example.com/app/db"',
+      "./main.go:6:)",
+      "./src/lib.rs:1:use crate::api::routes;",
+      "./src/lib.rs:2:mod db;",
+    ].join("\n");
+    expect(parseGrepOutput(out)).toEqual([
+      { path: "src/a.tsx", imports: [{ spec: "./ab", line: 4 }, { spec: "./r", line: 10 }] },
+      { path: "main.go", imports: [{ spec: "fmt", line: 4 }, { spec: "example.com/app/db", line: 5 }] },
+      { path: "src/lib.rs", imports: [{ spec: "crate::api::routes", line: 1 }, { spec: "self::db", line: 2 }] },
+    ]);
+  });
+
+  it("a multi-line Python name list keeps only the names grep saw", () => {
+    const out = "./app/x.py:1:from . import (\n./app/x.py:4:)\n./app/x.py:5:from .db import (a,\n";
+    expect(parseGrepOutput(out)).toEqual([{ path: "app/x.py", imports: [{ spec: ".", line: 1 }, { spec: ".db.a", line: 5 }] }]);
+  });
+
+  it("splits a captured output into imports, tsconfig and go.mod", () => {
+    const tsconfig = '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }';
+    const out = `./src/a.ts\u00001:import b from "@/b";\n\n---TSCONFIG---\n{ "files": [] }\n\n---TSCONFIG_APP---\n${tsconfig}\n---GOMOD---\nmodule example.com/app\n`;
+    expect(parseSshImportOutput(out)).toEqual({
+      read: [{ path: "src/a.ts", imports: [{ spec: "@/b", line: 1 }] }],
+      tsconfig,
+      goMod: "module example.com/app\n",
+    });
+    expect(parseSshImportOutput("\n---TSCONFIG---\n\n---TSCONFIG_APP---\n\n---GOMOD---\n")).toEqual({ read: [], tsconfig: null, goMod: null });
+    expect(parseSshImportOutput("")).toEqual({ read: [], tsconfig: null, goMod: null });
+  });
+
+  it("runs one ssh command with the host after --, in batch mode", async () => {
+    const calls: { args: string[]; timeout: number; maxBuffer: number }[] = [];
+    const set = await readSshImports("me@vps", "/srv/api", async (args, options) => {
+      calls.push({ args, ...options });
+      return './a.ts\u00001:import "./b";\n\n---TSCONFIG---\n\n---TSCONFIG_APP---\n\n---GOMOD---\n';
+    });
+    expect(set.read).toEqual([{ path: "a.ts", imports: [{ spec: "./b", line: 1 }] }]);
+    expect(calls).toEqual([{
+      args: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", "me@vps", sshImportCommand("/srv/api")],
+      timeout: 60_000,
+      maxBuffer: 64 * 1024 * 1024,
+    }]);
+  });
+});
+
+describe("SSH grep command on a real shell", () => {
+  it("finds import lines, Go block lines and the config files, and skips hidden and heavy folders", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const root = fixture({
+      "src/a.tsx": 'const x = 1;\nimport {\n  a,\n} from "./ab";\nconst r = require("./r");\n',
+      "main.go": 'package main\n\nimport (\n  "fmt"\n)\n',
+      "node_modules/m/i.ts": 'import "./no";',
+      ".hidden/i.ts": 'import "./no";',
+      "notes.md": 'import "./no";',
+      "tsconfig.json": '{ "files": [] }',
+      "go.mod": "module example.com/app\n",
+    });
+    const parsed = parseSshImportOutput(execFileSync("sh", ["-c", sshImportCommand(root)], { encoding: "utf8" }));
+    parsed.read.sort((x, y) => (x.path < y.path ? -1 : 1));
+    expect(parsed).toEqual({
+      read: [
+        { path: "main.go", imports: [{ spec: "fmt", line: 4 }] },
+        { path: "src/a.tsx", imports: [{ spec: "./ab", line: 2 }, { spec: "./r", line: 5 }] },
+      ],
+      tsconfig: '{ "files": [] }',
+      goMod: "module example.com/app\n",
+    });
   });
 });

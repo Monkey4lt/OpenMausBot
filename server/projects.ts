@@ -108,14 +108,17 @@ export function scanLocalLines(root: string): string[] {
   return lines;
 }
 
-const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+export const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+
+/** Quoted for a POSIX shell; a leading ~ stays unquoted so the remote shell expands it. */
+export function remoteShellPath(path: string): string {
+  return path === "~" ? "~" : path.startsWith("~/") ? `~/${shellQuote(path.slice(2))}` : shellQuote(path);
+}
 
 /** The remote command: GNU find, pruning hidden and heavy folders, one entry per line. */
 export function sshFindCommand(path: string): string {
   const prune = ["'.*'", ...PROJECT_IGNORE.map((name) => shellQuote(name))].map((n) => `-name ${n}`).join(" -o ");
-  // A leading ~ must stay unquoted for the remote shell to expand it.
-  const target = path === "~" ? "~" : path.startsWith("~/") ? `~/${shellQuote(path.slice(2))}` : shellQuote(path);
-  return `find ${target} -mindepth 1 -maxdepth ${MAX_DEPTH + 1} \\( ${prune} \\) -prune -o \\( -type d -printf 'd %P\\n' -o -printf 'f %P\\n' \\) 2>/dev/null | head -n ${MAX_LINES}`;
+  return `find ${remoteShellPath(path)} -mindepth 1 -maxdepth ${MAX_DEPTH + 1} \\( ${prune} \\) -prune -o \\( -type d -printf 'd %P\\n' -o -printf 'f %P\\n' \\) 2>/dev/null | head -n ${MAX_LINES}`;
 }
 
 export function scanSshLines(host: string, path: string): Promise<string[]> {

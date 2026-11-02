@@ -329,7 +329,7 @@ it("stops at the limit", async () => {});
 - Consumes : `shellQuote` (`server/projects.ts`), `parseImports`, `CODE_EXTENSIONS`.
 - Produces : `sshImportCommand(projectPath: string): string` ; `parseGrepOutput(out: string): FileImports[]` ; `readSshImports(host: string, projectPath: string): Promise<ImportSet>` (la commande ajoute aussi `---GOMOD---` puis `cat go.mod`).
 
-- [ ] **Step 1 : Write the failing tests**
+- [x] **Step 1 : Write the failing tests**
 
 ```ts
 it("quotes the path and keeps ~ for the remote shell", () => {
@@ -347,8 +347,8 @@ it("parses ./path:line:text output into imports per file", () => {
 it("a path containing a colon is split on the first :<digits>: only", () => {});
 ```
 
-- [ ] **Step 2 :** FAIL. **Step 3 :** la commande : `cd <chemin> && grep -rEnI --include=… --exclude-dir=… '<motif import>' . | head -n 200000 ; echo ---TSCONFIG--- ; cat tsconfig.json 2>/dev/null`, exécutée comme `scanSshLines` (`BatchMode=yes`, `--` avant l'hôte). **Step 4 :** PASS.
-- [ ] **Step 5 :** Commit `feat(projects): read imports over SSH with one command`.
+- [x] **Step 2 :** FAIL. **Step 3 :** la commande : `cd <chemin> && grep -rEnI --include=… --exclude-dir=… '<motif import>' . | head -n 200000 ; echo ---TSCONFIG--- ; cat tsconfig.json 2>/dev/null`, exécutée comme `scanSshLines` (`BatchMode=yes`, `--` avant l'hôte). **Step 4 :** PASS.
+- [x] **Step 5 :** Commit `feat(projects): read imports over SSH with one command`.
 
 ### Task 12: Lire le contenu depuis GitHub
 
