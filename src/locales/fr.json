@@ -2781,5 +2781,6 @@
   "projects.sources.remove": "Retirer",
   "projects.sources.github": "GitHub",
   "projects.sources.githubPlaceholder": "Compte ou dépôt, ex. monpseudo ou monpseudo/mon-depot",
-  "projects.sources.githubHint": "Un compte donne un bloc par dépôt ; un dépôt donne un seul bloc. Pour les dépôts privés, l'appli utilise la connexion GitHub déjà enregistrée par Git sur cet ordinateur."
+  "projects.sources.githubHint": "Un compte donne un bloc par dépôt ; un dépôt donne un seul bloc. Pour les dépôts privés, l'appli utilise la connexion GitHub déjà enregistrée par Git sur cet ordinateur.",
+  "projects.sourceError": "Impossible de lire « {name} » :"
 }

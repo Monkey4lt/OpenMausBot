@@ -430,6 +430,17 @@ export function ProjectsPage() {
         {/* toile */}
         <div ref={wrapRef} className="relative min-w-0 flex-1 overflow-auto"
           style={{ backgroundImage: "linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)", backgroundSize: "28px 28px" }}>
+          {(data?.errors.length ?? 0) > 0 && (
+            <div className="sticky left-0 top-0 z-10 flex flex-col gap-1.5 p-3">
+              {data!.errors.map((e) => (
+                <button key={e.sourceId} onClick={() => setSourcesOpen(true)}
+                  className="flex max-w-[640px] items-start gap-2 rounded-xl border border-danger/30 bg-card px-3 py-2 text-left text-[13px] text-danger shadow-lg shadow-black/30 hover:border-danger/60">
+                  <span className="font-medium">{t("projects.sourceError", { name: sourceLabel(e.sourceId) })}</span>
+                  <span className="min-w-0 flex-1 text-ink-secondary">{e.message}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {!projects.length && !loading && (
             <div className="absolute left-1/2 top-32 w-[340px] -translate-x-1/2 rounded-2xl border border-hairline/50 bg-card p-6 text-center">
               <FolderTree size={22} className="mx-auto text-ink-secondary" />

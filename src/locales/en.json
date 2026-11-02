@@ -7363,5 +7363,6 @@
   "projects.sources.remove": "Remove",
   "projects.sources.github": "GitHub",
   "projects.sources.githubPlaceholder": "Account or repository, e.g. myname or myname/my-repo",
-  "projects.sources.githubHint": "An account shows one block per repository; a repository shows one block. Private repositories use the GitHub sign-in Git already keeps on this computer."
+  "projects.sources.githubHint": "An account shows one block per repository; a repository shows one block. Private repositories use the GitHub sign-in Git already keeps on this computer.",
+  "projects.sourceError": "Couldn't read “{name}”:"
 }

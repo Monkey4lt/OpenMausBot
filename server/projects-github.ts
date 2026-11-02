@@ -5,17 +5,29 @@ const MAX_REPOS = 100;
 
 export interface GithubRepo { name: string; fullName: string; defaultBranch: string; pushedAt: string }
 
+function run(cmd: string, args: string[], input: string | null, timeout: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    const child = execFile(cmd, args, { timeout, windowsHide: true }, (error, stdout) => resolve(error ? null : stdout));
+    child.stdin?.end(input ?? "");
+  });
+}
+
+/** A token from the GitHub CLI, when it is installed and signed in. */
+async function ghCliToken(): Promise<string | null> {
+  return (await run("gh", ["auth", "token"], null, 10_000))?.trim() || null;
+}
+
 /**
- * The github.com login Git already keeps (Git Credential Manager, osxkeychain, a store file),
- * so private repositories work without asking for a token. `git credential fill` may open the
- * credential helper's own sign-in window when none is stored; an empty answer means anonymous.
+ * The github.com login Git already keeps (Git Credential Manager, osxkeychain, a store file).
+ * With no stored login, Git Credential Manager opens its own sign-in window (it skips that when
+ * GIT_TERMINAL_PROMPT=0, so the variable is left alone); the person has two minutes to finish.
  */
 export function gitCredentialToken(): Promise<string | null> {
   return new Promise((resolve) => {
     const child = execFile(
       "git",
       ["credential", "fill"],
-      { timeout: 120_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
+      { timeout: 120_000, windowsHide: true },
       (error, stdout) => {
         if (error) return resolve(null);
         const line = stdout.split("\n").find((l) => l.startsWith("password="));
@@ -27,9 +39,17 @@ export function gitCredentialToken(): Promise<string | null> {
 }
 
 let tokenPromise: Promise<string | null> | null = null;
+/** A missing token is asked for again on the next scan, so signing in later takes effect without a restart. */
 function token(): Promise<string | null> {
-  tokenPromise ??= gitCredentialToken();
-  return tokenPromise;
+  tokenPromise ??= (async () => (await ghCliToken()) ?? (await gitCredentialToken()))();
+  return tokenPromise.then((value) => {
+    if (!value) tokenPromise = null;
+    return value;
+  });
+}
+
+export async function githubSignedIn(): Promise<boolean> {
+  return Boolean(await token());
 }
 
 async function gh<T>(path: string, auth: string | null): Promise<T> {
@@ -41,14 +61,14 @@ async function gh<T>(path: string, auth: string | null): Promise<T> {
       ...(auth ? { authorization: `Bearer ${auth}` } : {}),
     },
     signal: AbortSignal.timeout(20_000),
-  });
+  }).catch(() => { throw new Error("GitHub unreachable: check the internet connection"); });
   if (res.status === 401 && auth) {
-    tokenPromise = Promise.resolve(null);
+    tokenPromise = null;
     return gh<T>(path, null);
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { message?: string };
-    if (res.status === 404) throw new Error("GitHub: not found (or private without access)");
+    if (res.status === 404) throw new Error(auth ? "GitHub: not found, or this GitHub login cannot see it" : "GitHub: not found, or private: sign in to GitHub with Git on this computer");
     if (res.status === 403 || res.status === 429) throw new Error(`GitHub: ${body.message ?? "rate limited, try again later"}`);
     throw new Error(`GitHub ${res.status}: ${body.message ?? res.statusText}`);
   }
