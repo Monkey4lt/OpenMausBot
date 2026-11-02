@@ -116,6 +116,20 @@ and on My Cloud a turn a guest or a webhook drove still waits for the owner. Inv
 writes return errors, not a request to approve again. An expired native
 permission request is not turned into another Allow/Deny card.
 
+The **Cartographe** is the one deliberate exception. Its changes to the
+Projects maps (groups, links, families, modules) always wait on one
+Allow/Deny card listing the whole batch, at every level, Full access
+included; the card never reads the level. Refusing it, or nine minutes
+without an answer, changes nothing. Two known risks:
+
+- On a headless self-hosted server that trusts loopback requests as the
+  owner, a bot with shell access can call the local server itself and answer
+  any card, this one included. This predates the Cartographe and affects
+  every card; keep shell access off such a server's bots.
+- The names on a card are a snapshot taken when the card is made. A project
+  or group renamed while the card waits still shows its old name; the batch
+  is checked again against the fresh map before anything is applied.
+
 A turn a webhook, a routine, or another bot started runs in the bot's level
 like any other turn. The decision log records that nobody was at the keyboard
 when such a turn asked.

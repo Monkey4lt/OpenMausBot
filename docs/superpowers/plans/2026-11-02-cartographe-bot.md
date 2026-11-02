@@ -235,7 +235,7 @@ it("the button prepends the draft to the Cartographe's thread and opens it", () 
 
 ### Task 8: Documentation, vérification, relecture
 
-- [ ] **Step 1:** `docs/approval-levels.md` : paragraphe sur l'exception du Cartographe ; `docs/tool-selection.md` : exemple de son `toolScope`.
+- [x] **Step 1:** `docs/approval-levels.md` : paragraphe sur l'exception du Cartographe ; `docs/tool-selection.md` : exemple de son `toolScope`.
 - [ ] **Step 2:** Tous les tests `server/projects*`, `server/routes/projects*`, `server/routes/cartographe*`, `server/cartographe*`, `server/drivers/agents-cartographe*`, `server/drivers/agents-catalog-wire*`, `server/agent-tool-policy*`, `src/components/ProjectsPage*` → PASS ; `generate-locale --check` PASS.
 - [ ] **Step 3:** Si le registre npm est accessible : `pnpm typecheck && pnpm lint` et la vérification isolée (`docs/verification/README.md`) ; sinon le noter dans le rapport.
 - [ ] **Step 4:** Relecture de toute la branche par un agent séparé ; corrections.

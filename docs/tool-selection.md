@@ -93,6 +93,23 @@ only stops creating one, and `mcp:agents:manage_trigger` still stops every other
 change, deleting included. A tool is listed when the selection allows any of what it does; each call is
 checked against what it does.
 
+**The Cartographe**, the bot that tidies the Projects maps, is made with Only
+allow listed tools checked:
+
+```text
+mcp:agents:projects_read_map
+mcp:agents:projects_read_architecture
+mcp:agents:projects_apply_changes
+mcp:agents:tool_result_read
+mcp:ogb:ask_user
+```
+
+On an engine that cannot narrow its native tools (Claude, Codex, OpenCode Go
+and the others in the second row below) it also gets `native:*`; its
+instructions keep it off files and the terminal, and an engine still asks
+before using them. The three `projects_*` tools are offered only to the
+Cartographe, whatever another bot's selection says.
+
 ## Engine support
 
 | Engines | Available selection |
