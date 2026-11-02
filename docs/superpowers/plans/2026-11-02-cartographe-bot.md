@@ -47,7 +47,7 @@
   - `describeChanges(changes: ProjectChange[], names: { project: (id: string) => string; group: (id: string) => string }): string[]` — une ligne française par changement.
   - `cleanLabel(text: string): string` — retire les caractères de contrôle, compacte les espaces, tronque à 60.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it("creates a group and assigns a project to it through a ref in the same batch", () => {
@@ -74,10 +74,10 @@ it("a name with newlines, control characters and 200 chars becomes one clean lin
 });
 ```
 
-- [ ] **Step 2:** `node --experimental-strip-types server/projects-changes.test.ts` → FAIL (module absent).
-- [ ] **Step 3:** Implémenter les quatre exports. Lignes de `describeChanges` : `Créer le pôle {nom}`, `Renommer le pôle {ancien} en {nouveau}`, `Supprimer le pôle {nom}`, `Ranger {projet} dans {pôle}` / `Retirer {projet} de son pôle`, `Relier {a} → {b}` (+ ` : {label}`), `Délier {a} et {b}`, `Dans {projet} : renommer {famille} en {nom}`, `Dans {projet} : déplacer {module} vers {famille}`.
-- [ ] **Step 4:** Relancer → PASS.
-- [ ] **Step 5:** Commit `feat(cartographe): validate, apply and describe map changes`.
+- [x] **Step 2:** `node --experimental-strip-types server/projects-changes.test.ts` → FAIL (module absent).
+- [x] **Step 3:** Implémenter les quatre exports. Lignes de `describeChanges` : `Créer le pôle {nom}`, `Renommer le pôle {ancien} en {nouveau}`, `Supprimer le pôle {nom}`, `Ranger {projet} dans {pôle}` / `Retirer {projet} de son pôle`, `Relier {a} → {b}` (+ ` : {label}`), `Délier {a} et {b}`, `Dans {projet} : renommer {famille} en {nom}`, `Dans {projet} : déplacer {module} vers {famille}`.
+- [x] **Step 4:** Relancer → PASS.
+- [x] **Step 5:** Commit `feat(cartographe): validate, apply and describe map changes`.
 
 ### Task 2: Révision de l'état, 409 et notification
 
