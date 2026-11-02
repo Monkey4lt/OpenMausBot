@@ -118,7 +118,7 @@ it("a tree is fetched again only after a new push", async () => { /* same pushed
   - `groupZone(rects: Rect[], pad = { x: 22, top: 52, bottom: 22 }): Rect | null`
   - `arrangeByGroup(buckets: { id: string; h: number }[][], opts = { perRow: 4, step: 340, rowGap: 36, groupGap: 150, x0: 60, y0: 90 }): Record<string, { x: number; y: number }>`
 
-- [ ] **Step 1 : Write the failing tests**
+- [x] **Step 1 : Write the failing tests**
 
 ```ts
 it("edgePoint leaves the right side for a target on the right", () => {
@@ -132,10 +132,10 @@ it("groupZone of nothing is null", () => { expect(groupZone([])).toBeNull(); });
 it("arrangeByGroup wraps after 4 blocks and leaves a gap between groups", () => { /* 5 blocks h=100 in group 1, 1 in group 2 → [4]=(60,226), group 2 at y=426 */ });
 ```
 
-- [ ] **Step 2 :** `pnpm vitest run src/lib/projects-map.test.ts` → FAIL (module absent).
-- [ ] **Step 3 :** Écrire les trois fonctions (logique actuelle de `ProjectsPage.tsx`, sans changement de valeurs) et remplacer leur usage dans la page.
-- [ ] **Step 4 :** Relancer → PASS ; ouvrir Projets dans l'app : rendu identique.
-- [ ] **Step 5 :** Commit `refactor(projects): move canvas geometry into a tested lib`.
+- [x] **Step 2 :** `pnpm vitest run src/lib/projects-map.test.ts` → FAIL (module absent).
+- [x] **Step 3 :** Écrire les trois fonctions (logique actuelle de `ProjectsPage.tsx`, sans changement de valeurs) et remplacer leur usage dans la page.
+- [x] **Step 4 :** Relancer → PASS ; ouvrir Projets dans l'app : rendu identique.
+- [x] **Step 5 :** Commit `refactor(projects): move canvas geometry into a tested lib`.
 
 ### Task 5: Classer un fichier dans une famille
 

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { arrangeByGroup, edgePoint, groupZone } from "@/lib/projects-map";
 import { api } from "@/state/api";
 
 // ---------- types (mirror server/projects.ts) ----------
@@ -333,18 +334,7 @@ export function ProjectsPage() {
   };
   const arrange = () => {
     const buckets = [...S.groups.map((g) => projects.filter((p) => S.member[p.id] === g.id)), projects.filter((p) => !groupOf(p.id))];
-    const next: MapState["pos"] = { ...S.pos };
-    let y = 90;
-    for (const list of buckets) {
-      if (!list.length) continue;
-      let x = 60, h = 0;
-      list.forEach((p, i) => {
-        if (i && i % 4 === 0) { y += h + 36; x = 60; h = 0; }
-        next[p.id] = { x, y };
-        x += 340; h = Math.max(h, sizes[p.id]?.h ?? 200);
-      });
-      y += h + 150;
-    }
+    const next: MapState["pos"] = { ...S.pos, ...arrangeByGroup(buckets.map((list) => list.map((p) => ({ id: p.id, h: sizes[p.id]?.h ?? 200 })))) };
     update((s) => ({ ...s, pos: next }));
   };
   const setZoom = (z: number) => update((s) => ({ ...s, zoom: Math.min(1.6, Math.max(0.3, +z.toFixed(2))) }));
@@ -369,13 +359,6 @@ export function ProjectsPage() {
     el.addEventListener("pointermove", move); el.addEventListener("pointerup", up);
   };
 
-  // ----- drawing helpers -----
-  const edge = (A: { x: number; y: number; w: number; h: number }, B: typeof A): [number, number] => {
-    const ax = A.x + A.w / 2, ay = A.y + A.h / 2, dx = B.x + B.w / 2 - ax, dy = B.y + B.h / 2 - ay;
-    if (!dx && !dy) return [ax, ay];
-    const k = Math.min(dx ? (A.w / 2 + 8) / Math.abs(dx) : Infinity, dy ? (A.h / 2 + 8) / Math.abs(dy) : Infinity);
-    return [ax + dx * k, ay + dy * k];
-  };
   const all = [...rects.values()];
   const boardW = Math.max(...all.map((r) => r.x + r.w), 0) + 600;
   const boardH = Math.max(...all.map((r) => r.y + r.h), 0) + 500;
@@ -468,13 +451,12 @@ export function ProjectsPage() {
                 <marker id="pm-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#8a8a8a" /></marker>
               </defs>
               {S.groups.map((g) => {
-                const rs = projects.filter((p) => S.member[p.id] === g.id).map((p) => rects.get(p.id)!);
-                if (!rs.length) return null;
-                const x = Math.min(...rs.map((r) => r.x)) - 22, y = Math.min(...rs.map((r) => r.y)) - 52;
-                const x2 = Math.max(...rs.map((r) => r.x + r.w)) + 22, y2 = Math.max(...rs.map((r) => r.y + r.h)) + 22;
+                const zone = groupZone(projects.filter((p) => S.member[p.id] === g.id).map((p) => rects.get(p.id)!));
+                if (!zone) return null;
+                const { x, y } = zone;
                 return (
                   <g key={g.id}>
-                    <rect x={x} y={y} width={x2 - x} height={y2 - y} rx={22} fill={g.color} fillOpacity={0.05} stroke={g.color} strokeOpacity={0.35} strokeWidth={1.2} />
+                    <rect x={x} y={y} width={zone.w} height={zone.h} rx={22} fill={g.color} fillOpacity={0.05} stroke={g.color} strokeOpacity={0.35} strokeWidth={1.2} />
                     <rect x={x + 14} y={y + 14} width={g.name.length * 7.6 + 30} height={24} rx={12} fill={g.color} fillOpacity={0.16} />
                     <circle cx={x + 27} cy={y + 26} r={3.5} fill={g.color} />
                     <text x={x + 37} y={y + 30.5} fill={g.color} className="text-[13px] font-semibold">{g.name}</text>
@@ -484,7 +466,7 @@ export function ProjectsPage() {
               {S.links.map((l, i) => {
                 const A = rects.get(l.a), B = rects.get(l.b);
                 if (!A || !B) return null;
-                const [x1, y1] = edge(A, B), [x2, y2] = edge(B, A), mx = (x1 + x2) / 2, my = (y1 + y2) / 2, w = l.label.length * 6.6 + 20;
+                const [x1, y1] = edgePoint(A, B), [x2, y2] = edgePoint(B, A), mx = (x1 + x2) / 2, my = (y1 + y2) / 2, w = l.label.length * 6.6 + 20;
                 return (
                   <g key={`${l.a}-${l.b}-${i}`}>
                     <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#5a5a5a" strokeWidth={1.6} strokeDasharray="6 4" markerEnd="url(#pm-arrow)" className="animate-link-flow" />
