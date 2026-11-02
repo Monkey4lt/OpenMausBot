@@ -187,14 +187,31 @@ export function projectsFromLines(sourceId: string, lines: readonly string[]): P
     }));
 }
 
+export const githubTarget = (path: string) => path.replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "").replace(/\.git$|\/$/g, "");
+export const localRoot = (path: string) => path.replace(/^~(?=$|\/)/, homedir());
+
 export async function scanSource(source: ProjectSource): Promise<Project[]> {
   const lines = source.kind === "ssh" ? await scanSshLines(source.host!, source.path)
-    : source.kind === "github" ? await scanGithubLines(source.path.replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "").replace(/\.git$|\/$/g, ""))
-    : scanLocalLines(existingFolder(source.path.replace(/^~(?=$|\/)/, homedir())));
+    : source.kind === "github" ? await scanGithubLines(githubTarget(source.path))
+    : scanLocalLines(existingFolder(localRoot(source.path)));
   return projectsFromLines(source.id, lines);
 }
 
-function existingFolder(path: string): string {
+/** The source and first-level folder a project id names; null for an id no scan could have produced. */
+export function findProject(state: ProjectMapState, id: string): { source: ProjectSource; name: string } | null {
+  const colon = id.indexOf(":");
+  if (colon < 0) return null;
+  const source = state.sources.find((s) => s.id === id.slice(0, colon));
+  const name = id.slice(colon + 1);
+  if (!source || !name || name.includes("/") || name.includes("\\") || skipped(name)) return null;
+  if (source.kind === "github") {
+    const [, repo] = githubTarget(source.path).split("/");
+    if (repo && repo.toLowerCase() !== name.toLowerCase()) return null;
+  }
+  return { source, name };
+}
+
+export function existingFolder(path: string): string {
   if (!statSync(path, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`Folder not found: ${path}`);
   return path;
 }

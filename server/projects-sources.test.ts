@@ -223,7 +223,7 @@ describe("GitHub import reading", () => {
       fetch: (async (input: string | URL | Request) => {
         const url = new URL(String(input));
         calls.push(url.pathname);
-        if (url.pathname === `/repos/o/r/tarball/main`) return new Response(archive(), { status: 200, headers: { "content-type": "application/x-gzip" } });
+        if (url.pathname === `/repos/o/r/tarball/main`) return new Response(new Uint8Array(archive()), { status: 200, headers: { "content-type": "application/x-gzip" } });
         return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
       }) as typeof globalThis.fetch,
     });

@@ -380,7 +380,7 @@ it("downloads the tarball once per push", async () => {});
 - Consumes : `buildArchitecture`, `readLocalImports`, `readSshImports`, `readGithubImports`, `aliasesFromTsconfig`, `aliasesFromGoMod`, helper `call` (tâche 2).
 - Produces : `GET /api/projects/architecture?id=<sourceId:name>` → `200 Architecture` ; `404 { error }` si projet inconnu ; `502 { error }` si la source ne répond pas. Cache mémoire par `id` + empreinte de la liste des chemins.
 
-- [ ] **Step 1 : Write the failing tests**
+- [x] **Step 1 : Write the failing tests**
 
 ```ts
 it("returns the architecture of a local project", async () => { /* fixture ui→server import → edges contains family ui→server */ });
@@ -389,8 +389,8 @@ it("a source that fails → 502 with its message", async () => {});
 it("a second call with the same files does not read them again", async () => {});
 ```
 
-- [ ] **Step 2 :** FAIL. **Step 3 :** implémenter. **Step 4 :** PASS.
-- [ ] **Step 5 :** Commit `feat(projects): serve the architecture of one project`.
+- [x] **Step 2 :** FAIL. **Step 3 :** implémenter. **Step 4 :** PASS.
+- [x] **Step 5 :** Commit `feat(projects): serve the architecture of one project`.
 
 ### Task 14: Vue « Carte » dans l'interface
 

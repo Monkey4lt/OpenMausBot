@@ -1,5 +1,14 @@
-import { githubLogin, githubSignIn } from "../projects-github.ts";
-import { readProjectMapState, scanSource, projectMapStateSchema, writeProjectMapState, type Project } from "../projects.ts";
+import { createHash } from "node:crypto";
+import { statSync } from "node:fs";
+import { join } from "node:path";
+
+import { buildArchitecture, aliasesFromGoMod, aliasesFromTsconfig, type Architecture } from "../projects-architecture.ts";
+import { githubLogin, githubRepo, githubRepoLines, githubSignIn } from "../projects-github.ts";
+import { readGithubImports, readLocalImports, readSshImports, type ImportSet } from "../projects-sources.ts";
+import {
+  existingFolder, findProject, githubTarget, localRoot, readProjectMapState, scanLocalLines, scanSshLines, scanSource,
+  projectMapStateSchema, writeProjectMapState, type Project, type ProjectMapState, type ProjectSource,
+} from "../projects.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 export interface ProjectRouteDeps {
@@ -11,9 +20,23 @@ export interface ProjectRouteDeps {
  * PUT /api/projects/state  → save the layout (sources, groups, links, positions)
  * GET /api/projects/github → the GitHub login Git keeps on this computer, if any
  * POST /api/projects/github/signin {switch?} → open Git's GitHub sign-in window on this computer
+ * GET /api/projects/architecture?id=<sourceId:name> → the project's families, modules, files and import edges
  */
 export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
-  return async ({ req, res, path, method, json, readBody }) => {
+  const architectures = new Map<string, { key: string; architecture: Architecture }>();
+  return async ({ req, res, url, path, method, json, readBody }) => {
+    if (path === "/api/projects/architecture" && method === "GET") {
+      const state = readProjectMapState(deps.dataDir);
+      const found = findProject(state, url.searchParams.get("id") ?? "");
+      if (!found) return json(res, 404, { error: "Unknown project" });
+      try {
+        const architecture = await projectArchitecture(state, found.source, found.name, architectures);
+        if (!architecture) return json(res, 404, { error: "Unknown project" });
+        return json(res, 200, architecture);
+      } catch (error) {
+        return json(res, 502, { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
     if (path === "/api/projects" && method === "GET") {
       const state = readProjectMapState(deps.dataDir);
       const projects: Project[] = [];
@@ -43,4 +66,47 @@ export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
     }
     return PASS;
   };
+}
+
+type Reader = { paths: string[]; imports: (paths: string[]) => Promise<ImportSet> };
+
+/** Paths relative to the project folder, from the same listing the map shows. */
+function projectPaths(lines: string[], prefix: string): string[] {
+  return lines.filter((line) => line.startsWith(`f ${prefix}/`)).map((line) => line.slice(prefix.length + 3));
+}
+
+async function projectReader(source: ProjectSource, name: string): Promise<Reader | null> {
+  if (source.kind === "local") {
+    const root = join(existingFolder(localRoot(source.path)), name);
+    if (!statSync(root, { throwIfNoEntry: false })?.isDirectory()) return null;
+    const paths = scanLocalLines(root).filter((line) => line.startsWith("f ")).map((line) => line.slice(2));
+    return { paths, imports: (list) => readLocalImports(root, list) };
+  }
+  if (source.kind === "ssh") {
+    const lines = await scanSshLines(source.host!, source.path);
+    if (!lines.includes(`d ${name}`)) return null;
+    const base = source.path.replace(/\/+$/, "");
+    return { paths: projectPaths(lines, name), imports: () => readSshImports(source.host!, `${base || ""}/${name}`) };
+  }
+  const [owner, single] = githubTarget(source.path).split("/");
+  const repo = await githubRepo(`${owner}/${single ?? name}`);
+  const paths = projectPaths(await githubRepoLines(repo), repo.name);
+  return { paths, imports: () => readGithubImports(repo) };
+}
+
+async function projectArchitecture(
+  state: ProjectMapState, source: ProjectSource, name: string, cache: Map<string, { key: string; architecture: Architecture }>,
+): Promise<Architecture | null> {
+  const id = `${source.id}:${name}`;
+  const reader = await projectReader(source, name);
+  if (!reader) return null;
+  const overrides = Object.hasOwn(state.overrides, id) ? state.overrides[id] : undefined;
+  const key = createHash("sha256").update(JSON.stringify([[...reader.paths].sort(), overrides ?? null, source])).digest("hex");
+  const hit = cache.get(id);
+  if (hit?.key === key) return hit.architecture;
+  const set = await reader.imports(reader.paths);
+  const aliases = { ...(set.tsconfig ? aliasesFromTsconfig(set.tsconfig) : {}), ...(set.goMod ? aliasesFromGoMod(set.goMod) : {}) };
+  const architecture = buildArchitecture(reader.paths, set.read, aliases, overrides);
+  cache.set(id, { key, architecture });
+  return architecture;
 }

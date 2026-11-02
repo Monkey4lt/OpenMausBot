@@ -144,6 +144,10 @@ export async function listGithubRepos(target: string): Promise<GithubRepo[]> {
   return repos.slice(0, MAX_REPOS);
 }
 
+export async function githubRepo(fullName: string): Promise<GithubRepo> {
+  return toRepo(await gh<ApiRepo>(`/repos/${fullName}`, await token()));
+}
+
 const trees = new Map<string, { pushedAt: string; lines: string[] }>();
 const perPush = new Map<string, { pushedAt: string; value: Promise<unknown> }>();
 

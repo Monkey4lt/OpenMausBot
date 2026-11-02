@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { projectMapStateSchema, projectsFromLines, readProjectMapState, scanLocalLines, sshFindCommand, writeProjectMapState } from "./projects.ts";
+import { findProject, projectMapStateSchema, projectsFromLines, readProjectMapState, scanLocalLines, sshFindCommand, writeProjectMapState } from "./projects.ts";
 
 const dirs: string[] = [];
 const tmp = () => { const d = mkdtempSync(join(tmpdir(), "projmap-")); dirs.push(d); return d; };
@@ -59,6 +59,18 @@ describe("projects map", () => {
     expect(projectMapStateSchema.parse({ overrides: { "local:api": {} } }).overrides).toEqual({ "local:api": { moduleFamily: {}, familyNames: {} } });
     expect(projectMapStateSchema.safeParse({ overrides: { "local:api": { moduleFamily: { "src/state": "magic" }, familyNames: {} } } }).success).toBe(false);
     expect(projectMapStateSchema.safeParse({ overrides: { "local:api": { moduleFamily: {}, familyNames: { magic: "x" } } } }).success).toBe(false);
+  });
+
+  it("findProject maps an id back to its source and folder", () => {
+    const state = projectMapStateSchema.parse({ sources: [
+      { id: "s1", label: "VPS", kind: "ssh", host: "me@vps", path: "~/projets" },
+      { id: "g1", label: "GitHub", kind: "github", path: "octo" },
+      { id: "g2", label: "One", kind: "github", path: "https://github.com/octo/web.git" },
+    ] });
+    expect(findProject(state, "s1:api")).toEqual({ source: state.sources[0], name: "api" });
+    expect(findProject(state, "g1:web")?.source.id).toBe("g1");
+    expect(findProject(state, "g2:Web")?.name).toBe("Web");
+    for (const id of ["g2:other", "s1:a/b", "s1:..", "s1:.git", "s1:node_modules", "zz:api", "s1:", "nocolon", ""]) expect(findProject(state, id)).toBeNull();
   });
 
   it("saves and reads the layout, and starts empty without a file", () => {
