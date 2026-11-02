@@ -98,6 +98,16 @@ describe("workflow store", () => {
     expect(readdirSync(dir).filter((f) => f.includes(".corrupt-")).length, "a later start makes no second copy").toBe(2);
   });
 
+  it("never overwrites a file written by a newer version", () => {
+    const dir = tmp();
+    const newer = JSON.stringify({ version: 2, workflows: [{ future: true }] });
+    writeFileSync(workflowsPath(dir), newer);
+    const store = createWorkflowStore(dir, { now, newId });
+    expect(store.list()).toEqual([]);
+    expect(() => store.save(draft(), 0)).toThrow("could not be read");
+    expect(readFileSync(workflowsPath(dir), "utf8")).toBe(newer);
+  });
+
   it("refuses to save over a file it could not read at all", () => {
     const dir = tmp();
     mkdirSync(workflowsPath(dir)); // a folder where the file should be

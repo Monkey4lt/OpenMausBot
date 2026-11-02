@@ -97,6 +97,12 @@ function load<T>(path: string, key: string, schema: z.ZodType<T>, now: () => num
     // JSON.parse errors can echo a fragment of the file, so they never reach the log.
     return recover("invalid JSON", []);
   }
+  const version = (data as { version?: unknown } | null)?.version;
+  if (typeof version === "number" && version > VERSION) {
+    // Written by a newer app: read nothing, never overwrite it.
+    console.error(`workflows: ${path} was written by a newer version; changes will not be saved`);
+    return { items: [], writable: false };
+  }
   const list = data !== null && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>)[key] : undefined;
   if ((data as { version?: unknown } | null)?.version !== VERSION || !Array.isArray(list)) {
     return recover("unexpected file shape", []);
