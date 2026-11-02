@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { gzipSync } from "node:zlib";
 import { join } from "node:path";
@@ -77,6 +77,22 @@ describe("local import reading", () => {
     const root = join(outer, "inner");
     mkdirSync(root);
     expect((await readLocalImports(root, ["../secret.ts", "/etc/passwd.ts"])).read).toEqual([]);
+  });
+
+  it("never follows a symlink, to a file or through a folder", async () => {
+    const outer = fixture({ "secret.ts": 'import "./leak";', "secrets/x.ts": 'import "./leak";' });
+    const root = join(outer, "inner");
+    mkdirSync(root);
+    writeFileSync(join(root, "a.ts"), 'import "./b";');
+    symlinkSync(join(outer, "secret.ts"), join(root, "link.ts"));
+    symlinkSync(join(outer, "secrets"), join(root, "dir"));
+    const set = await readLocalImports(root, ["a.ts", "link.ts", "dir/x.ts"]);
+    expect(set.read.map((f) => f.path)).toEqual(["a.ts"]);
+  });
+
+  it("reads a file whose name starts with two dots", async () => {
+    const root = fixture({ "..foo.ts": 'import "./b";', "src/..bar.ts": "" });
+    expect((await readLocalImports(root, ["..foo.ts", "src/..bar.ts"])).read.map((f) => f.path)).toEqual(["..foo.ts", "src/..bar.ts"]);
   });
 
   it("stops at the limit", async () => {

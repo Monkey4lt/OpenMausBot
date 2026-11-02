@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
-import { isAbsolute, join, relative } from "node:path";
+import { lstat, readFile } from "node:fs/promises";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import { aliasesFromTsconfig, CODE_EXTENSIONS, MAX_CODE_FILES, parseImports, type FileImports } from "./projects-architecture.ts";
@@ -29,14 +29,26 @@ export function pickTsconfig(main: string | null, app: string | null): string | 
   return main ?? app;
 }
 
-async function readSmallText(file: string): Promise<string | null> {
+/** A regular file under `root` reached without any symlink, so a link cannot pull in a file from outside the project. */
+async function readSmallText(root: string, path: string): Promise<string | null> {
   try {
-    const info = await stat(file);
-    if (!info.isFile() || info.size > MAX_FILE_BYTES) return null;
-    return await readFile(file, "utf8");
+    const parts = path.split("/");
+    let at = root;
+    for (const [i, part] of parts.entries()) {
+      at = join(at, part);
+      const info = await lstat(at);
+      if (info.isSymbolicLink()) return null;
+      if (i === parts.length - 1 && (!info.isFile() || info.size > MAX_FILE_BYTES)) return null;
+    }
+    return await readFile(at, "utf8");
   } catch {
     return null;
   }
+}
+
+function insideRoot(root: string, path: string): boolean {
+  const rel = relative(root, join(root, ...path.split("/")));
+  return Boolean(rel) && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
 export async function readLocalImports(root: string, paths: string[], limit = MAX_CODE_FILES): Promise<ImportSet> {
@@ -45,13 +57,11 @@ export async function readLocalImports(root: string, paths: string[], limit = MA
     if (read.length >= limit) break;
     const path = toPosix(raw);
     if (!isCodeFile(path)) continue;
-    const file = join(root, ...path.split("/"));
-    const rel = relative(root, file);
-    if (!rel || rel.startsWith("..") || isAbsolute(rel)) continue;
-    const text = await readSmallText(file);
+    if (!insideRoot(root, path)) continue;
+    const text = await readSmallText(root, path);
     if (text !== null) read.push({ path, imports: parseImports(path, text) });
   }
-  const [tsconfig, tsconfigApp, goMod] = await Promise.all(["tsconfig.json", "tsconfig.app.json", "go.mod"].map((name) => readSmallText(join(root, name))));
+  const [tsconfig, tsconfigApp, goMod] = await Promise.all(["tsconfig.json", "tsconfig.app.json", "go.mod"].map((name) => readSmallText(root, name)));
   return { read, tsconfig: pickTsconfig(tsconfig, tsconfigApp), goMod };
 }
 
