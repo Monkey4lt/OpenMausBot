@@ -9674,7 +9674,8 @@ ROUTES.push(createProjectRoutes({ dataDir: DATA_DIR, architectures: projectArchi
   ensureCartographe: () => (CLOUD_HOME || HOSTED_WORKSPACE ? null : ensureCartographeBot(store, { dataDir: DATA_DIR })?.id ?? null) }));
 const workflowHost = createWorkflowHost({ dataDir: DATA_DIR, language: appLanguage, botExists: (id) => Boolean(store.bot(id)), broadcast, bots: () => store.bots, bot: (id) => store.bot(id), budgetAllows: () => { try { assertWithinBudget(cfg, DATA_DIR); return true; } catch { return false; } },
   sideText: (botId, instanceId) => { const instance = instanceId ? registry.get(instanceId) : undefined; return instanceId && !instance ? null : sideJobs.text("workflow", botId, instance ? { instance } : undefined); }, createTask: (botId, title) => store.createTask(botId, title, false), interruptTurn: (botId, threadId) => interruptDirectThread(botId, threadId, "The workflow was stopped"),
-  startTurn: (botId, prompt, opts) => startTurn(botId, prompt, { threadId: opts.threadId, automationSource: "webhook", onSettled: opts.onSettled, onDispatchError: opts.onDispatchError }).then(() => {}), appendMessage: (threadId, message) => { store.appendMessage(threadId, message as Omit<Message, "id" | "at">); }, dismissCard: cartographe.dismissCard, outboundRequests, notify, routines: () => routines });
+  startTurn: (botId, prompt, opts) => startTurn(botId, prompt, { threadId: opts.threadId, automationSource: "webhook", onSettled: opts.onSettled, onDispatchError: opts.onDispatchError }).then(() => {}), appendMessage: (threadId, message) => { store.appendMessage(threadId, message as Omit<Message, "id" | "at">); }, dismissCard: cartographe.dismissCard, outboundRequests, notify, routines: () => routines,
+  cartographe: { chat: store, isCartographe: cartographe.isCartographe, active: (capability) => internalCapabilityIsActive(capability as InternalCapability), mcpCallTimeoutMs: cartographe.mcpCallTimeoutMs } });
 ROUTES.push(workflowHost.routes); workflowRoutines = workflowHost;
 try { workflowHost.routineLink.reconcile(); } catch (error) { console.error("workflows: could not line up the workflow routines", error); }
 ROUTES.push(createWebhookRoutes({ webhooks, ingress: webhookIngressStatus, visible: (auth) => visibleTo(viewerFor(auth)) }));
@@ -12601,7 +12602,11 @@ ROUTES.push(createBrowserViewerRoutes({
   restartRefusal: (session) => browserRestartRefusal(browserRuntime.interrupted(session), store.bots.filter((candidate) => candidate.busy
     && browserSessionsOf(candidate.id, candidate.browserProfile).includes(session)).map((candidate) => ({ waitingOnBrowser: computerControl.snapshot(candidate.id).help?.place === "browser" }))),
 }));
-const internalToolRoutes = createInternalToolRoutes({ cartographe: cartographe.routes, helpers: { decider, extractor }, notifications: { bot: (id) => store.bot(id), team: sharedMembership, broadcast }, xResearch: { credential: () => researchCredential(cfg.treg?.key), botEnabled: (botId) => store.bot(botId)?.xResearch !== false, cloudHome: CLOUD_HOME !== null, researchOff: () => researchAvailability.refused() } }); const waitRoutes = createWaitRoutes({ waits: botWaits, cloudHome: Boolean(CLOUD_HOME), sleeps: Boolean(CLOUD_HOME) && CLOUD_TEAM === null }); ROUTES.push(createXConnectorRoutes({ credential: () => researchCredential(cfg.treg?.key), included: () => xCredential(), unavailable: () => xResearchStatus().unavailable === true }));
+const cartographeToolRoutes: typeof cartographe.routes = async (ctx) => {
+  const out = await cartographe.routes(ctx);
+  return out === PASS && workflowHost.cartographeRoutes ? workflowHost.cartographeRoutes(ctx) : out;
+};
+const internalToolRoutes = createInternalToolRoutes({ cartographe: cartographeToolRoutes, helpers: { decider, extractor }, notifications: { bot: (id) => store.bot(id), team: sharedMembership, broadcast }, xResearch: { credential: () => researchCredential(cfg.treg?.key), botEnabled: (botId) => store.bot(botId)?.xResearch !== false, cloudHome: CLOUD_HOME !== null, researchOff: () => researchAvailability.refused() } }); const waitRoutes = createWaitRoutes({ waits: botWaits, cloudHome: Boolean(CLOUD_HOME), sleeps: Boolean(CLOUD_HOME) && CLOUD_TEAM === null }); ROUTES.push(createXConnectorRoutes({ credential: () => researchCredential(cfg.treg?.key), included: () => xCredential(), unavailable: () => xResearchStatus().unavailable === true }));
 
 // Live calls: the client holds the WebRTC audio; the key never leaves the harness, which creates the session.
 function liveBotFor(botId: string): LiveBot {

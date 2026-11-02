@@ -59,7 +59,7 @@ function profiles(): Record<string, Profile> {
   };
   // The person's MausBot holds a Chief's powers and adds its notification pair; MAUSBOT_ADDS bounds what that costs.
   for (const name of ["default", "skills+shared+voice"]) all[`${name}+mausbot`] = { env: { ...all[name]!.env, OMB_MAUSBOT: "1" } };
-  // The Cartographe adds its three projects tools; CARTOGRAPHE_ADDS bounds what that costs.
+  // The Cartographe adds its projects and workflow tools; CARTOGRAPHE_ADDS bounds what that costs.
   all["default+cartographe"] = { env: { ...all.default!.env, OMB_CARTOGRAPHE: "1" } };
   // A chat that can never pick its computer: its Works on is Off, or it works on its team's computer. A room is one too.
   all["default+no-computer-pick"] = { env: { ...all.default!.env, OMB_COMPUTER_SELECTION: "0" } };
@@ -75,9 +75,9 @@ const TEAMWORK_TOOLS = ["list_room_targets", "coordinate_bots", "assignment_stat
 const MAUSBOT_TOOLS = ["list_unread_notifications", "mark_notifications_read"];
 /** MausBot's tools may make its list at most this much longer than the same Chief's without them. */
 const MAUSBOT_ADDS = 0.02;
-const CARTOGRAPHE_TOOLS = ["projects_read_map", "projects_read_architecture", "projects_apply_changes"];
+const CARTOGRAPHE_TOOLS = ["projects_read_map", "projects_read_architecture", "projects_apply_changes", "workflows_read", "workflows_propose"];
 /** The Cartographe's tools may make its list at most this much longer than the same profile without them. */
-const CARTOGRAPHE_ADDS = 0.05;
+const CARTOGRAPHE_ADDS = 0.08;
 const RESEARCH_TOOLS = ["x_search", "research_search", "research_endpoint", "research_call"];
 /** Only on the person's own Cloud: never on the fullest profile, a Team Cloud's. */
 const OWN_CLOUD_TOOLS = ["ask_for_computer"];
@@ -107,7 +107,7 @@ const BUDGET_BASELINE: Record<string, number> = {
   "default+legacy-switches": 56910,
   "default+mausbot": 57561,
   "skills+shared+voice+mausbot": 63392,
-  "default+cartographe": 59470,
+  "default+cartographe": 61513, // + workflows_read, workflows_propose (Atelier)
   "skills+shared+voice+escalations": 63571,
   "skills+shared+voice+escalations+x": 67410,
   "skills+shared+voice+escalations+x+team": 68042,
@@ -429,7 +429,7 @@ describe("agents proxy tools/list wire size", () => {
     expect(bytes(wires[name]!)).toBeLessThanOrEqual(Math.floor(bytes(wires[without]!) * (1 + MAUSBOT_ADDS)));
   });
 
-  it.each(Object.keys(PROFILES).filter((name) => name.endsWith("+cartographe")))("%s adds only its three tools, at most 5%, to the same list", (name) => {
+  it.each(Object.keys(PROFILES).filter((name) => name.endsWith("+cartographe")))("%s adds only its own tools, at most 8%, to the same list", (name) => {
     const without = name.slice(0, -"+cartographe".length);
     const tools = toolsOf(wires[name]!);
     expect(tools.slice(-CARTOGRAPHE_TOOLS.length).map((tool) => tool.name)).toEqual(CARTOGRAPHE_TOOLS);

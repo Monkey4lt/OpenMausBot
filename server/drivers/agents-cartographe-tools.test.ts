@@ -25,7 +25,8 @@ describe("the Cartographe's projects tools", () => {
   it("lists the three tools only when OMB_CARTOGRAPHE=1, last and in this order", () => {
     expect(CARTOGRAPHE_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(NAMES);
     expect([...CARTOGRAPHE_TOOL_NAMES]).toEqual(NAMES);
-    expect(listed({ OMB_CARTOGRAPHE: "1" }).slice(-3).map((tool) => tool.name)).toEqual(NAMES);
+    // The workflow tools (agents-cartographe-workflow-tools.ts) come after these.
+    expect(listed({ OMB_CARTOGRAPHE: "1" }).slice(-5, -2).map((tool) => tool.name)).toEqual(NAMES);
     for (const env of [{}, { OMB_CARTOGRAPHE: "0" }, { OMB_CARTOGRAPHE: "true" }, { OMB_MAUSBOT: "1" }] as Array<Record<string, string>>) {
       const names = listed(env).map((tool) => tool.name);
       for (const name of NAMES) expect(names.includes(name), JSON.stringify(env)).toBe(false);
@@ -33,7 +34,7 @@ describe("the Cartographe's projects tools", () => {
   });
 
   it("leaves every other tool of the same profile unchanged", () => {
-    expect(JSON.stringify(listed({ OMB_CARTOGRAPHE: "1" }).slice(0, -3))).toBe(JSON.stringify(listed({})));
+    expect(JSON.stringify(listed({ OMB_CARTOGRAPHE: "1" }).slice(0, -5))).toBe(JSON.stringify(listed({})));
   });
 
   it("the harness passes OMB_CARTOGRAPHE to the agents MCP server", () => {

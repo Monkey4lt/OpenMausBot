@@ -11,6 +11,8 @@ import { serverLine, type ServerLineKey } from "../server-lines.ts";
 import type { SideJobText } from "../side-jobs.ts";
 import { flushUsageLedger, readUsage } from "../usage-ledger.ts";
 import { KIND_NAME } from "./graph.ts";
+import { findProject, readProjectMapState } from "../projects.ts";
+import { createWorkflowCartographeRoutes, type WorkflowCartographeDeps } from "./cartographe.ts";
 import { createWorkflowRoutineLink, type WorkflowRoutines } from "./routine-link.ts";
 import { createWorkflowRoutes } from "./routes.ts";
 import { createWorkflowRunner } from "./runner.ts";
@@ -54,6 +56,8 @@ export interface WorkflowHostDeps {
   notify(notification: Notification | null): void;
   /** The routines engine, once it is up: a workflow whose trigger runs on a schedule gets its own routine. */
   routines?(): WorkflowRoutines | null;
+  /** The Cartographe's side: absent, it gets no workflow routes. */
+  cartographe?: Pick<WorkflowCartographeDeps, "chat" | "isCartographe" | "active" | "mcpCallTimeoutMs">;
 }
 
 /** "<instanceId>" or "<instanceId>/<model>"; a model id may itself hold slashes. */
@@ -222,5 +226,20 @@ export function createWorkflowHost(deps: WorkflowHostDeps) {
     });
   };
 
-  return { store, runner, routes, steps, routineLink, routineRunFailed };
+  const cartographeRoutes = deps.cartographe ? createWorkflowCartographeRoutes({
+    ...deps.cartographe,
+    store,
+    botExists: deps.botExists,
+    projectName: (projectId) => findProject(readProjectMapState(deps.dataDir), projectId)?.name ?? null,
+    language: deps.language,
+    outboundRequests: deps.outboundRequests,
+    notify: deps.notify,
+    onSaved: (workflow) => {
+      deps.broadcast({ kind: "workflow", id: workflow.id, rev: workflow.rev }, { adminOnly: true });
+      const synced = routineLink.sync(workflow);
+      if (synced.routineError) console.warn(`workflows: the schedule of ${workflow.id} could not be kept: ${synced.routineError}`);
+    },
+  }) : null;
+
+  return { store, runner, routes, steps, routineLink, routineRunFailed, cartographeRoutes };
 }
