@@ -116,16 +116,23 @@ export function remoteShellPath(path: string): string {
 }
 
 /** The remote command: GNU find, pruning hidden and heavy folders, one entry per line. */
-export function sshFindCommand(path: string): string {
+export function sshFindCommand(path: string, options: { stamps?: boolean } = {}): string {
   const prune = ["'.*'", ...PROJECT_IGNORE.map((name) => shellQuote(name))].map((n) => `-name ${n}`).join(" -o ");
-  return `find ${remoteShellPath(path)} -mindepth 1 -maxdepth ${MAX_DEPTH + 1} \\( ${prune} \\) -prune -o \\( -type d -printf 'd %P\\n' -o -printf 'f %P\\n' \\) 2>/dev/null | head -n ${MAX_LINES}`;
+  const file = options.stamps ? "'f %P\\t%T@ %s\\n'" : "'f %P\\n'";
+  return `find ${remoteShellPath(path)} -mindepth 1 -maxdepth ${MAX_DEPTH + 1} \\( ${prune} \\) -prune -o \\( -type d -printf 'd %P\\n' -o -printf ${file} \\) 2>/dev/null | head -n ${MAX_LINES}`;
 }
 
-export function scanSshLines(host: string, path: string): Promise<string[]> {
+/** A listing line without the "\t<mtime> <size>" a stamped find adds to files. */
+export function withoutStamp(line: string): string {
+  const tab = line.indexOf("\t");
+  return tab < 0 ? line : line.slice(0, tab);
+}
+
+export function scanSshLines(host: string, path: string, options: { stamps?: boolean } = {}): Promise<string[]> {
   return new Promise((resolve, reject) => {
     execFile(
       "ssh",
-      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", host, sshFindCommand(path)],
+      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", host, sshFindCommand(path, options)],
       { timeout: SSH_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 },
       (error, stdout, stderr) => {
         // find exits non-zero on unreadable folders; only fail when nothing came back.
@@ -147,7 +154,8 @@ function finish(node: Builder): ProjectNode[] {
 /** Each first-level folder is a project; first-level files are left out. */
 export function projectsFromLines(sourceId: string, lines: readonly string[]): Project[] {
   const roots = new Map<string, { root: Builder; files: number; dirs: number; items: number; truncated: boolean }>();
-  for (const line of lines) {
+  for (const stamped of lines) {
+    const line = withoutStamp(stamped);
     const kind = line[0];
     const rel = line.slice(2);
     if ((kind !== "d" && kind !== "f") || line[1] !== " " || !rel) continue;

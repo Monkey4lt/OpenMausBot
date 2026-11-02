@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { findProject, projectMapStateSchema, projectsFromLines, readProjectMapState, scanLocalLines, sshFindCommand, writeProjectMapState } from "./projects.ts";
+import { findProject, projectMapStateSchema, projectsFromLines, withoutStamp, readProjectMapState, scanLocalLines, sshFindCommand, writeProjectMapState } from "./projects.ts";
 
 const dirs: string[] = [];
 const tmp = () => { const d = mkdtempSync(join(tmpdir(), "projmap-")); dirs.push(d); return d; };
@@ -33,6 +33,14 @@ describe("projects map", () => {
   it("quotes the remote path and keeps a leading ~ for the remote shell", () => {
     expect(sshFindCommand("~/my proj's")).toContain(`find ~/'my proj'\\''s' `);
     expect(sshFindCommand("/srv/app; rm -rf /")).toContain(`find '/srv/app; rm -rf /' `);
+  });
+
+  it("with stamps, the remote find also prints each file's mtime and size, which the tree ignores", () => {
+    expect(sshFindCommand("/srv")).not.toContain("%T@");
+    expect(sshFindCommand("/srv", { stamps: true })).toContain("-printf 'f %P\\t%T@ %s\\n'");
+    expect(withoutStamp("f api/a.ts\t1730000000.5 120")).toBe("f api/a.ts");
+    expect(withoutStamp("d api")).toBe("d api");
+    expect(projectsFromLines("s", ["d api", "f api/a.ts\t1730000000.5 120"])[0].tree).toEqual([{ n: "a.ts", t: "f" }]);
   });
 
   it("refuses an SSH host that looks like an option", () => {

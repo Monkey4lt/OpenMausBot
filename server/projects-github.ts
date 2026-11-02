@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 
+import { PromiseLru } from "./promise-lru.ts";
+
 const API = "https://api.github.com";
 const MAX_REPOS = 100;
 
@@ -171,17 +173,10 @@ export async function githubRepo(fullName: string): Promise<GithubRepo> {
 }
 
 const trees = new Map<string, { pushedAt: string; lines: string[] }>();
-const perPush = new Map<string, { pushedAt: string; value: Promise<unknown> }>();
+const perPush = new PromiseLru<unknown>(32);
 
-/** One `make()` per repository, kind and push; a failure is not kept. */
 export function cachedForPush<T>(repo: GithubRepo, kind: string, make: () => Promise<T>): Promise<T> {
-  const key = `${kind}\n${repo.fullName}`;
-  const hit = perPush.get(key);
-  if (hit && hit.pushedAt === repo.pushedAt) return hit.value as Promise<T>;
-  const value = make();
-  perPush.set(key, { pushedAt: repo.pushedAt, value });
-  value.catch(() => { if (perPush.get(key)?.value === value) perPush.delete(key); });
-  return value;
+  return perPush.get(`${kind}\n${repo.fullName}`, repo.pushedAt, make) as Promise<T>;
 }
 
 /** Lines "d name/…" / "f name/…" for one repository, the shape `projectsFromLines` reads. Cached until the next push. */

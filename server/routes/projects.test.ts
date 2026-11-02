@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -162,14 +162,46 @@ describe("GET /api/projects/architecture", () => {
     expect(await architecture(route, "s1:api")).toEqual({ status: 502, body: { error: `Folder not found: ${missing}` } });
   });
 
-  it("a second call with the same files does not read them again", async () => {
+  it("an edited import is seen on the next call", async () => {
     const root = localProject({ "a.ts": "", "b.ts": "" });
     const route = await withSources([{ id: "s1", label: "Here", kind: "local", path: root }]);
     expect((await architecture(route, "s1:api")).body.edges).toEqual([]);
     writeFileSync(join(root, "api", "a.ts"), 'import "./b";');
-    expect((await architecture(route, "s1:api")).body.edges).toEqual([]);
-    writeFileSync(join(root, "api", "c.ts"), "");
-    expect((await architecture(route, "s1:api")).body.files.map((f) => f.path)).toEqual(["a.ts", "b.ts", "c.ts"]);
+    expect((await architecture(route, "s1:api")).body.files.find((f) => f.path === "a.ts")).toMatchObject({ uses: ["b.ts"] });
+  });
+
+  it("an unchanged project is served from the cache, and ?refresh=1 reads it again", async () => {
+    const root = localProject({ "a.ts": "/*            */", "b.ts": "" });
+    const file = join(root, "api", "a.ts");
+    utimesSync(file, 1_700_000_000, 1_700_000_000);
+    const route = await withSources([{ id: "s1", label: "Here", kind: "local", path: root }]);
+    const first = await call(route, "GET", "/api/projects/architecture?id=s1%3Aapi");
+    writeFileSync(file, 'import "./b";   ');
+    utimesSync(file, 1_700_000_000, 1_700_000_000);
+    expect(await call(route, "GET", "/api/projects/architecture?id=s1%3Aapi")).toEqual(first);
+    const fresh = (await call(route, "GET", "/api/projects/architecture?id=s1%3Aapi&refresh=1")).body as { files: { path: string; uses: string[] }[] };
+    expect(fresh.files.find((f) => f.path === "a.ts")?.uses).toEqual(["b.ts"]);
+  });
+
+  it("a non-code file edit does not throw the cache away", async () => {
+    const root = localProject({ "a.ts": "", "README.md": "x" });
+    let reads = 0;
+    const route = createProjectRoutes({ dataDir: tmp(), onArchitectureRead: () => { reads += 1; } });
+    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "Here", kind: "local", path: root }] });
+    await call(route, "GET", "/api/projects/architecture?id=s1%3Aapi");
+    writeFileSync(join(root, "api", "README.md"), "longer text");
+    await call(route, "GET", "/api/projects/architecture?id=s1%3Aapi");
+    expect(reads).toBe(1);
+  });
+
+  it("concurrent identical requests read the project once", async () => {
+    const root = localProject({ "a.ts": "" });
+    let reads = 0;
+    const route = createProjectRoutes({ dataDir: tmp(), onArchitectureRead: () => { reads += 1; } });
+    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "Here", kind: "local", path: root }] });
+    const all = await Promise.all([1, 2, 3].map(() => call(route, "GET", "/api/projects/architecture?id=s1%3Aapi")));
+    expect(all.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(reads).toBe(1);
   });
 
   it("a change of overrides is not served from the cache", async () => {
@@ -202,6 +234,30 @@ describe("GET /api/projects/architecture", () => {
       { path: "src/b.ts", module: "(root)/server", uses: [], usedBy: ["src/a.ts"] },
     ]);
     expect(seen).toEqual(["/repos/octo/web", "/repos/octo/web/git/trees/main", "/repos/octo/web/tarball/main"]);
+  });
+
+  it("GitHub: the same push is served from the cache, a new push is read again", async () => {
+    let pushedAt = "2026-01-01T00:00:00Z";
+    let body = 'import "./b";';
+    const tarballs: string[] = [];
+    setGithubTransport({
+      credential: async () => null,
+      fetch: (async (input: string | URL | Request) => {
+        const path = new URL(String(input)).pathname;
+        const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
+        if (path === "/repos/octo/web") return json({ name: "web", full_name: "octo/web", default_branch: "main", pushed_at: pushedAt, owner: { login: "octo" } });
+        if (path === "/repos/octo/web/git/trees/main") return json({ tree: [{ path: "a.ts", type: "blob" }, { path: "b.ts", type: "blob" }] });
+        if (path === "/repos/octo/web/tarball/main") { tarballs.push(pushedAt); return new Response(gzipSync(tar([{ name: "octo-web-1/a.ts", data: body }, { name: "octo-web-1/b.ts", data: "" }]))); }
+        return new Response("{}", { status: 404 });
+      }) as typeof globalThis.fetch,
+    });
+    const route = await withSources([{ id: "g1", label: "GitHub", kind: "github", path: "octo/web" }]);
+    expect((await architecture(route, "g1:web")).body.edges).toEqual([]);
+    body = "";
+    expect((await architecture(route, "g1:web")).body.files.find((f) => f.path === "a.ts")).toMatchObject({ uses: ["b.ts"] });
+    pushedAt = "2026-02-01T00:00:00Z";
+    expect((await architecture(route, "g1:web")).body.files.find((f) => f.path === "a.ts")).toMatchObject({ uses: [] });
+    expect(tarballs).toEqual(["2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z"]);
   });
 
   it("a GitHub repository source only knows its own repository", async () => {
