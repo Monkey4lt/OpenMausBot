@@ -3,15 +3,20 @@
 // Shown in place of the chat, like Team map. Layout is saved on the server.
 import {
   ChevronDown, ChevronRight, CircleHelp, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
-  Minus, Network, Pencil, Plus, RefreshCw, Search, Server, Trash2, X,
+  Minus, Network, Pencil, Plus, RefreshCw, Search, Server, Sparkles, Trash2, X,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
+import { prependComposerDraft } from "@/lib/drafts";
 import { t } from "@/lib/i18n";
+import { listenLiveFrames } from "@/lib/live-events";
 import type { ArchOverrides } from "@/lib/projects-architecture-view";
 import { arrangeByGroup, edgePoint, groupZone } from "@/lib/projects-map";
+import { createMapSync } from "@/lib/projects-map-sync";
+import { useShowThreads } from "@/lib/thread-preferences";
 import { api } from "@/state/api";
+import { openBot, useStore } from "@/state/store";
 
 import { ArchitectureView } from "./projects/ArchitectureView";
 
@@ -31,8 +36,9 @@ interface MapState {
   zoom: number;
   help: boolean;
   overrides?: Record<string, ArchOverrides>;
+  rev?: number;
 }
-interface ProjectsResponse { state: MapState; projects: Project[]; errors: { sourceId: string; message: string }[] }
+interface ProjectsResponse { state: MapState; projects: Project[]; errors: { sourceId: string; message: string }[]; cartographeBotId?: string | null }
 
 const PALETTE = ["#38d591", "#1084fe", "#ff9800", "#ff5667", "#b47cff", "#2dd4bf", "#f472b6", "#facc15"];
 const BLOCK_W = 300;
@@ -209,15 +215,29 @@ export function ProjectsPage() {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [mapOf, setMapOf] = useState<Project | null>(null);
+  const [mapChanged, setMapChanged] = useState(false);
   const [ask, askNode] = useAsk();
+  const { state: appState, dispatch } = useStore();
+  const showThreads = useShowThreads();
   const wrapRef = useRef<HTMLDivElement>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const observer = useRef<ResizeObserver | null>(null);
+  const loadRef = useRef<() => Promise<void>>(async () => {});
+
+  const [sync] = useState(() => createMapSync<MapState>({
+    put: (body) => api<{ rev: number }>("/api/projects/state", { method: "PUT", body: JSON.stringify(body) }),
+    reload: () => { void loadRef.current(); },
+    changedElsewhere: () => setMapChanged(true),
+    status: setSaveState,
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+    delayMs: 400,
+  }));
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api<ProjectsResponse>("/api/projects");
+      sync.loaded(res.state);
       setData(res); setS(res.state);
       if (!res.state.sources.length) setSourcesOpen(true);
     } catch {
@@ -225,37 +245,28 @@ export function ProjectsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sync]);
+  loadRef.current = load;
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => listenLiveFrames({ onFrame: (frame) => sync.frame(frame), onMissedFrames: () => { void loadRef.current(); } }), [sync]);
 
   // Every change goes through here and is saved shortly after.
   const update = useCallback((fn: (s: MapState) => MapState) => {
     setS((prev) => {
       if (!prev) return prev;
       const next = fn(prev);
-      setSaveState("saving");
-      clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => {
-        api("/api/projects/state", { method: "PUT", body: JSON.stringify(next) })
-          .then(() => setSaveState("saved"), () => setSaveState("error"));
-      }, 400);
+      sync.later(next);
       return next;
     });
-  }, []);
+  }, [sync]);
 
   // Replaces any save still waiting, so a layout change made just before cannot overwrite this one.
   const saveNow = useCallback(async (next: MapState) => {
-    clearTimeout(saveTimer.current);
     setS(next);
-    setSaveState("saving");
-    try {
-      await api("/api/projects/state", { method: "PUT", body: JSON.stringify(next) });
-      setSaveState("saved");
-    } catch (error) {
-      setSaveState("error");
-      throw error;
-    }
-  }, []);
+    await sync.now(next);
+  }, [sync]);
+
+  const cartographe = data?.cartographeBotId ? appState.bots.find((bot) => bot.id === data.cartographeBotId) ?? null : null;
 
   const projects = useMemo(() => data?.projects ?? [], [data]);
   const sourceLabel = useCallback((id: string) => S?.sources.find((s) => s.id === id)?.label ?? "", [S?.sources]);
@@ -406,11 +417,13 @@ export function ProjectsPage() {
           <ToolButton onClick={() => setZoom(zoom + 0.1)} label={t("projects.zoomIn")}><Plus size={15} /></ToolButton>
           <ToolButton onClick={() => void load()} label={t("projects.refresh")}><RefreshCw size={15} className={cn(loading && "animate-spin")} /></ToolButton>
           <ToolButton onClick={() => update((s) => ({ ...s, help: !s.help }))} label={t("projects.help.button")}><CircleHelp size={15} /></ToolButton>
+          <CartographeButton bot={cartographe} onAsk={(bot) => askCartographe(bot, { prependDraft: prependComposerDraft, showChat: () => dispatch({ type: "showChat" }), openBot: (opened) => openBot(dispatch, opened, showThreads) })} />
           <span className={cn("ml-1 flex min-w-[90px] items-center justify-end gap-1.5 text-[12px]", saveState === "error" ? "text-danger" : "text-ink-tertiary")}>
             {saveLabel && <span className={cn("size-[7px] rounded-full", saveState === "error" ? "bg-danger" : saveState === "saving" ? "bg-warning" : "bg-success")} />}{saveLabel}
           </span>
         </div>
       </header>
+      {mapChanged && <MapChangedNotice onClose={() => setMapChanged(false)} />}
 
       <div className="flex min-h-0 flex-1">
         {/* pôles */}
@@ -582,11 +595,35 @@ export function ProjectsPage() {
             setSourcesOpen(false);
             const next = { ...S, sources };
             setS(next);
-            api("/api/projects/state", { method: "PUT", body: JSON.stringify(next) }).then(() => load(), () => setSaveState("error"));
+            sync.now(next).then(() => load(), () => {});
           }} />
       )}
       {askNode}
     </main>
+  );
+}
+
+type CartographeBot = { id: string; threadId: string; mainThreadId?: string; tasks?: { threadId: string }[] };
+
+/** Opens the Cartographe's chat with a request ready in its composer, ahead of anything typed there. Never sends it. */
+export function askCartographe<B extends CartographeBot>(bot: B, deps: { prependDraft: (id: string, text: string) => void; showChat: () => void; openBot: (bot: B) => void }): void {
+  deps.prependDraft(`bot:${bot.id}:${bot.threadId}`, t("projects.cartographe.draft"));
+  deps.showChat();
+  deps.openBot(bot);
+}
+
+export function CartographeButton<B extends CartographeBot>({ bot, onAsk }: { bot: B | null; onAsk: (bot: B) => void }) {
+  if (!bot) return null;
+  return <ToolButton onClick={() => onAsk(bot)} label={t("projects.cartographe.ask")}><Sparkles size={15} /><span className="hidden md:inline">{t("projects.cartographe.ask")}</span></ToolButton>;
+}
+
+export function MapChangedNotice({ onClose }: { onClose: () => void }) {
+  return (
+    <div role="status" className="flex items-center gap-2 border-b border-hairline/40 bg-panel px-4 py-2 text-[12.5px] text-ink-secondary">
+      <span className="size-[7px] shrink-0 rounded-full bg-warning" />
+      <span className="min-w-0 flex-1">{t("projects.mapChanged")}</span>
+      <button type="button" className="ui-icon-button" aria-label={t("projects.mapChanged.close")} title={t("projects.mapChanged.close")} onClick={onClose}><X size={14} /></button>
+    </div>
   );
 }
 

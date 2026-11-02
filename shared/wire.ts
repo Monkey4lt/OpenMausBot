@@ -969,6 +969,8 @@ export type ServerFrame =
   | { kind: "group"; group: WireGroup }
   | { kind: "notify"; notification: NotificationLogEntry }
   | { kind: "notifications.read"; threadId: string; ids: string[] }
+  /** The Projects map was saved; admin streams only. */
+  | { kind: "projects.changed"; rev: number }
   | { kind: "group.deleted"; groupId: string }
   | { kind: "routine"; routine: Routine }
   | { kind: "routine.deleted"; routineId: string }

@@ -221,7 +221,7 @@ it("the intro says file and project names are sent to the AI in use", () => {});
 - Consumes: `listenLiveFrames` (`src/lib/live-events.ts`), `prependComposerDraft` (`src/lib/drafts.ts`), `openBot` (`src/state/thread-navigation.ts`), réponses de la tâche 2.
 - Produces: `ProjectsPage` envoie `baseRev` ; sur 409 ou `projects.changed` (si différent de son `rev`) : annule l'enregistrement en attente, recharge, affiche `projects.mapChanged` ; bouton `projects.cartographe.ask` visible si `cartographeBotId` ; brouillon `projects.cartographe.draft` (« Range mes projets et propose-moi les changements. »).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it("the Cartographe button renders only when cartographeBotId is set", () => {});
@@ -230,8 +230,8 @@ it("a 409 on save reloads and shows the map-changed notice", () => {});
 it("the button prepends the draft to the Cartographe's thread and opens it", () => {});
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter ; `generate-locale --check` PASS. **Step 4:** PASS.
-- [ ] **Step 5:** Commit `feat(cartographe): live refresh and the Ask the Cartographe button`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter ; `generate-locale --check` PASS. **Step 4:** PASS.
+- [x] **Step 5:** Commit `feat(cartographe): live refresh and the Ask the Cartographe button`.
 
 ### Task 8: Documentation, vérification, relecture
 

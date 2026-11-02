@@ -120,3 +120,31 @@ describe("outboundSummary for code run on the app's side", () => {
     expect(outboundSummary(card)).toEqual({ headline: "Run code on Composio?", summary: "", opaque: true });
   });
 });
+
+describe("outboundSummary for a change to the Projects maps", () => {
+  const card = (labels: string[]) => ({
+    subtitle: labels.join("\n"),
+    outboundRequest: { tool: "projects_apply_changes", app: null, calls: labels.map((label) => ({ app: null, label })) },
+  });
+
+  it("asks to apply the changes to the map, counting them, instead of sending on the person's behalf", () => {
+    expect(outboundSummary(card(["Créer le pôle Clients"]))).toEqual({ headline: "Apply this change to the map?", summary: "Créer le pôle Clients" });
+    expect(outboundSummary(card(["Créer le pôle Clients", "Ranger shop dans Clients"]))?.headline).toBe("Apply these 2 changes to the map?");
+  });
+
+  it("lists the first changes and counts the rest", () => {
+    const lines = ["a", "b", "c", "d", "e"];
+    expect(outboundSummary(card(lines))?.summary).toBe("a, b, c, +2 more");
+  });
+
+  it("is said in the viewer's language", async () => {
+    const { loadLocale, setLocale } = await import("./i18n");
+    await loadLocale("fr");
+    try {
+      expect(outboundSummary(card(["x", "y", "z"]))?.headline).toBe("Appliquer ces 3 changements à la carte ?");
+      expect(outboundSummary(card(["x"]))?.headline).toBe("Appliquer ce changement à la carte ?");
+    } finally {
+      setLocale("en");
+    }
+  });
+});

@@ -65,11 +65,19 @@ export interface OutboundSummary {
 }
 
 const OPAQUE_TOOL = "COMPOSIO_PROXY_EXECUTE";
+/** The Cartographe's batch of changes to the Projects maps: nothing leaves the app. */
+const PROJECTS_TOOL = "projects_apply_changes";
 
 export function outboundSummary(card: Pick<OptionCardData, "outboundRequest" | "subtitle">): OutboundSummary | undefined {
   if (!card.outboundRequest) return undefined;
   const calls = outboundCalls(card);
   const app = outboundApp(calls);
+  if (card.outboundRequest.tool === PROJECTS_TOOL) {
+    return {
+      headline: calls.length === 1 ? t("approval.outbound.projectsOne") : t("approval.outbound.projectsMany", { count: calls.length }),
+      summary: collapseOutboundCalls(calls, false),
+    };
+  }
   if (card.outboundRequest.tool === OPAQUE_TOOL) {
     return {
       headline: t("approval.outbound.runCode", { app: app ?? card.outboundRequest.app ?? "Composio" }),
