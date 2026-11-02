@@ -243,6 +243,20 @@ export function ProjectsPage() {
     });
   }, []);
 
+  // Replaces any save still waiting, so a layout change made just before cannot overwrite this one.
+  const saveNow = useCallback(async (next: MapState) => {
+    clearTimeout(saveTimer.current);
+    setS(next);
+    setSaveState("saving");
+    try {
+      await api("/api/projects/state", { method: "PUT", body: JSON.stringify(next) });
+      setSaveState("saved");
+    } catch (error) {
+      setSaveState("error");
+      throw error;
+    }
+  }, []);
+
   const projects = useMemo(() => data?.projects ?? [], [data]);
   const sourceLabel = useCallback((id: string) => S?.sources.find((s) => s.id === id)?.label ?? "", [S?.sources]);
   const multiSource = (S?.sources.length ?? 0) > 1;
@@ -428,7 +442,7 @@ export function ProjectsPage() {
           </div>
         </aside>
 
-        {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} onSaved={(overrides) => setS((s) => (s ? { ...s, overrides } : s))} />}
+        {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow} />}
         {/* toile */}
         <div ref={wrapRef} className={cn("relative min-w-0 flex-1 overflow-auto", mapOf && "hidden")}
           style={{ backgroundImage: "linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)", backgroundSize: "28px 28px" }}>

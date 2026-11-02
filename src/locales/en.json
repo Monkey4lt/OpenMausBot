@@ -7372,7 +7372,6 @@
   "projects.github.waiting": "A GitHub window is opening: sign in there, then come back here",
   "projects.github.useAccount": "Show all my repositories",
   "projects.github.orOne": "Or a single repository, or someone else's account:",
-  "projects.map.open": "Map",
   "projects.map.openTitle": "Open the map of {name}",
   "projects.map.back": "Back to projects",
   "projects.map.family.tests": "Tests",

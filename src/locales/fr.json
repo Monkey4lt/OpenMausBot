@@ -2790,7 +2790,6 @@
   "projects.github.waiting": "Une fenêtre GitHub s'ouvre : connecte-toi dedans, puis reviens ici",
   "projects.github.useAccount": "Afficher tous mes dépôts",
   "projects.github.orOne": "Ou un seul dépôt, ou le compte de quelqu'un d'autre :",
-  "projects.map.open": "Carte",
   "projects.map.openTitle": "Ouvrir la carte de {name}",
   "projects.map.back": "Retour aux projets",
   "projects.map.family.tests": "Tests",

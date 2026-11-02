@@ -11,7 +11,7 @@ import { api } from "@/state/api";
 import type { LocaleKey } from "@/locales";
 
 type Focus = { family?: Family; module?: string };
-type SavedState = { overrides?: Record<string, ArchOverrides> } & Record<string, unknown>;
+type SavedState = { overrides?: Record<string, ArchOverrides> };
 
 const NODE = { perRow: 4, w: 220, h: 88, gapX: 90, gapY: 80, x0: 40, y0: 40 };
 
@@ -20,10 +20,12 @@ export function familyLabel(arch: Architecture, family: Family): string {
   return name && name !== family ? name : t(`projects.map.family.${family}` as LocaleKey);
 }
 
-export function ArchitectureView({ project, onBack, onSaved, initial, initialFocus = {}, initialFile = null }: {
+export function ArchitectureView<S extends SavedState>({ project, onBack, state, onSave, initial, initialFocus = {}, initialFile = null }: {
   project: { id: string; name: string };
   onBack: () => void;
-  onSaved?: (overrides: Record<string, ArchOverrides>) => void;
+  /** The page's current saved layout; a move or rename is applied to it and handed to onSave, which writes it at once. */
+  state?: S | null;
+  onSave?: (next: S) => Promise<void>;
   initial?: Architecture;
   initialFocus?: Focus;
   initialFile?: string | null;
@@ -45,11 +47,9 @@ export function ArchitectureView({ project, onBack, onSaved, initial, initialFoc
   }, [project.id]);
   useEffect(() => { if (!initial) void load(); }, [initial, load]);
 
-  const saveOverrides = async (change: (state: SavedState) => SavedState) => {
-    const { state } = await api<{ state: SavedState }>("/api/projects");
-    const next = change(state);
-    await api("/api/projects/state", { method: "PUT", body: JSON.stringify(next) });
-    onSaved?.(next.overrides ?? {});
+  const saveOverrides = async (change: (current: S) => S) => {
+    if (!state || !onSave) return;
+    await onSave(change(state));
     await load();
   };
   const moveModule = (moduleId: string, family: Family) => {
