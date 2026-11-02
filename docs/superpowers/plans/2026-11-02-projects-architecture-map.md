@@ -308,7 +308,7 @@ it("family names use the overrides", () => {});
 - Consumes : `parseImports`, `FileImports`.
 - Produces : `CODE_EXTENSIONS: readonly string[]` ; `isCodeFile(path: string): boolean` ; `type ImportSet = { read: FileImports[]; tsconfig: string | null; goMod: string | null }` ; `readLocalImports(root: string, paths: string[], limit?: number): Promise<ImportSet>` ; `toPosix(p: string): string`.
 
-- [ ] **Step 1 : Write the failing tests**
+- [x] **Step 1 : Write the failing tests**
 
 ```ts
 it("reads imports of code files only, under 256 KB", async () => { /* fixture: a.ts, big.ts (300 KB), logo.png → only a.ts */ });
@@ -317,8 +317,8 @@ it("converts Windows separators", () => { expect(toPosix("src\\lib\\a.ts")).toBe
 it("stops at the limit", async () => {});
 ```
 
-- [ ] **Step 2 :** FAIL. **Step 3 :** lecture via `readFile` avec `stat` préalable ; chemins en entrée et en sortie en `/`, joints avec `path.join` pour le disque. **Step 4 :** PASS.
-- [ ] **Step 5 :** Commit `feat(projects): read imports from local projects`.
+- [x] **Step 2 :** FAIL. **Step 3 :** lecture via `readFile` avec `stat` préalable ; chemins en entrée et en sortie en `/`, joints avec `path.join` pour le disque. **Step 4 :** PASS.
+- [x] **Step 5 :** Commit `feat(projects): read imports from local projects`.
 
 ### Task 11: Lire le contenu par SSH
 
