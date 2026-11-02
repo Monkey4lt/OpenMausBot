@@ -10,16 +10,18 @@ function setup(maxMs = 1_000) {
   const cards: Array<{ threadId: string; card: { title: string; lines: string[]; requestId: string } }> = [];
   const dismissed: Array<{ threadId: string; requestId: string }> = [];
   const notified: Array<{ botId: string; text: string }> = [];
+  const withdrawnCards: Array<{ threadId: string; requestId: string }> = [];
   const hold = createProjectsHold({
     outboundRequests,
     appendCard: (threadId, card) => { cards.push({ threadId, card }); },
     dismissCard: (threadId, requestId) => { dismissed.push({ threadId, requestId }); },
     notify: (botId, text) => { notified.push({ botId, text }); },
+    withdrawCard: (threadId, requestId) => { withdrawnCards.push({ threadId, requestId }); },
     maxMs,
   });
   const answer = (behavior: "allow" | "deny", index = 0) =>
     outboundRequests.resolve({ threadId: cards[index].threadId, requestId: cards[index].card.requestId, behavior });
-  return { hold, outboundRequests, cards, dismissed, notified, answer };
+  return { hold, outboundRequests, cards, dismissed, notified, withdrawnCards, answer };
 }
 
 const input = { botId: "carto", threadId: "t1", lines: ["Créer le pôle Clients", "Ranger shop dans Clients"] };
@@ -125,6 +127,17 @@ describe("createProjectsHold", () => {
     abort.abort();
     await expect(hold.ask({ ...input, signal: abort.signal })).resolves.toBe("inactive");
     expect(cards).toEqual([]);
+  });
+
+  it("withdraw marks the card it allowed as unavailable", async () => {
+    const { hold, cards, answer, withdrawnCards } = setup();
+    const input1 = { ...input };
+    const pending = hold.ask(input1);
+    answer("allow");
+    await expect(pending).resolves.toBe("allow");
+    hold.withdraw(input1);
+    hold.withdraw({ ...input });
+    expect(withdrawnCards).toEqual([{ threadId: "t1", requestId: cards[0]!.card.requestId }]);
   });
 
   it("waits at most nine minutes", () => {

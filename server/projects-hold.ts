@@ -11,6 +11,8 @@ export interface ProjectsHoldDeps {
   outboundRequests: OutboundRequestService;
   appendCard(threadId: string, card: ProjectsCard): void;
   dismissCard(threadId: string, requestId: string): void;
+  /** An allowed card whose change will not be made: shown as unavailable. */
+  withdrawCard(threadId: string, requestId: string): void;
   notify(botId: string, text: string): void;
   maxMs: number;
 }
@@ -18,6 +20,8 @@ export interface ProjectsHoldDeps {
 export interface ProjectsHold {
   /** "inactive" when `signal` aborts first: the request is forgotten and its card dismissed. */
   ask(input: { botId: string; threadId: string; lines: string[]; timeoutMs?: number; signal?: AbortSignal }): Promise<ProjectsHoldAnswer>;
+  /** After ask answered "allow" for this same input, its change was not made after all. */
+  withdraw(input: { threadId: string }): void;
 }
 
 export function projectsCardTitle(count: number): string {
@@ -46,8 +50,16 @@ export function projectsCardMessage(card: ProjectsCard, from?: { botId: string; 
 
 /** Shows the card at every access level: the bot's approval mode and outbound policy are never read here. */
 export function createProjectsHold(deps: ProjectsHoldDeps): ProjectsHold {
+  const allowed = new WeakMap<object, string>();
   return {
-    async ask({ botId, threadId, lines, timeoutMs, signal }) {
+    withdraw(input) {
+      const requestId = allowed.get(input);
+      if (requestId === undefined) return;
+      allowed.delete(input);
+      deps.withdrawCard(input.threadId, requestId);
+    },
+    async ask(input) {
+      const { botId, threadId, lines, timeoutMs, signal } = input;
       if (signal?.aborted) return "inactive";
       const wait = Math.max(0, Math.min(timeoutMs ?? deps.maxMs, deps.maxMs));
       const held = deps.outboundRequests.open({ botId, threadId, tool: PROJECTS_APPLY_TOOL, timeoutMs: wait });
@@ -68,6 +80,7 @@ export function createProjectsHold(deps: ProjectsHoldDeps): ProjectsHold {
       signal?.removeEventListener("abort", onAbort);
       deps.outboundRequests.forget(held.requestId);
       if (answer === "timeout" || answer === "inactive") deps.dismissCard(threadId, held.requestId);
+      if (answer === "allow") allowed.set(input, held.requestId);
       return answer;
     },
   };

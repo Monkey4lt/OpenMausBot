@@ -50,12 +50,14 @@ function setup(options: { cloud?: boolean; answer?: Answer | (() => Answer); act
   const asks: Parameters<ProjectsHold["ask"]>[0][] = [];
   const changed: number[] = [];
   const reads: string[] = [];
+  const withdrawn: Array<{ threadId: string }> = [];
   const hold: ProjectsHold = {
     ask: async (input) => {
       asks.push(input);
       const answer = options.answer ?? "allow";
       return typeof answer === "function" ? answer() : answer;
     },
+    withdraw: (input) => { withdrawn.push({ threadId: input.threadId }); },
   };
   const architecture = (modules: string[]): Architecture => ({
     families: [{ id: "server", name: "server", files: modules.length, modules }],
@@ -82,7 +84,7 @@ function setup(options: { cloud?: boolean; answer?: Answer | (() => Answer); act
     if (out === PASS) throw new Error(`${path} was not handled`);
     return sent();
   };
-  return { dataDir, root, asks, changed, reads, route, call, state: () => readProjectMapState(dataDir) };
+  return { dataDir, root, asks, changed, reads, withdrawn, route, call, state: () => readProjectMapState(dataDir) };
 }
 
 const MAP = "/api/internal/projects/map";
@@ -152,7 +154,7 @@ describe("cartographe internal routes", () => {
   it("an architecture that cannot be read answers 502 with its message", async () => {
     const env = setup();
     const route = createCartographeRoutes({
-      dataDir: env.dataDir, isCartographe: () => true, cloud: false, hold: { ask: async () => "deny" }, active: () => true,
+      dataDir: env.dataDir, isCartographe: () => true, cloud: false, hold: { withdraw: () => {}, ask: async () => "deny" }, active: () => true,
       architectureOf: async () => { throw new Error("SSH failed"); }, onChanged: () => {}, mcpCallTimeoutMs: () => null,
     });
     const { res, sent } = response();
@@ -174,7 +176,7 @@ describe("cartographe internal routes", () => {
   });
 
   it("allow applies once, writes once and notifies once", async () => {
-    const { call, asks, changed, state } = setup();
+    const { call, asks, changed, state, withdrawn } = setup();
     expect(await call(APPLY, goodBatch)).toEqual({ status: 200, body: { applied: true, rev: 2 } });
     expect(asks).toHaveLength(1);
     expect(changed).toEqual([2]);
@@ -182,6 +184,7 @@ describe("cartographe internal routes", () => {
     const clients = saved.groups.find((g) => g.name === "Clients")!;
     expect(saved.member).toEqual({ "s1:bot": "g1", "s1:shop": clients.id });
     expect(saved.rev).toBe(2);
+    expect(withdrawn).toEqual([]);
   });
 
   it("move_module checks the module against the project's architecture and writes the override", async () => {
@@ -204,6 +207,7 @@ describe("cartographe internal routes", () => {
     expect(await env.call(APPLY, goodBatch)).toEqual({ status: 200, body: { applied: false, reason: "invalid", problems: [{ index: 1, reason: expect.stringContaining("s1:shop") }] } });
     expect(env.changed).toEqual([]);
     expect(env.state().rev).toBe(1);
+    expect(env.withdrawn).toEqual([{ threadId: "t1" }]);
   });
 
   it("a group deleted while the card was open makes the batch invalid", async () => {
@@ -228,7 +232,7 @@ describe("cartographe internal routes", () => {
     closing.on = closing.once = (event, fn) => { if (event === "close") listeners.push(fn); };
     const wrapped = createCartographeRoutes({
       dataDir: env.dataDir, isCartographe: () => true, cloud: false, active: () => true, architectureOf: async () => null, onChanged: () => {}, mcpCallTimeoutMs: () => null,
-      hold: { ask: async (input) => { seen = input.signal; for (const fn of listeners) fn(); return input.signal?.aborted ? "inactive" : "allow"; } },
+      hold: { withdraw: () => {}, ask: async (input) => { seen = input.signal; for (const fn of listeners) fn(); return input.signal?.aborted ? "inactive" : "allow"; } },
     });
     await wrapped({ method: "POST", path: APPLY, res, json, botId: "carto", threadId: "t1", capability: CAPABILITY, readBody: async () => goodBatch });
     expect(seen).toBeDefined();
@@ -243,15 +247,16 @@ describe("cartographe internal routes", () => {
     (res as unknown as { once: (event: string, fn: () => void) => void }).once = (event, fn) => { if (event === "close") listeners.push(fn); };
     const wrapped = createCartographeRoutes({
       dataDir: env.dataDir, isCartographe: () => true, cloud: false, active: () => true, architectureOf: async () => null, onChanged: () => { throw new Error("must not write"); }, mcpCallTimeoutMs: () => null,
-      hold: { ask: async () => { for (const fn of listeners) fn(); return "allow"; } },
+      hold: { withdraw: () => {}, ask: async () => { for (const fn of listeners) fn(); return "allow"; } },
     });
     await wrapped({ method: "POST", path: APPLY, res, json, botId: "carto", threadId: "t1", capability: CAPABILITY, readBody: async () => goodBatch });
     expect(env.state().rev).toBe(1);
   });
 
   it("an inactive turn after allow writes nothing and reads nothing more", async () => {
-    const { call, changed, state, reads } = setup({ active: false });
+    const { call, changed, state, reads, withdrawn } = setup({ active: false });
     expect(await call(APPLY, goodBatch)).toEqual({ status: 200, body: { applied: false, reason: "inactive" } });
+    expect(withdrawn).toEqual([{ threadId: "t1" }]);
     expect(changed).toEqual([]);
     expect(state().rev).toBe(1);
     expect(await call(APPLY, { changes: [{ op: "move_module", projectId: "s1:shop", moduleId: "src/state", family: "data" }] })).toMatchObject({ body: { reason: "inactive" } });
@@ -294,7 +299,7 @@ describe("internal tool routes", () => {
     const internal = createInternalToolRoutes({
       helpers: {} as never, xResearch: {} as never, notifications: { bot: () => undefined, team: () => null, broadcast: () => {} } as never,
       cartographe: createCartographeRoutes({
-        dataDir: env.dataDir, isCartographe: () => false, cloud: false, hold: { ask: async () => "deny" }, active: () => true,
+        dataDir: env.dataDir, isCartographe: () => false, cloud: false, hold: { withdraw: () => {}, ask: async () => "deny" }, active: () => true,
         architectureOf: async () => { throw new Error("unused"); }, onChanged: () => {}, mcpCallTimeoutMs: () => null,
       }),
     });

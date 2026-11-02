@@ -107,18 +107,23 @@ export function createCartographeRoutes(deps: CartographeDeps) {
     let gone = false;
     const hangUp = () => { gone = true; call.abort(); };
     ctx.res.once?.("close", () => { if (!ctx.res.writableEnded) hangUp(); });
-    const answer = await deps.hold.ask({ botId: ctx.botId, threadId: ctx.threadId, lines, signal: call.signal, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
-    if (answer === "inactive" || gone) return { applied: false, reason: "inactive" };
+    const asked = { botId: ctx.botId, threadId: ctx.threadId, lines, signal: call.signal, ...(timeoutMs === undefined ? {} : { timeoutMs }) };
+    const answer = await deps.hold.ask(asked);
+    const notMade = (reason: "inactive" | "invalid", problems?: { index: number; reason: string }[]): ApplyAnswer => {
+      if (answer === "allow") deps.hold.withdraw(asked);
+      return { applied: false, reason, ...(problems ? { problems } : {}) };
+    };
+    if (answer === "inactive" || gone) return notMade("inactive");
     if (answer !== "allow") return { applied: false, reason: answer === "deny" ? "refused" : "timeout" };
-    if (!deps.active(ctx.capability)) return { applied: false, reason: "inactive" };
+    if (!deps.active(ctx.capability)) return notMade("inactive");
 
     const after = await scan();
     const second = await knownFor(changes, after.projects);
-    if (second.problems.length) return { applied: false, reason: "invalid", problems: second.problems };
-    if (!deps.active(ctx.capability) || gone) return { applied: false, reason: "inactive" };
+    if (second.problems.length) return notMade("invalid", second.problems);
+    if (!deps.active(ctx.capability) || gone) return notMade("inactive");
     // From here to the write nothing awaits, so no other save can land in between.
     const result = applyChanges(readProjectMapState(deps.dataDir), changes, second.known);
-    if (!result.ok) return { applied: false, reason: "invalid", problems: result.problems };
+    if (!result.ok) return notMade("invalid", result.problems);
     const { rev } = writeProjectMapState(deps.dataDir, result.state);
     deps.onChanged(rev);
     return { applied: true, rev };

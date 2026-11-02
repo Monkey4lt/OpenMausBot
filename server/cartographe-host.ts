@@ -42,6 +42,11 @@ export function createCartographeHost(deps: CartographeHostDeps) {
     if (stale?.card && !stale.card.answered) store.patchMessage(threadId, stale.id, { card: { ...stale.card, answered: "unavailable", dismissed: true } });
   }
 
+  function withdrawCard(threadId: string, requestId: string): void {
+    const allowed = store.messagesFor(threadId).find((message) => message.card?.requestId === requestId);
+    if (allowed?.card) store.patchMessage(threadId, allowed.id, { card: { ...allowed.card, answered: "unavailable", dismissed: true } });
+  }
+
   const inner = createProjectsHold({
     outboundRequests: deps.outboundRequests,
     maxMs: PROJECTS_HOLD_MAX_MS,
@@ -51,6 +56,7 @@ export function createCartographeHost(deps: CartographeHostDeps) {
       store.appendMessage(threadId, projectsCardMessage(card, room && bot ? { botId: bot.id, name: bot.name, color: bot.color } : undefined));
     },
     dismissCard,
+    withdrawCard,
     notify: (botId, text) => {
       const bot = store.bot(botId);
       if (!bot || !asking) return;
@@ -59,6 +65,7 @@ export function createCartographeHost(deps: CartographeHostDeps) {
     },
   });
   const hold: ProjectsHold = {
+    withdraw: (input) => inner.withdraw(input),
     ask: (input) => {
       asking = { botId: input.botId, threadId: input.threadId };
       try {
