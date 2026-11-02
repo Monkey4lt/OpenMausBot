@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { aliasesFromGoMod, aliasesFromTsconfig, classify, FAMILY_ORDER, modulesOf, parseImports, resolveImport } from "./projects-architecture.ts";
+import { aliasesFromGoMod, aliasesFromTsconfig, buildArchitecture, classify, FAMILY_ORDER, modulesOf, parseImports, resolveImport } from "./projects-architecture.ts";
+import type { FileImports } from "./projects-architecture.ts";
 
 describe("classify", () => {
   it.each([
@@ -156,5 +157,130 @@ describe("resolveImport", () => {
   it("reads the module path of a go.mod", () => {
     expect(aliasesFromGoMod("// x\nmodule example.com/app\n\ngo 1.22\n")).toEqual({ "example.com/app/": "" });
     expect(aliasesFromGoMod("go 1.22")).toEqual({});
+  });
+});
+
+describe("buildArchitecture", () => {
+  const imp = (path: string, ...specs: string[]): FileImports => ({ path, imports: specs.map((spec, i) => ({ spec, line: i + 1 })) });
+  const paths = [
+    "src/components/A.tsx", "src/components/B.tsx", "src/components/C.tsx",
+    "server/routes/users.ts", "server/routes/auth.ts", "server/routes/db.ts",
+    "README.md",
+  ];
+
+  it("aggregates file imports into weighted module and family edges", () => {
+    const arch = buildArchitecture(paths, [
+      imp("src/components/A.tsx", "../../server/routes/users", "./B"),
+      imp("src/components/C.tsx", "../../server/routes/auth"),
+    ], {});
+    expect(arch.edges).toEqual([
+      { level: "family", from: "ui", to: "server", weight: 2 },
+      { level: "module", from: "src/components", to: "server/routes", weight: 2 },
+    ]);
+    expect(arch.truncated).toBe(false);
+    expect(arch.families).toEqual([
+      { id: "docs", name: "docs", files: 1, modules: ["(root)/docs"] },
+      { id: "ui", name: "ui", files: 3, modules: ["src/components"] },
+      { id: "server", name: "server", files: 3, modules: ["server/routes"] },
+    ]);
+    expect(arch.modules).toEqual([
+      { id: "(root)/docs", family: "docs", files: 1 },
+      { id: "src/components", family: "ui", files: 3 },
+      { id: "server/routes", family: "server", files: 3 },
+    ]);
+    expect(arch.files.find((f) => f.path === "src/components/A.tsx")).toEqual({
+      path: "src/components/A.tsx", module: "src/components", uses: ["server/routes/users.ts", "src/components/B.tsx"], usedBy: [],
+    });
+    expect(arch.files.find((f) => f.path === "server/routes/users.ts")?.usedBy).toEqual(["src/components/A.tsx"]);
+    expect(arch.files.find((f) => f.path === "README.md")).toEqual({ path: "README.md", module: "(root)/docs", uses: [], usedBy: [] });
+  });
+
+  it("ignores an import of the same module at module level and of the same family at family level", () => {
+    const more = [...paths, "src/views/X.tsx", "src/views/Y.tsx", "src/views/Z.tsx"];
+    const arch = buildArchitecture(more, [imp("src/components/A.tsx", "./B", "../views/X"), imp("server/routes/db.ts", "./users")], {});
+    expect(arch.edges).toEqual([{ level: "module", from: "src/components", to: "src/views", weight: 1 }]);
+  });
+
+  it("circular imports give one edge each way and no duplicate", () => {
+    const arch = buildArchitecture(paths, [
+      imp("src/components/A.tsx", "../../server/routes/users", "../../server/routes/users"),
+      imp("server/routes/users.ts", "../../src/components/A"),
+      imp("server/routes/auth.ts", "../../src/components/B"),
+    ], {});
+    expect(arch.edges).toEqual([
+      { level: "family", from: "server", to: "ui", weight: 2 },
+      { level: "family", from: "ui", to: "server", weight: 2 },
+      { level: "module", from: "server/routes", to: "src/components", weight: 2 },
+      { level: "module", from: "src/components", to: "server/routes", weight: 2 },
+    ]);
+    expect(arch.files.find((f) => f.path === "src/components/A.tsx")).toMatchObject({ uses: ["server/routes/users.ts"], usedBy: ["server/routes/users.ts"] });
+  });
+
+  it("a file importing itself adds nothing", () => {
+    const arch = buildArchitecture(paths, [imp("src/components/A.tsx", "./A")], {});
+    expect(arch.edges).toEqual([]);
+    expect(arch.files.find((f) => f.path === "src/components/A.tsx")).toMatchObject({ uses: [], usedBy: [] });
+  });
+
+  it("a project with only docs has families and no edges", () => {
+    const arch = buildArchitecture(["README.md", "docs/a.md"], [], {});
+    expect(arch.edges).toEqual([]);
+    expect(arch.families).toEqual([{ id: "docs", name: "docs", files: 2, modules: ["(root)/docs"] }]);
+    expect(arch.external).toEqual([]);
+    expect(arch.truncated).toBe(false);
+  });
+
+  it("an empty project gives an empty map", () => {
+    expect(buildArchitecture([], [], {})).toEqual({ families: [], modules: [], files: [], edges: [], external: [], truncated: false });
+  });
+
+  it("external packages are counted by package name", () => {
+    const arch = buildArchitecture(paths, [
+      imp("src/components/A.tsx", "react", "react-dom/client", "@tanstack/react-query/devtools", "./missing"),
+      imp("src/components/B.tsx", "react", "node:fs"),
+      imp("server/routes/db.ts", "zod"),
+    ], {});
+    expect(arch.external).toEqual([
+      { name: "react", count: 2 },
+      { name: "@tanstack/react-query", count: 1 },
+      { name: "node:fs", count: 1 },
+      { name: "react-dom", count: 1 },
+      { name: "zod", count: 1 },
+    ]);
+  });
+
+  it("names external packages per language", () => {
+    const arch = buildArchitecture(["a.py", "main.go", "src/main.rs"], [
+      imp("a.py", "os.path", "requests", ".local"),
+      imp("main.go", "fmt", "github.com/spf13/cobra/doc"),
+      imp("src/main.rs", "serde::Serialize", "crate::nope"),
+    ], {});
+    expect(arch.external.map((e) => e.name).sort()).toEqual(["fmt", "github.com/spf13/cobra", "os", "requests", "serde"]);
+  });
+
+  it("an alias that matches but finds no file is not an external package", () => {
+    const arch = buildArchitecture(paths, [imp("src/components/A.tsx", "@/gone", "@/components/B")], { "@/": "src/" });
+    expect(arch.external).toEqual([]);
+    expect(arch.files.find((f) => f.path === "src/components/A.tsx")?.uses).toEqual(["src/components/B.tsx"]);
+  });
+
+  it("more files than the limit sets truncated", () => {
+    const paths4 = ["a/1.ts", "a/2.ts", "a/3.ts", "a/4.ts"];
+    const read4 = [imp("a/1.ts", "./2"), imp("a/2.ts", "./3"), imp("a/3.ts", "./4"), imp("a/4.ts", "./1")];
+    const arch = buildArchitecture(paths4, read4, {}, undefined, 3);
+    expect(arch.truncated).toBe(true);
+    expect(arch.files.find((f) => f.path === "a/4.ts")).toMatchObject({ uses: [], usedBy: ["a/3.ts"] });
+    expect(buildArchitecture(paths4, read4, {}, undefined, 4).truncated).toBe(false);
+  });
+
+  it("family names use the overrides", () => {
+    const overrides = { moduleFamily: { "server/routes": "data" as const }, familyNames: { ui: "Front", data: "Back" } };
+    const arch = buildArchitecture(paths, [imp("src/components/A.tsx", "../../server/routes/users")], {}, overrides);
+    expect(arch.families).toEqual([
+      { id: "docs", name: "docs", files: 1, modules: ["(root)/docs"] },
+      { id: "data", name: "Back", files: 3, modules: ["server/routes"] },
+      { id: "ui", name: "Front", files: 3, modules: ["src/components"] },
+    ]);
+    expect(arch.edges.filter((e) => e.level === "family")).toEqual([{ level: "family", from: "ui", to: "data", weight: 1 }]);
   });
 });

@@ -284,7 +284,7 @@ export interface Architecture {
 export function buildArchitecture(paths: string[], read: FileImports[], aliases: Record<string, string>, overrides?: ArchOverrides, limit?: number): Architecture;
 ```
 
-- [ ] **Step 1 : Write the failing tests**
+- [x] **Step 1 : Write the failing tests**
 
 ```ts
 it("aggregates file imports into weighted module and family edges", () => { /* 2 imports ui→server → family edge weight 2 */ });
@@ -296,8 +296,8 @@ it("more files than the limit sets truncated", () => { expect(buildArchitecture(
 it("family names use the overrides", () => {});
 ```
 
-- [ ] **Step 2 :** FAIL. **Step 3 :** implémenter (familles dans `FAMILY_ORDER`, vides omises ; noms par défaut = clés, l'UI traduit). **Step 4 :** PASS.
-- [ ] **Step 5 :** Commit `feat(projects): build the project architecture graph`.
+- [x] **Step 2 :** FAIL. **Step 3 :** implémenter (familles dans `FAMILY_ORDER`, vides omises ; noms par défaut = clés, l'UI traduit). **Step 4 :** PASS.
+- [x] **Step 5 :** Commit `feat(projects): build the project architecture graph`.
 
 ### Task 10: Lire le contenu en local
 

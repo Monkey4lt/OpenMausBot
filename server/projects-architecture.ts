@@ -366,3 +366,102 @@ export function aliasesFromGoMod(text: string): Record<string, string> {
   const name = /^\s*module\s+"?([^\s"]+)"?/m.exec(text)?.[1];
   return name ? { [`${name}/`]: "" } : {};
 }
+
+export type FileImports = { path: string; imports: ImportRef[] };
+export interface Architecture {
+  families: { id: Family; name: string; files: number; modules: string[] }[];
+  modules: { id: string; family: Family; files: number }[];
+  files: { path: string; module: string; uses: string[]; usedBy: string[] }[];
+  edges: { level: "family" | "module"; from: string; to: string; weight: number }[];
+  external: { name: string; count: number }[];
+  truncated: boolean;
+}
+
+export const MAX_CODE_FILES = 3000;
+
+function isProjectSpec(from: string, spec: string, aliases: Record<string, string>): boolean {
+  if (/^\.{1,2}(\/|$)|^\//.test(spec)) return true;
+  switch (extensionOf(from)) {
+    case ".py": return spec.startsWith(".");
+    case ".rs": return /^(crate|self|super)::/.test(spec);
+    default: return applyAlias(spec, aliases) !== null;
+  }
+}
+
+function packageName(from: string, spec: string): string {
+  switch (extensionOf(from)) {
+    case ".py": return spec.split(".")[0];
+    case ".rs": return spec.split("::")[0];
+    case ".go": {
+      const parts = spec.split("/");
+      return parts[0].includes(".") ? parts.slice(0, 3).join("/") : parts[0];
+    }
+    default: {
+      const parts = spec.split("/");
+      return spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
+    }
+  }
+}
+
+const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+export function buildArchitecture(
+  paths: string[],
+  read: FileImports[],
+  aliases: Record<string, string>,
+  overrides?: ArchOverrides,
+  limit = MAX_CODE_FILES,
+): Architecture {
+  const modules = modulesOf(paths, overrides);
+  const moduleOf = new Map<string, ModuleInfo>();
+  for (const m of modules) for (const file of m.files) moduleOf.set(file, m);
+  const files = new Set(paths);
+  const codeFiles = paths.filter((p) => LANGUAGE_OF[extensionOf(p)]).length;
+
+  const uses = new Map<string, Set<string>>();
+  const usedBy = new Map<string, Set<string>>();
+  const weights = new Map<string, number>();
+  const external = new Map<string, number>();
+  const addEdge = (level: "family" | "module", from: string, to: string) => {
+    const key = `${level}\n${from}\n${to}`;
+    weights.set(key, (weights.get(key) ?? 0) + 1);
+  };
+
+  for (const { path, imports } of read.slice(0, limit)) {
+    const source = moduleOf.get(path);
+    if (!source) continue;
+    for (const { spec } of imports) {
+      const target = resolveImport(path, spec, files, aliases);
+      if (target === null) {
+        if (!isProjectSpec(path, spec, aliases)) {
+          const name = packageName(path, spec);
+          external.set(name, (external.get(name) ?? 0) + 1);
+        }
+        continue;
+      }
+      if (target === path) continue;
+      const dest = moduleOf.get(target)!;
+      uses.set(path, (uses.get(path) ?? new Set()).add(target));
+      usedBy.set(target, (usedBy.get(target) ?? new Set()).add(path));
+      if (dest.id !== source.id) addEdge("module", source.id, dest.id);
+      if (dest.family !== source.family) addEdge("family", source.family, dest.family);
+    }
+  }
+
+  const sorted = (set: Set<string> | undefined) => [...set ?? []].sort(byText);
+  return {
+    families: FAMILY_ORDER.flatMap((family) => {
+      const own = modules.filter((m) => m.family === family);
+      if (!own.length) return [];
+      return [{ id: family, name: overrides?.familyNames[family] ?? family, files: own.reduce((n, m) => n + m.files.length, 0), modules: own.map((m) => m.id) }];
+    }),
+    modules: modules.map((m) => ({ id: m.id, family: m.family, files: m.files.length })),
+    files: [...paths].sort(byText).map((path) => ({ path, module: moduleOf.get(path)!.id, uses: sorted(uses.get(path)), usedBy: sorted(usedBy.get(path)) })),
+    edges: [...weights].map(([key, weight]) => {
+      const [level, from, to] = key.split("\n") as ["family" | "module", string, string];
+      return { level, from, to, weight };
+    }).sort((a, b) => byText(a.level, b.level) || byText(a.from, b.from) || byText(a.to, b.to)),
+    external: [...external].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || byText(a.name, b.name)),
+    truncated: codeFiles > limit || read.length > limit,
+  };
+}
