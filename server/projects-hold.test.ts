@@ -108,6 +108,25 @@ describe("createProjectsHold", () => {
     expect(outboundRequests.pending("t1")).toEqual([]);
   });
 
+  it("an abort while waiting forgets the request, dismisses the card and answers inactive", async () => {
+    const { hold, cards, dismissed, outboundRequests } = setup();
+    const abort = new AbortController();
+    const pending = hold.ask({ ...input, signal: abort.signal });
+    abort.abort();
+    await expect(pending).resolves.toBe("inactive");
+    expect(dismissed).toEqual([{ threadId: "t1", requestId: cards[0]!.card.requestId }]);
+    expect(outboundRequests.pending("t1")).toEqual([]);
+    expect(outboundRequests.resolve({ threadId: "t1", requestId: cards[0]!.card.requestId, behavior: "allow" })).toEqual({ claimed: false });
+  });
+
+  it("an already aborted call shows no card", async () => {
+    const { hold, cards } = setup();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(hold.ask({ ...input, signal: abort.signal })).resolves.toBe("inactive");
+    expect(cards).toEqual([]);
+  });
+
   it("waits at most nine minutes", () => {
     expect(PROJECTS_HOLD_MAX_MS).toBe(9 * 60_000);
   });

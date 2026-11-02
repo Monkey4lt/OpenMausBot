@@ -103,14 +103,19 @@ export function createCartographeRoutes(deps: CartographeDeps) {
     const lines = describeChanges(changes, { project: (id) => projectNames.get(id) ?? id, group: (id) => groupNames.get(id) ?? id });
     const mcp = deps.mcpCallTimeoutMs(ctx.botId);
     const timeoutMs = mcp === null ? undefined : Math.max(MIN_CARD_MS, mcp - CARTOGRAPHE_CARD_MARGIN_MS);
-    const answer = await deps.hold.ask({ botId: ctx.botId, threadId: ctx.threadId, lines, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+    const call = new AbortController();
+    let gone = false;
+    const hangUp = () => { gone = true; call.abort(); };
+    ctx.res.once?.("close", () => { if (!ctx.res.writableEnded) hangUp(); });
+    const answer = await deps.hold.ask({ botId: ctx.botId, threadId: ctx.threadId, lines, signal: call.signal, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+    if (answer === "inactive" || gone) return { applied: false, reason: "inactive" };
     if (answer !== "allow") return { applied: false, reason: answer === "deny" ? "refused" : "timeout" };
     if (!deps.active(ctx.capability)) return { applied: false, reason: "inactive" };
 
     const after = await scan();
     const second = await knownFor(changes, after.projects);
     if (second.problems.length) return { applied: false, reason: "invalid", problems: second.problems };
-    if (!deps.active(ctx.capability)) return { applied: false, reason: "inactive" };
+    if (!deps.active(ctx.capability) || gone) return { applied: false, reason: "inactive" };
     // From here to the write nothing awaits, so no other save can land in between.
     const result = applyChanges(readProjectMapState(deps.dataDir), changes, second.known);
     if (!result.ok) return { applied: false, reason: "invalid", problems: result.problems };
@@ -145,6 +150,10 @@ export function createCartographeRoutes(deps: CartographeDeps) {
       const overrides = Object.hasOwn(fresh.overrides, body.projectId) ? fresh.overrides[body.projectId] : undefined;
       return void ctx.json(ctx.res, 200, summarizeArchitecture(architecture, overrides, body.includeFiles === true));
     }
-    return void ctx.json(ctx.res, 200, await apply(ctx, body.changes));
+    let closed = false;
+    ctx.res.once?.("close", () => { if (!ctx.res.writableEnded) closed = true; });
+    const answer = await apply(ctx, body.changes);
+    if (closed) return;
+    return void ctx.json(ctx.res, 200, answer);
   };
 }

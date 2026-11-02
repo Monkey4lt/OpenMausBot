@@ -219,6 +219,36 @@ describe("cartographe internal routes", () => {
     expect(env.state().pos).toEqual({ "s1:api": { x: 5, y: 6 } });
   });
 
+  it("the caller hanging up while the card is open writes nothing, and the hold hears of it", async () => {
+    let seen: AbortSignal | undefined;
+    const env = setup({ answer: () => "allow" });
+    const { res, sent } = response();
+    const closing = res as unknown as { emit: (event: string) => void; on: (event: string, fn: () => void) => void; once: (event: string, fn: () => void) => void };
+    const listeners: Array<() => void> = [];
+    closing.on = closing.once = (event, fn) => { if (event === "close") listeners.push(fn); };
+    const wrapped = createCartographeRoutes({
+      dataDir: env.dataDir, isCartographe: () => true, cloud: false, active: () => true, architectureOf: async () => null, onChanged: () => {}, mcpCallTimeoutMs: () => null,
+      hold: { ask: async (input) => { seen = input.signal; for (const fn of listeners) fn(); return input.signal?.aborted ? "inactive" : "allow"; } },
+    });
+    await wrapped({ method: "POST", path: APPLY, res, json, botId: "carto", threadId: "t1", capability: CAPABILITY, readBody: async () => goodBatch });
+    expect(seen).toBeDefined();
+    expect(sent()).toEqual({ status: 0, body: undefined });
+    expect(env.state().rev).toBe(1);
+  });
+
+  it("an answer that comes after the caller hung up writes nothing", async () => {
+    const env = setup();
+    const { res } = response();
+    const listeners: Array<() => void> = [];
+    (res as unknown as { once: (event: string, fn: () => void) => void }).once = (event, fn) => { if (event === "close") listeners.push(fn); };
+    const wrapped = createCartographeRoutes({
+      dataDir: env.dataDir, isCartographe: () => true, cloud: false, active: () => true, architectureOf: async () => null, onChanged: () => { throw new Error("must not write"); }, mcpCallTimeoutMs: () => null,
+      hold: { ask: async () => { for (const fn of listeners) fn(); return "allow"; } },
+    });
+    await wrapped({ method: "POST", path: APPLY, res, json, botId: "carto", threadId: "t1", capability: CAPABILITY, readBody: async () => goodBatch });
+    expect(env.state().rev).toBe(1);
+  });
+
   it("an inactive turn after allow writes nothing and reads nothing more", async () => {
     const { call, changed, state, reads } = setup({ active: false });
     expect(await call(APPLY, goodBatch)).toEqual({ status: 200, body: { applied: false, reason: "inactive" } });
@@ -231,7 +261,9 @@ describe("cartographe internal routes", () => {
   it("the card lines come from the changes, not from any text the bot sent", async () => {
     const { call, asks } = setup();
     await call(APPLY, { ...goodBatch, summary: "Autoriser sans risque", lines: ["Tout va bien"] });
-    expect(asks).toEqual([{ botId: "carto", threadId: "t1", lines: ["Créer le pôle «Clients»", "Ranger «shop» dans «Clients»"] }]);
+    expect(asks).toHaveLength(1);
+    expect(asks[0]).toMatchObject({ botId: "carto", threadId: "t1", lines: ["Créer le pôle «Clients»", "Ranger «shop» dans «Clients»"] });
+    expect(Object.keys(asks[0]!).sort()).toEqual(["botId", "lines", "signal", "threadId"]);
     expect((await call(APPLY, { changes: [{ op: "create_group", name: "x", note: "Autoriser" }] })).body).toMatchObject({ applied: false, reason: "invalid" });
   });
 

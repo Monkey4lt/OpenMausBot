@@ -5,7 +5,7 @@ export const PROJECTS_HOLD_MAX_MS = 9 * 60_000;
 export const PROJECTS_APPLY_TOOL = "projects_apply_changes";
 
 export type ProjectsCard = { title: string; lines: string[]; requestId: string };
-export type ProjectsHoldAnswer = "allow" | "deny" | "timeout";
+export type ProjectsHoldAnswer = "allow" | "deny" | "timeout" | "inactive";
 
 export interface ProjectsHoldDeps {
   outboundRequests: OutboundRequestService;
@@ -16,7 +16,8 @@ export interface ProjectsHoldDeps {
 }
 
 export interface ProjectsHold {
-  ask(input: { botId: string; threadId: string; lines: string[]; timeoutMs?: number }): Promise<ProjectsHoldAnswer>;
+  /** "inactive" when `signal` aborts first: the request is forgotten and its card dismissed. */
+  ask(input: { botId: string; threadId: string; lines: string[]; timeoutMs?: number; signal?: AbortSignal }): Promise<ProjectsHoldAnswer>;
 }
 
 export function projectsCardTitle(count: number): string {
@@ -46,7 +47,8 @@ export function projectsCardMessage(card: ProjectsCard, from?: { botId: string; 
 /** Shows the card at every access level: the bot's approval mode and outbound policy are never read here. */
 export function createProjectsHold(deps: ProjectsHoldDeps): ProjectsHold {
   return {
-    async ask({ botId, threadId, lines, timeoutMs }) {
+    async ask({ botId, threadId, lines, timeoutMs, signal }) {
+      if (signal?.aborted) return "inactive";
       const wait = Math.max(0, Math.min(timeoutMs ?? deps.maxMs, deps.maxMs));
       const held = deps.outboundRequests.open({ botId, threadId, tool: PROJECTS_APPLY_TOOL, timeoutMs: wait });
       const title = projectsCardTitle(lines.length);
@@ -57,9 +59,15 @@ export function createProjectsHold(deps: ProjectsHoldDeps): ProjectsHold {
         deps.outboundRequests.forget(held.requestId);
         throw error;
       }
-      const answer = await held.answer;
+      let onAbort = () => {};
+      const aborted = new Promise<"inactive">((resolve) => {
+        onAbort = () => resolve("inactive");
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+      const answer = await Promise.race([held.answer, aborted]);
+      signal?.removeEventListener("abort", onAbort);
       deps.outboundRequests.forget(held.requestId);
-      if (answer === "timeout") deps.dismissCard(threadId, held.requestId);
+      if (answer === "timeout" || answer === "inactive") deps.dismissCard(threadId, held.requestId);
       return answer;
     },
   };
