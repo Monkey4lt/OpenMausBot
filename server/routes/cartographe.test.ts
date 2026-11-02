@@ -11,7 +11,6 @@ import type { ProjectsHold } from "../projects-hold.ts";
 import { projectMapStateSchema, readProjectMapState, writeProjectMapState } from "../projects.ts";
 import { CARTOGRAPHE_CARD_MARGIN_MS, createCartographeRoutes, type CartographeDeps } from "./cartographe.ts";
 import { createProjectReaders } from "./projects.ts";
-import { createInternalToolRoutes } from "./internal-tools.ts";
 import { PASS } from "./table.ts";
 
 const dirs: string[] = [];
@@ -310,27 +309,21 @@ describe("cartographe internal routes", () => {
   });
 });
 
-describe("internal tool routes", () => {
+describe("its place first in index.ts's /api/internal/ block", () => {
   it("needs the turn's thread and capability, so the Cartographe always knows which turn asks", () => {
-    type Context = Parameters<ReturnType<typeof createInternalToolRoutes>>[0];
+    type Context = Parameters<ReturnType<typeof createCartographeRoutes>>[0];
     // @ts-expect-error threadId and capability are required
-    const missing: Context = { method: "POST", path: MAP, res: response().res, json, botId: "carto", readBody: async () => ({}), folders: async () => ({ roots: [], vmWorkspace: null }) };
+    const missing: Context = { method: "POST", path: MAP, res: response().res, json, botId: "carto", readBody: async () => ({}) };
     void missing;
   });
 
-  it("hands the Cartographe's paths to its routes when they are given", async () => {
-    const env = setup();
-    const internal = createInternalToolRoutes({
-      helpers: {} as never, xResearch: {} as never, notifications: { bot: () => undefined, team: () => null, broadcast: () => {} } as never,
-      cartographe: createCartographeRoutes({
-        dataDir: env.dataDir, isCartographe: () => false, cloud: false, hold: { withdraw: () => {}, ask: async () => "deny" }, active: () => true,
-        architectureOf: async () => { throw new Error("unused"); }, onChanged: () => {}, mcpCallTimeoutMs: () => null,
-      }),
-    });
-    const { res, sent } = response();
-    const out = await internal({ method: "POST", path: MAP, res, json, botId: "other", threadId: "t1", capability: CAPABILITY, readBody: async () => ({}), folders: async () => ({ roots: [], vmWorkspace: null }) });
-    expect(out).not.toBe(PASS);
-    expect(sent().status).toBe(403);
+  it("never reads the body of a path it does not answer, so the routes after it still can", async () => {
+    const { route } = setup();
+    const { res } = response();
+    const readBody = async () => { throw new Error("read by the Cartographe"); };
+    for (const path of ["/api/internal/notifications/read", "/api/internal/helpers/decide", "/api/internal/waits", "/api/internal/projects"]) {
+      expect(await route({ res, json, botId: "other", threadId: "t1", capability: CAPABILITY, readBody, method: "POST", path })).toBe(PASS);
+    }
   });
 });
 
