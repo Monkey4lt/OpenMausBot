@@ -200,14 +200,25 @@
 - Automatisations existantes : chaque routine `bot` apparaît dans l'Atelier comme mini-workflow (Déclencheur → Bot) en lecture ; « ajouter un bloc » la convertit (routine d'origine → cible `workflow`, réglages gardés, retour arrière possible tant qu'aucun bloc n'a été ajouté).
 - Compatibilité : une version plus ancienne qui lit une cible inconnue doit garder la routine sur disque sans la planifier (vérifier `loadRoutine` ; si elle ne le fait pas, ajouter d'abord ce garde-fou dans une version publiée **avant** la cible).
 
-- [ ] **Step 1: Write the failing tests** — `it("a workflow routine fires on schedule and starts the workflow")`, `it("a missed workflow run is caught up like a routine")`, `it("a missing workflow fails the routine run in plain words")`, `it("an unknown target is kept on disk and not scheduled")`, `it("saving a manual trigger removes the workflow's routine")`, `it("converting a bot routine keeps its settings and can be undone before any block is added")`.
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS. **Step 5:** Commit `feat(workflows): routine target workflow`.
+- [x] **Step 1: Write the failing tests** — `it("a workflow routine fires on schedule and starts the workflow")`, `it("a missed workflow run is caught up like a routine")`, `it("a missing workflow fails the routine run in plain words")`, `it("an unknown target is kept on disk and not scheduled")`, `it("saving a manual trigger removes the workflow's routine")` (+ occupé, arrêt, redémarrage, relecture d'une routine réécrite par une ancienne version ; `server/workflows/routine-link.test.ts`, routes). Pas fait : `it("converting a bot routine keeps its settings and can be undone before any block is added")` (conversion, voir plus bas).
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS (routines.workflow 11, routine-link 10, routes 19). **Step 5:** Commit `feat(workflows): routine target workflow`.
+- [ ] **Interface** (`RoutineCalendarPage.tsx` : routines `target: "workflow"` dans la liste et le calendrier ; mini-workflows dans l'Atelier).
+- [ ] Conversion d'une routine `bot` en workflow (« ajouter un bloc », retour arrière) : pas encore faite (la liste en lecture seule l'est).
+
+**Livré (serveur) :**
+- Compatibilité : `loadRoutine` / `loadRun` des versions publiées lisent une cible inconnue comme `"bot"` (et la réécrivent ainsi). Garde-fous : (1) une routine de workflow a pour bot `WORKFLOW_ROUTINE_BOT = "workflow:routine"` (`shared/routines.ts`), un id qu'aucun bot ne peut avoir : une ancienne version la voit « bot manquant » et ne la lance jamais ; (2) cette version garde sur disque, sans les planifier, les routines **et** exécutions d'une cible inconnue (`unloadedRuns`) ; (3) une routine réécrite en `"bot"` par une ancienne version (bot `workflow:routine` + `workflowId`) est relue comme `"workflow"`.
+- `server/routines.ts` : `RoutineTarget` + `"workflow"`, `Routine.workflowId`, `RoutineRun.workflowId`, `RoutineInput.workflowId` ; options `workflowState(workflowId)`, `startWorkflow(workflowId, runId, triggerText, onDispatchError, source)` (`source` : `manual` | `schedule` | `ai-reset`), `stopWorkflow(runId)` (annulation ou limite de durée) ; `finishWorkflowRun(runId, "succeeded" | "failed" | "cancelled", detail)`. Une exécution de workflow n'a pas de fil (`threadId` absent) ; un redémarrage la passe « échoué », jamais relancée. Routine de workflow : `prompt` peut être vide, `runOn: "maus"`, ni continuité, ni pièces jointes, ni « au démarrage », ni vérifications, ni fil de résultats.
+- `server/workflows/routine-link.ts` : `sync(workflow)` (le déclencheur `schedule` crée / met à jour la routine, `manual` ou réglage incomplet la supprime ; un horaire refusé par le moteur de routines → routine supprimée + `routineError` en clair), `remove`, `routineOf`, `reconcile()` au démarrage, ponts `workflowState` / `startWorkflow` / `stopWorkflow`, `automations()` (routines `bot` → mini-workflows Déclencheur → Bot, lecture seule). Conversion des horaires : `once` (date + heure locales), `daily` (tous les jours), `weekdays` (jours choisis, défaut lun–ven), `interval` (5–1 440 min côté routines ; ancrage = date + heure du bloc ou création du workflow).
+- Routes : réponses d'enregistrement et `GET /api/workflows/:id` + `routine: { id, enabled, nextRunAt } | null` (+ `routineError`) ; `GET /api/workflows` : `nextRunAt` par workflow ; `GET /api/workflows/automations` → `{ automations: RoutineMiniWorkflow[] }` ; `DELETE` supprime aussi la routine.
+- Échec d'une exécution de routine qui n'a pas pu lancer son workflow (manquée, workflow supprimé ou invalide) : notification « Le workflow {name} n'a pas pu démarrer » (`server.workflow.notStarted`) ; un workflow lancé garde sa propre notification d'échec (pas de doublon).
 
 ### Task 11 : Déclencheur « limite d'IA réinitialisée » (B3)
 
 **Files:** Modify `server/routines.ts` (réutilise `limitResetsAt`) ; `shared/workflows.ts` si un réglage manque (moteur visé) — Test `server/routines.workflow.test.ts`
 
-- [ ] Tests (`it("fires when the chosen engine's usage limit resets")`, `it("does nothing while the reset time is unknown")`) → FAIL → implémenter → PASS → commit `feat(workflows): trigger on AI limit reset`.
+- [x] Tests (`it("fires when the chosen engine's usage limit resets")`, `it("does nothing while the reset time is unknown")`, + schéma, graphe, `routine-link`) → FAIL → implémenter → PASS → commit `feat(workflows): trigger on AI limit reset`.
+
+**Livré :** `triggerData.engine?` (id d'instance du moteur, `^[\w.:-]{1,128}$`, nettoyé) ; `graph.ts` : `missing-setting` « Choisis l'IA dont il faut attendre la fin de limite d'utilisation. » quand `mode: "ai-reset"` sans `engine` ; `routine-link` : `ai-reset` → routine `{ type: "limit_reset", engine, repeat: "every_reset" }` (le moteur de routines existant recale l'heure sur `limitResetsAt`, `nextRunAt: null` tant qu'elle est inconnue) ; l'exécution part avec `source: "ai-reset"`. Les tests du moteur de routines passaient déjà après la tâche 10 (même chemin que `limit_reset`).
 
 ---
 
@@ -222,8 +233,15 @@
   - `workflows_propose({ name, projectId?, nodes, edges })` → positions recalculées côté serveur si absentes ; `workflowSchema` + `validateWorkflow` **avant** la carte : invalide → erreur en clair rendue à l'outil, **aucune carte** ; valide → carte Autoriser/Refuser dont le texte est construit côté serveur (jamais le texte du modèle tel quel) ; Autoriser → `validateWorkflow` à nouveau puis `store.save(…, 0)` ; Refuser → rien.
   - Même mécanisme de mise en attente que `projects_apply_changes` (`server/projects-hold.ts`).
 
-- [ ] **Step 1: Write the failing tests** — `it("an invalid proposal is refused without a card")`, `it("Allow creates the workflow")`, `it("Deny creates nothing")`, `it("the card text is built by the server")`, `it("a bot deleted between the card and Allow refuses the save")`.
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS. **Step 5:** Commit `feat(cartographe): propose workflows`.
+- [x] **Step 1: Write the failing tests** — `it("an invalid proposal is refused without a card")`, `it("Allow creates the workflow")`, `it("Deny creates nothing")`, `it("the card text is built by the server")`, `it("a bot deleted between the card and Allow refuses the save")` (+ tour terminé, réservé au Cartographe, `workflows_read` ; outils, catalogue, portée du bot).
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS (cartographe.workflows 8, outils 6, cartographe-bot 11, goldens). **Step 5:** Commit `feat(cartographe): propose workflows`.
+- [ ] **Interface** : `src/lib/approval-summary.ts` (outil `workflows_propose` : afficher les lignes comme pour `projects_apply_changes`, rien ne quitte l'appli) ; carte Autoriser/Refuser existante sinon.
+
+**Livré (serveur), construit sur `workflows` (sans la partie 2 du Cartographe) en fichiers neufs pour une fusion simple :**
+- `server/drivers/agents-cartographe-workflow-tools.ts` : `workflows_read` (lecture seule, `READ_ONLY_AGENT_TOOL_NAMES`) → `POST /api/internal/workflows/read` ; `workflows_propose({ name, projectId?, nodes: [{ id, kind, data }], edges: [{ from, port?, to }] })` → `POST /api/internal/workflows/propose`. Listés au seul Cartographe, après ses outils de projets (`agents-catalog.ts`, `agents-call.ts` : 1–2 lignes chacun). Goldens régénérés ; `BUDGET_BASELINE["default+cartographe"]` 59 470 → 61 513 et `CARTOGRAPHE_ADDS` 5 % → 8 % (deux outils de plus ; la partie 2 en ajoute encore deux : à revoir à la fusion).
+- `server/workflows/cartographe.ts` : `proposalInput` (ids de fils `e1…`, port `out` par défaut, positions calculées si absentes : colonne = plus long chemin, 320 × 180), `workflowSchema` + `validateWorkflow` (+ projet connu) **avant** la carte (refus → `{ created: false, reason: "invalid", problems: [{ nodeId?, edgeId?, code?, message }] }`, aucune carte) ; carte écrite par le serveur (`proposalCard` : titre « Créer le workflow « {nom} » ? », une ligne par bloc dans l'ordre d'exécution avec réglage cité et nettoyé (100 car.) et fils « oui → 4 ; non → 5 », projet, limites ; fr/en selon la langue de l'appli), `tool: "workflows_propose"`, notification `approval` ; attente = celle de l'appel d'outil (comme `projects_apply_changes`, max 9 min) ; Autoriser → tour encore actif ? → `validateWorkflow` à nouveau → `store.save(…, 0)` → trame `workflow` + routine du déclencheur ; sinon carte « indisponible ». Réponses : `{ created: true, workflowId, name }` | `{ created: false, reason: "refused" | "timeout" | "invalid" | "inactive" }`.
+- `workflows_read` → `{ workflows: [{ id, name, projectId?, blocks: [{ id, kind, settings }], wires, limits, lastRun? }], more?, note }` (100 au plus, textes nettoyés, 300 car.).
+- Cartographe : portée `mcp:agents:workflows_read`, `mcp:agents:workflows_propose` ; `repairCartographeBot` les ajoute à un Cartographe déjà créé ; une phrase de plus dans son âme. `cartographe-host` expose `mcpCallTimeoutMs` ; `index.ts` enchaîne les routes internes du Cartographe puis celles des workflows.
 
 ---
 
@@ -239,7 +257,7 @@
 
 ## Questions ouvertes
 
-1. Déclencheur `ai-reset` : quel moteur surveiller ? Le schéma n'a pas encore de champ (`engine?` à ajouter en Task 11).
+1. ~~Déclencheur `ai-reset` : quel moteur surveiller ?~~ Réglé (Task 11) : `engine` dans le bloc ; l'interface doit proposer la liste des moteurs (celle de la page Automatisations, `EngineLimit.engine`).
 2. Bloc Bot : le réglage `model` n'est pas encore appliqué (le tour part sur le modèle du bot).
 3. La carte d'approbation montre un extrait (400 caractères, nettoyé) des données dans la discussion de MausBot : vérifier que le modèle de MausBot ne lit pas ces cartes comme consignes ; une carte rendue « indisponible » par l'arrêt d'un tour de MausBot laisse l'étape attendre jusqu'à 24 h.
 4. Notification d'échec : pas encore de lien direct vers l'exécution (la notification ouvre la discussion de MausBot).

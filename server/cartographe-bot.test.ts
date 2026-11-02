@@ -18,6 +18,7 @@ const selection = (): ModelSelection => ({ instanceId: "claude", model: "claude-
 const PROJECT_TOOLS = [
   "mcp:agents:projects_read_map", "mcp:agents:projects_read_architecture", "mcp:agents:projects_inspect_project", "mcp:agents:projects_read_file", "mcp:agents:projects_apply_changes",
 ];
+const WORKFLOW_TOOLS = ["mcp:agents:workflows_read", "mcp:agents:workflows_propose"];
 const MORE_TOOLS = ["mcp:agents:trigger", "mcp:agents:trigger_info", "mcp:agents:show_html", "mcp:agents:show_widget"];
 const boot = (store: Store) => ensureCartographeBot(store, { dataDir: DATA_DIR });
 
@@ -57,7 +58,7 @@ describe("the Cartographe bot", () => {
   it("the Cartographe scope now includes trigger and trigger_info, the chat pages, and still parses", () => {
     const scope = cartographeToolScope();
     expect(parseToolScope(scope)).toEqual({ ok: true, scope });
-    expect(scope.allow).toEqual([...PROJECT_TOOLS, ...MORE_TOOLS, "mcp:agents:tool_result_read", "mcp:ogb:ask_user", "native:*"]);
+    expect(scope.allow).toEqual([...PROJECT_TOOLS, ...WORKFLOW_TOOLS, ...MORE_TOOLS, "mcp:agents:tool_result_read", "mcp:ogb:ask_user", "native:*"]);
     expect(scope.deny).toBeUndefined();
     expect(boot(new Store(selection))!.toolScope).toEqual(scope);
   });
@@ -86,6 +87,15 @@ describe("the Cartographe bot", () => {
     reloaded.deleteBot(bot.id);
     expect(repairCartographeBot(reloaded, { dataDir: DATA_DIR })).toBeNull();
     expect(reloaded.bots.some((b) => b.name === CARTOGRAPHE_NAME)).toBe(false);
+  });
+
+  it("gives a Cartographe made before the workflow tools those tools, and keeps the rest of its scope", () => {
+    const store = new Store(selection);
+    const bot = boot(store)!;
+    const old = [...PROJECT_TOOLS, "mcp:agents:tool_result_read", "mcp:ogb:ask_user", "native:*", "mcp:agents:list_bots"];
+    store.patchBot(bot.id, { toolScope: { allow: old } });
+    expect(repairCartographeBot(store, { dataDir: DATA_DIR })!.toolScope!.allow).toEqual([...old, ...WORKFLOW_TOOLS]);
+    expect(repairCartographeBot(store, { dataDir: DATA_DIR })!.toolScope!.allow).toEqual([...old, ...WORKFLOW_TOOLS]);
   });
 
   it("is not the default bot, has approvalMode ask, and uses the app's default model", () => {

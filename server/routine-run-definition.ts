@@ -23,7 +23,7 @@ export function resolveRoutineResultsThread(
 }
 
 export function routineRunDefinition(routine: Routine): Pick<RoutineRun,
-  "routineName" | "prompt" | "durationMinutes" | "timeoutMinutes" | "attachments" | "target" | "groupId" | "botId" | "runOn" | "access" | "deliver"> {
+  "routineName" | "prompt" | "durationMinutes" | "timeoutMinutes" | "attachments" | "target" | "groupId" | "workflowId" | "botId" | "runOn" | "access" | "deliver"> {
   return {
     routineName: routine.name,
     prompt: routine.prompt,
@@ -32,6 +32,7 @@ export function routineRunDefinition(routine: Routine): Pick<RoutineRun,
     attachments: cloneAttachments(routine.attachments),
     target: routine.target,
     groupId: routine.groupId,
+    ...(routine.workflowId ? { workflowId: routine.workflowId } : {}),
     botId: routine.botId,
     runOn: routine.runOn ?? "maus",
     access: routine.access,

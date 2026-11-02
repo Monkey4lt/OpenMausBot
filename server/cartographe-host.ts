@@ -93,5 +93,5 @@ export function createCartographeHost(deps: CartographeHostDeps) {
     mcpCallTimeoutMs: deps.mcpCallTimeoutMs,
   });
 
-  return { hold, routes, dismissCard, onChanged, maxMs: PROJECTS_HOLD_MAX_MS, cartographeBotId: cartographe, isCartographe };
+  return { hold, routes, dismissCard, onChanged, maxMs: PROJECTS_HOLD_MAX_MS, cartographeBotId: cartographe, isCartographe, mcpCallTimeoutMs: deps.mcpCallTimeoutMs };
 }

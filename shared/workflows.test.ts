@@ -32,6 +32,13 @@ describe("workflow schema", () => {
     expect(workflowSchema.parse({ ...base, nodes, edges: [] }).nodes).toHaveLength(7);
   });
 
+  it("an AI-limit-reset trigger keeps the engine it waits for, cleaned", () => {
+    const parse = (data: Record<string, unknown>) => workflowSchema.parse({ ...base, nodes: [{ ...trigger, data }, ai] }).nodes[0]!.data;
+    expect(parse({ mode: "ai-reset", engine: " codex " })).toEqual({ mode: "ai-reset", engine: "codex" });
+    expect(parse({ mode: "ai-reset" })).toEqual({ mode: "ai-reset" });
+    expect(() => parse({ mode: "ai-reset", engine: "a b" })).toThrow();
+  });
+
   it("keeps settings optional so a draft with empty fields still saves (graph.ts reports them)", () => {
     const w = workflowSchema.parse({ ...base, nodes: [trigger, { id: "b", kind: "bot", x: 0, y: 0, data: {} }], edges: [] });
     expect(w.nodes[1]!.data).toEqual({ instruction: "", botId: "" });

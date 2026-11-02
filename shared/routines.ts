@@ -230,3 +230,7 @@ export interface RoutineInput {
   /** Omission preserves routing; null resets it to the bot's main thread. */
   resultsThreadId?: string | null;
 }
+
+/** The bot of a workflow routine (target "workflow"): no bot can have this id, so an older version that reads the
+ * unknown target as a bot routine finds its bot missing and never runs it. */
+export const WORKFLOW_ROUTINE_BOT = "workflow:routine";

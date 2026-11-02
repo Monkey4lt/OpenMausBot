@@ -164,6 +164,7 @@
   "server.workflow.noAi": "No AI can answer this step",
   "server.workflow.botMissing": "The bot of this step no longer exists",
   "server.workflow.botFailed": "The bot could not finish this step",
+  "server.workflow.notStarted": "The workflow {name} could not start",
   "server.runs.didNotFinish": "This run didn't finish.",
   "server.runs.didNotFinishWhy": "This run didn't finish: {detail}",
   "server.runs.recovered": "Recovered: {name} finished OK at {time}",

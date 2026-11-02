@@ -274,3 +274,48 @@ describe("workflow run routes", () => {
     expect((await call(route, "POST", "/api/workflows/w1/run")).status).toBe(503);
   });
 });
+
+describe("workflow routes and routines", () => {
+  function linked() {
+    const store = createWorkflowStore(tmp());
+    const synced: string[] = [], removed: string[] = [];
+    const state = { id: "r1", enabled: true, nextRunAt: 123 };
+    const route = createWorkflowRoutes({
+      store, botExists: () => true,
+      routines: {
+        sync: (w) => { synced.push(w.id); return w.name === "Refusé" ? { routine: null, routineError: "Interval must be a whole number from 5 to 1440 minutes" } : { routine: state }; },
+        remove: (id) => { removed.push(id); },
+        routineOf: () => state,
+        automations: () => [{ id: "routine-x", routineId: "x", name: "Mails", readOnly: true, enabled: true, nextRunAt: null, routineSchedule: { type: "once", at: 1 }, nodes: [], edges: [] }],
+      },
+    });
+    return { store, route, synced, removed };
+  }
+
+  it("a save answers with the workflow's routine, or why its schedule was refused", async () => {
+    const { route, synced } = linked();
+    const created = await call(route, "POST", "/api/workflows", { workflow: draft() });
+    expect(created.body.routine).toEqual({ id: "r1", enabled: true, nextRunAt: 123 });
+    const id = created.body.workflow.id;
+    expect(synced).toEqual([id]);
+    const refused = await call(route, "PUT", `/api/workflows/${id}`, { workflow: draft({ name: "Refusé" }), baseRev: 1 });
+    expect(refused.body).toMatchObject({ routine: null, routineError: expect.stringContaining("5 to 1440") });
+    expect((await call(route, "GET", `/api/workflows/${id}`)).body.routine).toMatchObject({ id: "r1" });
+    expect((await call(route, "GET", "/api/workflows")).body.workflows[0].nextRunAt).toBe(123);
+  });
+
+  it("deleting a workflow removes its routine", async () => {
+    const { route, removed } = linked();
+    const id = (await call(route, "POST", "/api/workflows", { workflow: draft() })).body.workflow.id;
+    await call(route, "DELETE", `/api/workflows/${id}`);
+    expect(removed).toEqual([id]);
+  });
+
+  it("lists the existing automations as mini-workflows", async () => {
+    const { route } = linked();
+    const out = await call(route, "GET", "/api/workflows/automations");
+    expect(out.status).toBe(200);
+    expect(out.body.automations[0]).toMatchObject({ routineId: "x", readOnly: true });
+    expect((await call(setup().route, "GET", "/api/workflows/automations")).body).toEqual({ automations: [] });
+  });
+});

@@ -8,6 +8,7 @@ import { HELPER_TOOL_DEFINITIONS } from "./agents-helper-tools.ts";
 import { WAIT_TOOL_DEFINITIONS, WAIT_TOOL_NAMES } from "./agents-wait-tools.ts";
 import { COMPUTER_ASK_TOOL_DEFINITIONS, COMPUTER_ASK_TOOL_NAMES } from "./agents-computer-ask-tool.ts";
 import { CARTOGRAPHE_TOOL_DEFINITIONS } from "./agents-cartographe-tools.ts";
+import { CARTOGRAPHE_WORKFLOW_TOOL_DEFINITIONS } from "./agents-cartographe-workflow-tools.ts";
 import { MAUSBOT_TOOL_DEFINITIONS } from "./agents-mausbot-tools.ts";
 import { PERSON_TOOL_DEFINITIONS, PERSON_TOOL_NAMES } from "./agents-person-tools.ts";
 import { RESEARCH_TOOL_DEFINITIONS, RESEARCH_TOOL_NAMES, X_TOOL_NAMES } from "./agents-research-tools.ts";
@@ -888,7 +889,7 @@ export function availableTools(profile: CatalogProfile) {
   return placed.map((tool) => ({ ...tool, inputSchema: advertisedSchema(tool.inputSchema, tool.description) }));
 }
 
-const FULL_INPUT_SCHEMAS = new Map<string, unknown>([...TOOL_DEFINITIONS, ...MAUSBOT_TOOL_DEFINITIONS, ...CARTOGRAPHE_TOOL_DEFINITIONS].map((tool) => [tool.name, tool.inputSchema]));
+const FULL_INPUT_SCHEMAS = new Map<string, unknown>([...TOOL_DEFINITIONS, ...MAUSBOT_TOOL_DEFINITIONS, ...CARTOGRAPHE_TOOL_DEFINITIONS, ...CARTOGRAPHE_WORKFLOW_TOOL_DEFINITIONS].map((tool) => [tool.name, tool.inputSchema]));
 
 /** A tool's input schema as the catalog writes it, before tools/list leaves anything out: what every call is held to. */
 export function fullInputSchema(name: string): unknown {
@@ -922,7 +923,7 @@ function catalogTools(profile: CatalogProfile) {
       const properties = Object.fromEntries(Object.entries(tool.inputSchema.properties).filter(([key]) => key !== "for_bot_id"));
       return { ...tool, description: tool.description.replace(CHIEF_PROFILE_TARGET, ""), inputSchema: { ...tool.inputSchema, properties } };
     });
-  return [...ROLE_TOOLS, ...(profile.mausbot === true ? MAUSBOT_TOOL_DEFINITIONS : []), ...(profile.cartographe === true ? CARTOGRAPHE_TOOL_DEFINITIONS : [])].map(tool => tool.name === "start_thread" ? {
+  return [...ROLE_TOOLS, ...(profile.mausbot === true ? MAUSBOT_TOOL_DEFINITIONS : []), ...(profile.cartographe === true ? [...CARTOGRAPHE_TOOL_DEFINITIONS, ...CARTOGRAPHE_WORKFLOW_TOOL_DEFINITIONS] : [])].map(tool => tool.name === "start_thread" ? {
     ...tool,
     inputSchema: { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
       bot_id: { type: "string", enum: [profile.botId], description: START_THREAD_SELF_ID },
