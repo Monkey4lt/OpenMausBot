@@ -1,6 +1,7 @@
 import type { Architecture } from "../shared/projects-architecture.ts";
 import type { Notification } from "../shared/notification.ts";
 import { cartographeBotId } from "./cartographe-bot.ts";
+import { AGENTS_TOOL_TIMEOUT_SECONDS } from "./drivers/agents-tool-limit.ts";
 import { buildNotification } from "./notify.ts";
 import type { OutboundRequestService } from "./outbound-requests.ts";
 import { createProjectsHold, projectsCardMessage, PROJECTS_HOLD_MAX_MS, type ProjectsHold } from "./projects-hold.ts";
@@ -18,6 +19,15 @@ export interface CartographeHostDeps {
   active(capability: unknown): boolean;
   architectureOf(projectId: string): Promise<Architecture | null>;
   mcpCallTimeoutMs(botId: string): number | null;
+}
+
+/** Engines that run the agents tools through openai-chat.ts, which ends a call after the turn's mcpCallTimeoutMs. */
+const CHAT_ENGINES = new Set(["openai-compat", "grok", "mistral", "minimax", "cerebras", "groq", "greenference", "meta"]);
+
+/** How long `engine` waits on one agents tool call, or null when the engine does not say. */
+export function agentsCallTimeoutMs(engine: string | undefined, chatTimeoutMs: number): number | null {
+  if (engine === "codex" || engine === "piAgent") return AGENTS_TOOL_TIMEOUT_SECONDS * 1000;
+  return engine !== undefined && CHAT_ENGINES.has(engine) ? chatTimeoutMs : null;
 }
 
 /** The server pieces of the Cartographe, built from what index.ts already has. */

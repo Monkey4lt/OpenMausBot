@@ -120,3 +120,15 @@ describe("the Cartographe's host wiring", () => {
     expect(status).toBe(200);
   });
 });
+
+describe("how long an engine waits on one agents tool call", async () => {
+  const { agentsCallTimeoutMs } = await import("./cartographe-host.ts");
+  it("is Codex's and Pi's tool_timeout, the chat engines' setting, and unknown for the rest", () => {
+    expect(agentsCallTimeoutMs("codex", 600_000)).toBe(960_000);
+    expect(agentsCallTimeoutMs("piAgent", 600_000)).toBe(960_000);
+    for (const engine of ["openai-compat", "grok", "mistral", "minimax", "cerebras", "groq", "greenference", "meta"]) {
+      expect(agentsCallTimeoutMs(engine, 120_000), engine).toBe(120_000);
+    }
+    for (const engine of ["claudeAgent", "grokAgent", "opencodeGo", "customAcp", undefined]) expect(agentsCallTimeoutMs(engine, 120_000)).toBeNull();
+  });
+});
