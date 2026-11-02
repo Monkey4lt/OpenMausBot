@@ -67,6 +67,7 @@ export async function readLocalImports(root: string, paths: string[], limit = MA
 }
 
 const MAX_GREP_LINES = 200_000;
+const MAX_GREP_LINE_CHARS = 4096;
 const SSH_IMPORT_TIMEOUT_MS = 60_000;
 const SSH_MAX_BUFFER = 64 * 1024 * 1024;
 const CONFIG_MARKERS = { tsconfig: "---TSCONFIG---", tsconfigApp: "---TSCONFIG_APP---", goMod: "---GOMOD---" } as const;
@@ -84,7 +85,7 @@ const IMPORT_LINE_PATTERN = [
 export function sshImportCommand(projectPath: string): string {
   const includes = CODE_EXTENSIONS.map((ext) => `--include=${shellQuote(`*${ext}`)}`).join(" ");
   const excludes = [`--exclude-dir=${shellQuote(".[!.]*")}`, ...PROJECT_IGNORE.map((name) => `--exclude-dir=${name}`)].join(" ");
-  const grep = `grep -rEnIZ ${includes} ${excludes} -e ${shellQuote(IMPORT_LINE_PATTERN)} . 2>/dev/null | head -n ${MAX_GREP_LINES}`;
+  const grep = `grep -rEnIZ ${includes} --exclude=${shellQuote("*.min.*")} ${excludes} -e ${shellQuote(IMPORT_LINE_PATTERN)} . 2>/dev/null | cut -c1-${MAX_GREP_LINE_CHARS} | head -n ${MAX_GREP_LINES}`;
   const config = ([["tsconfig", "tsconfig.json"], ["tsconfigApp", "tsconfig.app.json"], ["goMod", "go.mod"]] as const)
     .map(([key, file]) => `printf '\\n${CONFIG_MARKERS[key]}\\n'; head -c ${MAX_FILE_BYTES} ${file} 2>/dev/null`).join("; ");
   return `cd ${remoteShellPath(projectPath)} && { ${grep}; ${config}; }`;
@@ -173,6 +174,14 @@ export function formatBytes(bytes: number): string {
   return bytes >= 1024 && bytes % 1024 === 0 ? `${bytes / 1024} KB` : `${bytes} bytes`;
 }
 
+/** The path under GitHub's "<owner>-<repo>-<sha>/" folder; null for anything absolute or climbing out of it. */
+function projectPathInArchive(entryPath: string): string | null {
+  const [top, ...rest] = entryPath.split("/");
+  if (!top || top === "." || top === ".." || !rest.length || rest[0] === "") return null;
+  const parts = rest.filter((part) => part && part !== ".");
+  return parts.length && !parts.includes("..") ? parts.join("/") : null;
+}
+
 export async function unpackGithubTarball(fullName: string, gz: Uint8Array, maxBytes = MAX_TARBALL_BYTES): Promise<ImportSet> {
   let tarBytes: Uint8Array;
   try {
@@ -187,7 +196,7 @@ export async function unpackGithubTarball(fullName: string, gz: Uint8Array, maxB
   const read: FileImports[] = [];
   const config = new Map<string, string>();
   for (const entry of readTar(tarBytes)) {
-    const path = entry.path.slice(entry.path.indexOf("/") + 1);
+    const path = projectPathInArchive(entry.path);
     if (!path || entry.data.length > MAX_FILE_BYTES) continue;
     if (CONFIG_FILES.has(path)) config.set(path, decoder.decode(entry.data));
     else if (isCodeFile(path) && read.length < MAX_CODE_FILES) read.push({ path, imports: parseImports(path, decoder.decode(entry.data)) });

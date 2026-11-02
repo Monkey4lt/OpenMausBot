@@ -122,7 +122,8 @@ describe("SSH import reading", () => {
     expect(c).toContain("--include='*.svelte'");
     expect(c).not.toContain("--include='*.md'");
     expect(c).toContain("grep -rEnIZ");
-    expect(c).toContain("| head -n 200000");
+    expect(c).toContain("--exclude='*.min.*'");
+    expect(c).toContain("| cut -c1-4096 | head -n 200000");
     for (const marker of ["---TSCONFIG---", "---TSCONFIG_APP---", "---GOMOD---"]) expect(c).toContain(`printf '\\n${marker}\\n'`);
     expect(c).toContain("head -c 262144 tsconfig.json 2>/dev/null");
   });
@@ -218,6 +219,8 @@ describe("SSH grep command on a real shell", () => {
       "node_modules/m/i.ts": 'import "./no";',
       ".hidden/i.ts": 'import "./no";',
       "notes.md": 'import "./no";',
+      "src/vendor.min.js": 'import "./no";',
+      "src/long.ts": `import "./ok";\nconst s = "${"x".repeat(10_000)}"; import "./cut";\n`,
       "tsconfig.json": '{ "files": [] }',
       "go.mod": "module example.com/app\n",
     });
@@ -228,6 +231,7 @@ describe("SSH grep command on a real shell", () => {
         { path: "main.go", imports: [{ spec: "fmt", line: 4 }] },
         { path: "src/a.tsx", imports: [{ spec: "./ab", line: 2 }, { spec: "./r", line: 5 }] },
         { path: "src/crlf.ts", imports: [{ spec: "./ab", line: 1 }] },
+        { path: "src/long.ts", imports: [{ spec: "./ok", line: 1 }] },
       ],
       tsconfig: '{ "files": [] }',
       goMod: "module example.com/app\n",
@@ -268,6 +272,18 @@ describe("GitHub import reading", () => {
       tsconfig: '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }',
       goMod: "module example.com/app\n",
     });
+  });
+
+  it("skips archive entries that would land outside the project", async () => {
+    const set = await unpackGithubTarball("o/r", gzipSync(tar([
+      { name: `${top}/a.ts`, data: "" },
+      { name: `${top}/../evil.ts`, data: "" },
+      { name: `${top}/src/../../evil2.ts`, data: "" },
+      { name: "/abs.ts", data: "" },
+      { name: `${top}//abs2.ts`, data: "" },
+      { name: `${top}/src/./ok.ts`, data: "" },
+    ])));
+    expect(set.read.map((f) => f.path)).toEqual(["a.ts", "src/ok.ts"]);
   });
 
   it("downloads the tarball once per push", async () => {

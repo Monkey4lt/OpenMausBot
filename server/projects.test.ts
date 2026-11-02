@@ -48,6 +48,9 @@ describe("projects map", () => {
     expect(projectMapStateSchema.safeParse({ sources: [{ ...source, host: "-oProxyCommand=x" }] }).success).toBe(false);
     expect(projectMapStateSchema.safeParse({ sources: [source] }).success).toBe(false);
     expect(projectMapStateSchema.safeParse({ sources: [{ ...source, host: "me@vps" }] }).success).toBe(true);
+    expect(projectMapStateSchema.safeParse({ sources: [{ ...source, host: "me@vps", path: "-delete" }] }).success).toBe(false);
+    expect(projectMapStateSchema.safeParse({ sources: [{ ...source, host: "me@vps", path: "  -x" }] }).success).toBe(false);
+    expect(projectMapStateSchema.safeParse({ sources: [{ ...source, host: "me@vps", path: "srv/-x" }] }).success).toBe(true);
   });
 
   it("accepts a GitHub account or repository, nothing else", () => {

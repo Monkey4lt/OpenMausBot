@@ -41,6 +41,7 @@ const sourceSchema = z.object({
   path: z.string().trim().min(1).max(500),
 }).strict()
   .refine((s) => s.kind !== "ssh" || Boolean(s.host), { message: "An SSH source needs a host" })
+  .refine((s) => s.kind !== "ssh" || !s.path.startsWith("-"), { message: "An SSH path cannot start with -" })
   .refine((s) => s.kind !== "github" || /^[A-Za-z0-9-]{1,39}(\/(?!\.\.?$)[\w.-]{1,100})?$/.test(s.path), { message: "Use owner or owner/repo" });
 
 const familySchema = z.enum(FAMILY_ORDER as [Family, ...Family[]]);
