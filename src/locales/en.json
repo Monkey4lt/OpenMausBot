@@ -7355,7 +7355,7 @@
   "projects.sources.none": "No folder added yet.",
   "projects.sources.ssh": "SSH server",
   "projects.sources.local": "This computer",
-  "projects.sources.labelPlaceholder": "Name, e.g. My server",
+  "projects.sources.labelPlaceholder": "Name (optional), e.g. My server",
   "projects.sources.hostPlaceholder": "user@server or an SSH alias",
   "projects.sources.pathPlaceholder": "Folder path, e.g. ~/projects",
   "projects.sources.sshHint": "Uses your SSH keys, without a password prompt. Test first in a terminal: ssh user@server",
@@ -7369,5 +7369,7 @@
   "projects.github.signedOut": "Not signed in to GitHub: only public repositories are visible",
   "projects.github.signIn": "Sign in to GitHub",
   "projects.github.switch": "Switch account",
-  "projects.github.waiting": "A GitHub window is opening: sign in there, then come back here"
+  "projects.github.waiting": "A GitHub window is opening: sign in there, then come back here",
+  "projects.github.useAccount": "Show all my repositories",
+  "projects.github.orOne": "Or a single repository, or someone else's account:"
 }

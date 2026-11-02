@@ -2773,7 +2773,7 @@
   "projects.sources.none": "Aucun dossier ajouté pour l'instant.",
   "projects.sources.ssh": "Serveur SSH",
   "projects.sources.local": "Cet ordinateur",
-  "projects.sources.labelPlaceholder": "Nom, ex. Mon serveur",
+  "projects.sources.labelPlaceholder": "Nom (facultatif), ex. Mon serveur",
   "projects.sources.hostPlaceholder": "utilisateur@serveur ou un alias SSH",
   "projects.sources.pathPlaceholder": "Chemin du dossier, ex. ~/projets",
   "projects.sources.sshHint": "Utilise tes clés SSH, sans demande de mot de passe. Teste d'abord dans un terminal : ssh utilisateur@serveur",
@@ -2787,5 +2787,7 @@
   "projects.github.signedOut": "Pas connecté à GitHub : seuls les dépôts publics sont visibles",
   "projects.github.signIn": "Se connecter à GitHub",
   "projects.github.switch": "Changer de compte",
-  "projects.github.waiting": "Une fenêtre GitHub s'ouvre : connecte-toi dedans, puis reviens ici"
+  "projects.github.waiting": "Une fenêtre GitHub s'ouvre : connecte-toi dedans, puis reviens ici",
+  "projects.github.useAccount": "Afficher tous mes dépôts",
+  "projects.github.orOne": "Ou un seul dépôt, ou le compte de quelqu'un d'autre :"
 }

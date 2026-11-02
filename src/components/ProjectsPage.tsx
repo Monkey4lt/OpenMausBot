@@ -77,7 +77,7 @@ function SourcesDialog({ sources, errors, onSave, onClose }: { sources: Source[]
   const [path, setPath] = useState("~/projets");
   const githubTarget = (value: string) => value.trim().replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "").replace(/\.git$/, "").replace(/\/+$/, "");
   const cleanPath = kind === "github" ? githubTarget(path) : path.trim();
-  const valid = label.trim() && cleanPath && (kind === "github" ? /^[A-Za-z0-9-]{1,39}(\/(?!\.\.?$)[\w.-]{1,100})?$/.test(cleanPath) : kind === "local" || /^[\w.@-]+$/.test(host.trim()));
+  const valid = cleanPath && (kind === "github" ? /^[A-Za-z0-9-]{1,39}(\/(?!\.\.?$)[\w.-]{1,100})?$/.test(cleanPath) : kind === "local" || /^[\w.@-]+$/.test(host.trim()));
   const pick = (k: Source["kind"]) => {
     setKind(k);
     if (k === "github" && path.startsWith("~")) setPath("");
@@ -88,9 +88,17 @@ function SourcesDialog({ sources, errors, onSave, onClose }: { sources: Source[]
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  const pending = (): Source => ({
+    id: newId("s"),
+    label: (label.trim() || (kind === "github" ? cleanPath : kind === "ssh" ? host.trim() : cleanPath)).slice(0, 60),
+    kind,
+    host: kind === "ssh" ? host.trim() : undefined,
+    path: cleanPath,
+  });
+  const typed = Boolean(kind === "ssh" ? host.trim() : kind === "github" ? cleanPath : path.trim() && path.trim() !== "~/projets");
   const add = () => {
     if (!valid) return;
-    setList([...list, { id: newId("s"), label: label.trim(), kind, host: kind === "ssh" ? host.trim() : undefined, path: cleanPath }]);
+    setList([...list, pending()]);
     setLabel(""); setHost("");
   };
   const field = "h-9 w-full rounded-lg border border-hairline/60 bg-inset px-3 text-[13px] text-ink outline-none placeholder:text-ink-tertiary focus:border-accent-border";
@@ -130,19 +138,23 @@ function SourcesDialog({ sources, errors, onSave, onClose }: { sources: Source[]
                 </button>
               ))}
             </div>
+            {kind === "github" && (
+              <GithubAccount onUseAccount={(login) => onSave(list.some((o) => o.kind === "github" && o.path.toLowerCase() === login.toLowerCase())
+                ? list : [...list, { id: newId("s"), label: `GitHub ${login}`.slice(0, 60), kind: "github", path: login }])} />
+            )}
+            {kind === "github" && <p className="mb-2 text-[12px] text-ink-tertiary">{t("projects.github.orOne")}</p>}
             <div className="grid gap-2">
               <input className={field} value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("projects.sources.labelPlaceholder")} />
               {kind === "ssh" && <input className={cn(field, "font-mono")} value={host} onChange={(e) => setHost(e.target.value)} placeholder={t("projects.sources.hostPlaceholder")} />}
               <input className={cn(field, "font-mono")} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t(kind === "github" ? "projects.sources.githubPlaceholder" : "projects.sources.pathPlaceholder")} />
             </div>
             {kind !== "local" && <p className="mt-2 text-[12px] leading-relaxed text-ink-tertiary">{t(kind === "ssh" ? "projects.sources.sshHint" : "projects.sources.githubHint")}</p>}
-            {kind === "github" && <GithubAccount />}
             <button disabled={!valid} onClick={add} className="mt-3 flex items-center gap-2 rounded-lg bg-raised px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-40"><Plus size={14} />{t("projects.sources.add")}</button>
           </div>
         </div>
         <footer className="flex justify-end gap-2 border-t border-hairline/40 px-6 py-4">
           <button onClick={onClose} className="rounded-lg px-3.5 py-2 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink">{t("projects.cancel")}</button>
-          <button onClick={() => onSave(list)} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:brightness-110">{t("projects.save")}</button>
+          <button onClick={() => onSave(valid && typed ? [...list, pending()] : list)} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:brightness-110">{t("projects.save")}</button>
         </footer>
       </div>
     </div>
@@ -580,7 +592,7 @@ export function ProjectsPage() {
   );
 }
 
-function GithubAccount() {
+function GithubAccount({ onUseAccount }: { onUseAccount: (login: string) => void }) {
   const [login, setLogin] = useState<string | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -593,17 +605,23 @@ function GithubAccount() {
       .finally(() => setBusy(false));
   };
   return (
-    <div className="mt-3 flex items-center gap-2 rounded-lg bg-inset px-3 py-2 text-[12.5px]">
-      <Github size={14} className="shrink-0 text-ink-secondary" />
-      <span className="min-w-0 flex-1 leading-snug text-ink-secondary">
-        {busy ? t("projects.github.waiting") : login === undefined ? "…" : login ? t("projects.github.signedIn", { login }) : t("projects.github.signedOut")}
-      </span>
+    <div className="mb-3 rounded-lg bg-inset p-3 text-[13px]">
+      <div className="flex items-center gap-2">
+        <Github size={15} className="shrink-0 text-ink-secondary" />
+        <span className="min-w-0 flex-1 leading-snug text-ink-secondary">
+          {busy ? t("projects.github.waiting") : login === undefined ? "…" : login ? t("projects.github.signedIn", { login }) : t("projects.github.signedOut")}
+        </span>
+        {busy && <Loader2 size={14} className="shrink-0 animate-spin text-ink-tertiary" />}
+        {!busy && login && (
+          <button onClick={() => signIn(true)} className="shrink-0 rounded-md px-2 py-1 text-[12.5px] text-ink-tertiary hover:bg-raised hover:text-ink">{t("projects.github.switch")}</button>
+        )}
+      </div>
       {!busy && login !== undefined && (
-        <button onClick={() => signIn(Boolean(login))} className={cn("shrink-0 rounded-md px-2.5 py-1 text-[12.5px] font-medium", login ? "text-ink-secondary hover:bg-raised hover:text-ink" : "bg-accent text-white hover:brightness-110")}>
-          {t(login ? "projects.github.switch" : "projects.github.signIn")}
+        <button onClick={() => (login ? onUseAccount(login) : signIn(false))}
+          className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-[13px] font-medium text-white hover:brightness-110">
+          {login ? t("projects.github.useAccount") : t("projects.github.signIn")}
         </button>
       )}
-      {busy && <Loader2 size={14} className="shrink-0 animate-spin text-ink-tertiary" />}
     </div>
   );
 }
