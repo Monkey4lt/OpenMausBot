@@ -2,7 +2,7 @@
 // its full file tree. Blocks are grouped by "pôle" (group) and joined by links.
 // Shown in place of the chat, like Team map. Layout is saved on the server.
 import {
-  ChevronDown, ChevronRight, CircleHelp, File, Folder, FolderTree, HardDrive, LayoutGrid, Link2, Loader2,
+  ChevronDown, ChevronRight, CircleHelp, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
   Minus, Pencil, Plus, RefreshCw, Search, Server, Trash2, X,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
@@ -14,7 +14,7 @@ import { api } from "@/state/api";
 // ---------- types (mirror server/projects.ts) ----------
 interface ProjectNode { n: string; t: "d" | "f" | "more"; c?: ProjectNode[] }
 interface Project { id: string; name: string; sourceId: string; files: number; dirs: number; truncated: boolean; tree: ProjectNode[] }
-interface Source { id: string; label: string; kind: "local" | "ssh"; host?: string; path: string }
+interface Source { id: string; label: string; kind: "local" | "ssh" | "github"; host?: string; path: string }
 interface Group { id: string; name: string; color: string }
 interface Link { a: string; b: string; label: string }
 interface MapState {
@@ -75,7 +75,14 @@ function SourcesDialog({ sources, errors, onSave, onClose }: { sources: Source[]
   const [label, setLabel] = useState("");
   const [host, setHost] = useState("");
   const [path, setPath] = useState("~/projets");
-  const valid = label.trim() && path.trim() && (kind === "local" || /^[\w.@-]+$/.test(host.trim()));
+  const githubTarget = (value: string) => value.trim().replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "").replace(/\.git$/, "").replace(/\/+$/, "");
+  const cleanPath = kind === "github" ? githubTarget(path) : path.trim();
+  const valid = label.trim() && cleanPath && (kind === "github" ? /^[A-Za-z0-9-]{1,39}(\/(?!\.\.?$)[\w.-]{1,100})?$/.test(cleanPath) : kind === "local" || /^[\w.@-]+$/.test(host.trim()));
+  const pick = (k: Source["kind"]) => {
+    setKind(k);
+    if (k === "github" && path.startsWith("~")) setPath("");
+    if (k !== "github" && !path) setPath("~/projets");
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -83,7 +90,7 @@ function SourcesDialog({ sources, errors, onSave, onClose }: { sources: Source[]
   }, [onClose]);
   const add = () => {
     if (!valid) return;
-    setList([...list, { id: newId("s"), label: label.trim(), kind, host: kind === "ssh" ? host.trim() : undefined, path: path.trim() }]);
+    setList([...list, { id: newId("s"), label: label.trim(), kind, host: kind === "ssh" ? host.trim() : undefined, path: cleanPath }]);
     setLabel(""); setHost("");
   };
   const field = "h-9 w-full rounded-lg border border-hairline/60 bg-inset px-3 text-[13px] text-ink outline-none placeholder:text-ink-tertiary focus:border-accent-border";
@@ -104,10 +111,10 @@ function SourcesDialog({ sources, errors, onSave, onClose }: { sources: Source[]
               const err = errors.find((e) => e.sourceId === s.id);
               return (
                 <li key={s.id} className="flex items-center gap-3 rounded-xl border border-hairline/40 bg-card px-3 py-2.5">
-                  {s.kind === "ssh" ? <Server size={16} className="shrink-0 text-ink-secondary" /> : <HardDrive size={16} className="shrink-0 text-ink-secondary" />}
+                  <SourceIcon kind={s.kind} size={16} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium text-ink">{s.label}</div>
-                    <div className="truncate font-mono text-[11.5px] text-ink-tertiary">{s.kind === "ssh" ? `${s.host}:${s.path}` : s.path}</div>
+                    <div className="truncate font-mono text-[11.5px] text-ink-tertiary">{s.kind === "ssh" ? `${s.host}:${s.path}` : s.kind === "github" ? `github.com/${s.path}` : s.path}</div>
                     {err && <div className="mt-1 truncate text-[12px] text-danger" title={err.message}>{err.message}</div>}
                   </div>
                   <button className="ui-icon-button" aria-label={t("projects.sources.remove")} onClick={() => setList(list.filter((o) => o !== s))}><Trash2 size={15} /></button>
@@ -117,18 +124,18 @@ function SourcesDialog({ sources, errors, onSave, onClose }: { sources: Source[]
           </ul>
           <div className="mt-5 rounded-xl border border-hairline/40 bg-card p-3">
             <div className="mb-3 flex gap-1 rounded-lg bg-inset p-1">
-              {(["ssh", "local"] as const).map((k) => (
-                <button key={k} onClick={() => setKind(k)} className={cn("flex flex-1 items-center justify-center gap-2 rounded-md py-1.5 text-[13px]", kind === k ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}>
-                  {k === "ssh" ? <Server size={14} /> : <HardDrive size={14} />}{t(k === "ssh" ? "projects.sources.ssh" : "projects.sources.local")}
+              {(["ssh", "github", "local"] as const).map((k) => (
+                <button key={k} onClick={() => pick(k)} className={cn("flex flex-1 items-center justify-center gap-2 rounded-md py-1.5 text-[13px]", kind === k ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}>
+                  <SourceIcon kind={k} size={14} />{t(k === "ssh" ? "projects.sources.ssh" : k === "github" ? "projects.sources.github" : "projects.sources.local")}
                 </button>
               ))}
             </div>
             <div className="grid gap-2">
               <input className={field} value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("projects.sources.labelPlaceholder")} />
               {kind === "ssh" && <input className={cn(field, "font-mono")} value={host} onChange={(e) => setHost(e.target.value)} placeholder={t("projects.sources.hostPlaceholder")} />}
-              <input className={cn(field, "font-mono")} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t("projects.sources.pathPlaceholder")} />
+              <input className={cn(field, "font-mono")} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t(kind === "github" ? "projects.sources.githubPlaceholder" : "projects.sources.pathPlaceholder")} />
             </div>
-            {kind === "ssh" && <p className="mt-2 text-[12px] leading-relaxed text-ink-tertiary">{t("projects.sources.sshHint")}</p>}
+            {kind !== "local" && <p className="mt-2 text-[12px] leading-relaxed text-ink-tertiary">{t(kind === "ssh" ? "projects.sources.sshHint" : "projects.sources.githubHint")}</p>}
             <button disabled={!valid} onClick={add} className="mt-3 flex items-center gap-2 rounded-lg bg-raised px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-40"><Plus size={14} />{t("projects.sources.add")}</button>
           </div>
         </div>
@@ -559,6 +566,11 @@ export function ProjectsPage() {
       {askNode}
     </main>
   );
+}
+
+function SourceIcon({ kind, size }: { kind: Source["kind"]; size: number }) {
+  const Icon = kind === "ssh" ? Server : kind === "github" ? Github : HardDrive;
+  return <Icon size={size} className="shrink-0 text-ink-secondary" />;
 }
 
 function ToolButton({ onClick, label, children }: { onClick: () => void; label: string; children: ReactNode }) {

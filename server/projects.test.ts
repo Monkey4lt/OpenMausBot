@@ -42,6 +42,14 @@ describe("projects map", () => {
     expect(projectMapStateSchema.safeParse({ sources: [{ ...source, host: "me@vps" }] }).success).toBe(true);
   });
 
+  it("accepts a GitHub account or repository, nothing else", () => {
+    const github = (path: string) => projectMapStateSchema.safeParse({ sources: [{ id: "g1", label: "GitHub", kind: "github", path }] }).success;
+    expect(github("octocat")).toBe(true);
+    expect(github("octocat/Hello-World")).toBe(true);
+    expect(github("octocat/a/b")).toBe(false);
+    expect(github("../etc")).toBe(false);
+  });
+
   it("saves and reads the layout, and starts empty without a file", () => {
     const dataDir = tmp();
     expect(readProjectMapState(dataDir).sources).toEqual([]);

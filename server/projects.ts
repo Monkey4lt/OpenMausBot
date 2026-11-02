@@ -1,5 +1,5 @@
-// Projects map: every folder under a "source" (a local path or a path on an
-// SSH host) becomes a block with its full file tree. Groups, links and block
+// Projects map: every folder under a "source" (a local path, a path on an
+// SSH host, or a GitHub account or repository) becomes a block with its full file tree. Groups, links and block
 // positions are the person's layout, kept in projects-map.json in the data dir.
 import { execFile } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { scanGithubLines } from "./projects-github.ts";
 
 /** Heavy folders that say nothing about a project's shape. Hidden entries are skipped too. */
 export const PROJECT_IGNORE = ["node_modules", "__pycache__", "target", "venv", "env", "dist", "build", "vendor"];
@@ -33,11 +34,13 @@ const idSchema = z.string().min(1).max(200);
 const sourceSchema = z.object({
   id: z.string().regex(/^[\w-]{1,40}$/),
   label: z.string().trim().min(1).max(60),
-  kind: z.enum(["local", "ssh"]),
+  kind: z.enum(["local", "ssh", "github"]),
   // An ssh alias or user@host; never an option.
   host: z.string().regex(/^[\w.@-]{1,120}$/).refine((h) => !h.startsWith("-")).optional(),
   path: z.string().trim().min(1).max(500),
-}).strict().refine((s) => s.kind === "local" || Boolean(s.host), { message: "An SSH source needs a host" });
+}).strict()
+  .refine((s) => s.kind !== "ssh" || Boolean(s.host), { message: "An SSH source needs a host" })
+  .refine((s) => s.kind !== "github" || /^[A-Za-z0-9-]{1,39}(\/(?!\.\.?$)[\w.-]{1,100})?$/.test(s.path), { message: "Use owner or owner/repo" });
 
 export const projectMapStateSchema = z.object({
   sources: z.array(sourceSchema).max(20).default([]),
@@ -174,6 +177,8 @@ export function projectsFromLines(sourceId: string, lines: readonly string[]): P
 }
 
 export async function scanSource(source: ProjectSource): Promise<Project[]> {
-  const lines = source.kind === "ssh" ? await scanSshLines(source.host!, source.path) : scanLocalLines(source.path.replace(/^~(?=$|\/)/, homedir()));
+  const lines = source.kind === "ssh" ? await scanSshLines(source.host!, source.path)
+    : source.kind === "github" ? await scanGithubLines(source.path.replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "").replace(/\.git$|\/$/g, ""))
+    : scanLocalLines(source.path.replace(/^~(?=$|\/)/, homedir()));
   return projectsFromLines(source.id, lines);
 }
