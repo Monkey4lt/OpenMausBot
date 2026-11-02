@@ -38,10 +38,12 @@ async function ghCliToken(): Promise<string | null> {
 export interface GithubTransport {
   fetch: typeof fetch;
   credential: (interactive: boolean) => Promise<string | null>;
+  cliToken?: () => Promise<string | null>;
+  forgetCredential?: () => Promise<void>;
 }
 
-const realTransport = {
-  fetch: (input: Parameters<typeof fetch>[0], init?: RequestInit) => fetch(input, init),
+const realTransport: Required<GithubTransport> = {
+  fetch: (input, init) => fetch(input, init),
   credential: gitCredential,
   cliToken: ghCliToken,
   forgetCredential: forgetGitCredential,
@@ -49,9 +51,8 @@ const realTransport = {
 let transport = realTransport;
 let session: { token: string; login: string } | null = null;
 
-/** Test seam: an injected transport also stands in for the gh CLI and `git credential reject`; `null` restores the real one and forgets the session and cached trees. */
 export function setGithubTransport(t: GithubTransport | null): void {
-  transport = t ? { ...t, cliToken: async () => null, forgetCredential: async () => {} } : realTransport;
+  transport = t ? { cliToken: async () => null, forgetCredential: async () => {}, ...t } : realTransport;
   session = null;
   trees.clear();
 }

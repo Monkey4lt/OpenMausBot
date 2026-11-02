@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { githubRepoLines, listGithubRepos, scanGithubLines, setGithubTransport } from "./projects-github.ts";
+import { githubLogin, githubRepoLines, githubSignIn, listGithubRepos, scanGithubLines, setGithubTransport } from "./projects-github.ts";
 
 type Reply = { status?: number; body: unknown };
 type Call = { path: string; auth: string | null };
@@ -111,5 +111,23 @@ describe("projects GitHub source", () => {
     expect(trees()).toBe(1);
     await githubRepoLines({ ...repo, pushedAt: "2026-02-01T00:00:00Z" });
     expect(trees()).toBe(2);
+  });
+
+  it("an injected transport can supply the gh CLI token and the forget step", async () => {
+    const forgot: boolean[] = [];
+    const fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const auth = (init?.headers as Record<string, string>).authorization;
+      return new Response(JSON.stringify({ login: auth === "Bearer cli" ? "fromCli" : "fromGit" }), { status: auth ? 200 : 401 });
+    }) as typeof globalThis.fetch;
+    setGithubTransport({ fetch, credential: async () => null, cliToken: async () => "cli", forgetCredential: async () => { forgot.push(true); } });
+    expect(await githubLogin()).toBe("fromCli");
+    expect(await githubSignIn(true)).toBeNull();
+    expect(forgot).toEqual([true]);
+  });
+
+  it("without those, an injected transport never reaches the real CLIs", async () => {
+    setGithubTransport({ fetch: (async () => new Response("{}", { status: 500 })) as typeof globalThis.fetch, credential: async () => null });
+    expect(await githubLogin()).toBeNull();
+    expect(await githubSignIn(true)).toBeNull();
   });
 });
