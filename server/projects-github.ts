@@ -35,7 +35,26 @@ async function ghCliToken(): Promise<string | null> {
   return (await run("gh", ["auth", "token"], "", { timeout: 10_000 }))?.trim() || null;
 }
 
+export interface GithubTransport {
+  fetch: typeof fetch;
+  credential: (interactive: boolean) => Promise<string | null>;
+}
+
+const realTransport = {
+  fetch: (input: Parameters<typeof fetch>[0], init?: RequestInit) => fetch(input, init),
+  credential: gitCredential,
+  cliToken: ghCliToken,
+  forgetCredential: forgetGitCredential,
+};
+let transport = realTransport;
 let session: { token: string; login: string } | null = null;
+
+/** Test seam: an injected transport also stands in for the gh CLI and `git credential reject`; `null` restores the real one and forgets the session and cached trees. */
+export function setGithubTransport(t: GithubTransport | null): void {
+  transport = t ? { ...t, cliToken: async () => null, forgetCredential: async () => {} } : realTransport;
+  session = null;
+  trees.clear();
+}
 
 async function loginFor(candidate: string | null): Promise<{ token: string; login: string } | null> {
   if (!candidate) return null;
@@ -45,7 +64,7 @@ async function loginFor(candidate: string | null): Promise<{ token: string; logi
 
 /** The stored login, read without opening any window; null when this computer is not signed in. */
 async function token(): Promise<string | null> {
-  session ??= (await loginFor(await gitCredential(false))) ?? (await loginFor(await ghCliToken()));
+  session ??= (await loginFor(await transport.credential(false))) ?? (await loginFor(await transport.cliToken()));
   return session?.token ?? null;
 }
 
@@ -56,14 +75,14 @@ export async function githubLogin(): Promise<string | null> {
 
 /** Opens Git Credential Manager's sign-in window; `switchAccount` forgets the stored login first. */
 export async function githubSignIn(switchAccount: boolean): Promise<string | null> {
-  if (switchAccount) await forgetGitCredential();
-  session = await loginFor(await gitCredential(true));
-  if (!session && !switchAccount) session = await loginFor(await ghCliToken());
+  if (switchAccount) await transport.forgetCredential();
+  session = await loginFor(await transport.credential(true));
+  if (!session && !switchAccount) session = await loginFor(await transport.cliToken());
   return session?.login ?? null;
 }
 
 async function gh<T>(path: string, auth: string | null, retryAnonymous = true): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
+  const res = await transport.fetch(`${API}${path}`, {
     headers: {
       accept: "application/vnd.github+json",
       "x-github-api-version": "2022-11-28",

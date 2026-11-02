@@ -85,7 +85,7 @@ it("other paths PASS", async () => { expect(await route(ctx("GET", "/api/other")
 - Consumes : rien de nouveau.
 - Produces : `setGithubTransport(t: { fetch: typeof fetch; credential: (interactive: boolean) => Promise<string | null> } | null): void` (point d'injection pour les tests ; `null` remet le vrai transport et vide `session` et le cache des arbres).
 
-- [ ] **Step 1 : Write the failing tests** (fetch simulé qui répond selon l'URL)
+- [x] **Step 1 : Write the failing tests** (fetch simulé qui répond selon l'URL)
 
 ```ts
 it("owner/repo gives one project built from the recursive tree", async () => { /* /repos/o/r + /git/trees/main?recursive=1 → lines "d r", "f r/src/a.ts" */ });
@@ -99,10 +99,10 @@ it("an empty repository gives an empty project, not an error", async () => { /* 
 it("a tree is fetched again only after a new push", async () => { /* same pushed_at → 1 trees call; new pushed_at → 2 */ });
 ```
 
-- [ ] **Step 2 :** `pnpm vitest run server/projects-github.test.ts` → FAIL (`setGithubTransport` n'existe pas).
-- [ ] **Step 3 :** Ajouter `setGithubTransport` ; `gh()` et `gitCredential()` passent par le transport courant.
-- [ ] **Step 4 :** Relancer → PASS.
-- [ ] **Step 5 :** Commit `test(projects): cover GitHub listing, sign-in fallback and tree cache`.
+- [x] **Step 2 :** `pnpm vitest run server/projects-github.test.ts` → FAIL (`setGithubTransport` n'existe pas).
+- [x] **Step 3 :** Ajouter `setGithubTransport` ; `gh()` et `gitCredential()` passent par le transport courant.
+- [x] **Step 4 :** Relancer → PASS.
+- [x] **Step 5 :** Commit `test(projects): cover GitHub listing, sign-in fallback and tree cache`.
 
 ### Task 4: Extraire la géométrie de la toile
 
