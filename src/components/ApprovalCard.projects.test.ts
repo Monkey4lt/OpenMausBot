@@ -20,13 +20,14 @@ const projectsCard = (lines: string[], answered?: string): Message => ({
   },
 });
 const bot = { id: "carto", name: "Cartographe" } as never as Bot;
-const lines = ["Créer le pôle Clients", "Ranger shop dans Clients"];
+const lines = ["Créer le pôle «Clients»", "Ranger «shop» dans «Clients»", "Relier «a» → «b»", "Délier «c» et «d»", "Supprimer le pôle «Outils»"];
 
 describe("the Cartographe's card", () => {
   it("asks to apply the changes to the map and lists them, never 'Send on your behalf'", () => {
     const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: projectsCard(lines) }));
-    expect(html).toContain("Apply these 2 changes to the map?");
-    expect(html).toContain("Créer le pôle Clients, Ranger shop dans Clients");
+    expect(html).toContain("Apply these 5 changes to the map?");
+    for (const line of lines) expect(html).toContain(`<li>${line}</li>`);
+    expect(html).not.toContain("more");
     expect(html).not.toContain("Send on your behalf");
     expect(html).not.toContain("projects_apply_changes");
   });
@@ -34,14 +35,17 @@ describe("the Cartographe's card", () => {
   it("settles into one line with the outcome", () => {
     const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: projectsCard(lines, "allow") }));
     expect(html).toContain('data-approval-row="settled"');
-    expect(html).toContain("Apply these 2 changes to the map");
+    expect(html).toContain("Apply these 5 changes to the map");
     expect(html).toContain("· Allowed");
+    for (const line of lines) expect(html).toContain(`<li>${line}</li>`);
   });
 
   it("heads the composer strip the same way", () => {
     const [pending] = pendingApprovals([projectsCard(lines)]);
     const strip = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending: pending!, count: 1, index: 0 }));
-    expect(strip).toContain("Apply these 2 changes to the map?");
+    expect(strip).toContain("Apply these 5 changes to the map?");
     expect(strip).not.toContain("Send on your behalf");
+    const visible = strip.slice(0, strip.indexOf("approval-details-") < 0 ? undefined : strip.indexOf("approval-details-"));
+    for (const line of lines) expect(visible).toContain(`<li>${line}</li>`);
   });
 });

@@ -325,6 +325,14 @@ function firstLineOf(text: string): string {
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 }
 
+function ChangeLines({ lines }: { lines: string[] }) {
+  return (
+    <ul className="mt-1 list-disc space-y-0.5 pl-9 text-[13px] leading-5 text-ink-secondary">
+      {lines.map((line, index) => <li key={index}>{line}</li>)}
+    </ul>
+  );
+}
+
 function CompactApprovalRow({
   header,
   summary,
@@ -336,9 +344,11 @@ function CompactApprovalRow({
   byVoice,
   waiting,
   answeredBelow,
+  lines,
 }: {
   header: string;
   summary?: string;
+  lines?: string[];
   detail: string;
   showDetailInline: boolean;
   outcome?: string;
@@ -354,6 +364,7 @@ function CompactApprovalRow({
     return (
       <div data-approval-row="pending" className="sr-only">
         {header}{summary ? ` ${summary}` : ""}{detail && showDetailInline ? ` ${firstLineOf(detail)}` : ""}. {t("approval.status.waitingAnswer")}
+        {lines?.length ? <ChangeLines lines={lines} /> : null}
       </div>
     );
   }
@@ -388,7 +399,7 @@ function CompactApprovalRow({
         )}
         <span className="shrink-0" aria-live="polite">· {outcome ?? t("approval.status.waitingAnswer")}</span>
         {byVoice}
-        {detail && !showDetailInline && (
+        {detail && !showDetailInline && !lines?.length && (
           <button
             type="button"
             aria-expanded={open}
@@ -399,7 +410,8 @@ function CompactApprovalRow({
           </button>
         )}
       </div>
-      {open && (
+      {lines?.length ? <ChangeLines lines={lines} /> : null}
+      {open && !lines?.length && (
         <pre
           tabIndex={0}
           aria-label={t("approval.aria.details")}
@@ -480,6 +492,7 @@ export function ApprovalCard({
       <CompactApprovalRow
         header={header}
         summary={outbound?.summary || undefined}
+        lines={outbound?.lines}
         detail={ask?.detail ?? card.subtitle}
         showDetailInline={!outbound}
         outcome={outcome}

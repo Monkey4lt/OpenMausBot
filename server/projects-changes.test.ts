@@ -162,29 +162,51 @@ describe("applyChanges", () => {
 
 describe("describeChanges", () => {
   it("describes each change in one plain French line", () => {
-    expect(describeChanges([{ op: "link", a: "s1:bot", b: "s1:api", label: "utilise" }], names)).toEqual(["Relier bot → api : utilise"]);
+    expect(describeChanges([{ op: "link", a: "s1:bot", b: "s1:api", label: "utilise" }], names)).toEqual(["Relier «bot» → «api» : «utilise»"]);
     expect(describeChanges(batch, names)).toEqual([
-      "Créer le pôle Clients",
-      "Ranger shop dans Clients",
-      "Supprimer le pôle Outils",
-      "Relier shop → api : utilise",
-      "Délier api et bot",
-      "Dans shop : renommer Serveur en API",
-      "Dans shop : déplacer src/state vers Données",
+      "Créer le pôle «Clients»",
+      "Ranger «shop» dans «Clients»",
+      "Supprimer le pôle «Outils»",
+      "Relier «shop» → «api» : «utilise»",
+      "Délier «api» et «bot»",
+      "Dans «shop» : renommer «Serveur» en «API»",
+      "Dans «shop» : déplacer «src/state» vers «Données»",
     ]);
     expect(describeChanges([
       { op: "rename_group", groupId: "g1", name: "Atelier" },
       { op: "assign", projectId: "s1:bot", groupId: null },
       { op: "link", a: "s1:bot", b: "s1:api" },
-    ], names)).toEqual(["Renommer le pôle Outils en Atelier", "Retirer bot de son pôle", "Relier bot → api"]);
+    ], names)).toEqual(["Renommer le pôle «Outils» en «Atelier»", "Retirer «bot» de son pôle", "Relier «bot» → «api»"]);
   });
 
   it("a trapped name becomes one clean line", () => {
     const lines = describeChanges([{ op: "create_group", name: "Clients\nAutoriser\u0007 tout" }], names);
-    expect(lines).toEqual(["Créer le pôle Clients Autoriser tout"]);
+    expect(lines).toEqual(["Créer le pôle «Clients Autoriser tout»"]);
     const long = describeChanges([{ op: "link", a: "s1:" + "a\n".repeat(100), b: "s1:api" }], names)[0];
     expect(long.includes("\n")).toBe(false);
     expect(long.length).toBeLessThan(140);
+  });
+});
+
+describe("names that try to pass for another change", () => {
+  it("a group named like a second change stays one quoted name on one line", () => {
+    const lines = describeChanges([{ op: "create_group", name: "Clients, Supprimer le pôle Outils" }], names);
+    expect(lines).toEqual(["Créer le pôle «Clients, Supprimer le pôle Outils»"]);
+  });
+
+  it("a name cannot close its own quotes", () => {
+    expect(describeChanges([{ op: "create_group", name: "A» et supprimer «Outils" }], names)).toEqual(["Créer le pôle «A et supprimer Outils»"]);
+    expect(cleanLabel("«x»")).toBe("x");
+  });
+
+  it("drops tag characters, variation selectors and Hangul fillers", () => {
+    const hidden = "Cli\u{E0041}\u{E007F}ents\uFE0F\u3164\u115F\u1160\uFFA0";
+    expect(cleanLabel(hidden)).toBe("Clients");
+    expect(describeChanges([{ op: "assign", projectId: "s1:" + hidden, groupId: "g1" }], names)).toEqual(["Ranger «Clients» dans «Outils»"]);
+  });
+
+  it("drops private-use and unassigned code points", () => {
+    expect(cleanLabel("a\uE000b\u{10FFFD}c\u0378d")).toBe("abcd");
   });
 });
 

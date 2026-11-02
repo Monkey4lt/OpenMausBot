@@ -54,15 +54,20 @@ export interface KnownProjects {
 export type ApplyResult = { ok: true; state: ProjectMapState } | { ok: false; problems: { index: number; reason: string }[] };
 
 const SPACES = /[\s\u0085]+/g;
-const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g;
+/** Control, format, private-use, unassigned and lone surrogate code points, tag characters, variation selectors and the
+ * Hangul fillers, all of which can hide text; and the guillemets the card quotes each name with. */
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Cs}\u{E0000}-\u{E007F}\u{FE00}-\u{FE0F}\u3164\u115F\u1160\uFFA0«»]/gu;
 
-/** One line a person can read on an approval card: no control or direction characters, single spaces, at most 60 UTF-16 units. */
+/** One line a person can read on an approval card: nothing hidden, no guillemets, single spaces, at most 60 UTF-16 units. */
 export function cleanLabel(value: string): string {
   const flat = value.replace(SPACES, " ").replace(INVISIBLE, "").replace(/ {2,}/g, " ").trim();
   if (flat.length <= LABEL_MAX) return flat;
-  const end = /[\ud800-\udbff]/.test(flat[LABEL_MAX - 1]) ? LABEL_MAX - 1 : LABEL_MAX;
+  const end = /[\ud800-\udbff]/.test(flat[LABEL_MAX - 1]!) ? LABEL_MAX - 1 : LABEL_MAX;
   return flat.slice(0, end).trimEnd();
 }
+
+/** A name on the card, quoted so no name can pass for the words around it. */
+const quoted = (value: string) => `«${cleanLabel(value)}»`;
 
 const sameLink = (l: { a: string; b: string }, a: string, b: string) => (l.a === a && l.b === b) || (l.a === b && l.b === a);
 const sameName = (x: string, y: string) => x.toLocaleLowerCase("fr") === y.toLocaleLowerCase("fr");
@@ -170,30 +175,29 @@ export function applyChanges(state: ProjectMapState, changes: ProjectChange[], k
   return problems.length ? { ok: false, problems } : { ok: true, state: next };
 }
 
-/** One French line per change, built from the changes only; every name goes through cleanLabel. */
+/** One French line per change, built from the changes only; every name is cleaned and quoted. */
 export function describeChanges(changes: ProjectChange[], names: { project: (id: string) => string; group: (id: string) => string }): string[] {
   const created = new Map<string, string>();
-  const project = (projectId: string) => cleanLabel(names.project(projectId));
-  const group = (groupId: string) => cleanLabel(groupId.startsWith(REF_PREFIX) ? created.get(groupId.slice(REF_PREFIX.length)) ?? groupId : names.group(groupId));
+  const project = (projectId: string) => quoted(names.project(projectId));
+  const group = (groupId: string) => quoted(groupId.startsWith(REF_PREFIX) ? created.get(groupId.slice(REF_PREFIX.length)) ?? groupId : names.group(groupId));
   return changes.map((change) => {
     switch (change.op) {
       case "create_group": {
-        const name = cleanLabel(change.name);
-        if (change.ref !== undefined) created.set(change.ref, name);
-        return `Créer le pôle ${name}`;
+        if (change.ref !== undefined) created.set(change.ref, change.name);
+        return `Créer le pôle ${quoted(change.name)}`;
       }
-      case "rename_group": return `Renommer le pôle ${group(change.groupId)} en ${cleanLabel(change.name)}`;
+      case "rename_group": return `Renommer le pôle ${group(change.groupId)} en ${quoted(change.name)}`;
       case "delete_group": return `Supprimer le pôle ${group(change.groupId)}`;
       case "assign": return change.groupId === null
         ? `Retirer ${project(change.projectId)} de son pôle`
         : `Ranger ${project(change.projectId)} dans ${group(change.groupId)}`;
       case "link": {
         const label = cleanLabel(change.label ?? "");
-        return `Relier ${project(change.a)} → ${project(change.b)}${label ? ` : ${label}` : ""}`;
+        return `Relier ${project(change.a)} → ${project(change.b)}${label ? ` : ${quoted(label)}` : ""}`;
       }
       case "unlink": return `Délier ${project(change.a)} et ${project(change.b)}`;
-      case "rename_family": return `Dans ${project(change.projectId)} : renommer ${FAMILY_LABEL[change.family]} en ${cleanLabel(change.name)}`;
-      case "move_module": return `Dans ${project(change.projectId)} : déplacer ${cleanLabel(change.moduleId)} vers ${FAMILY_LABEL[change.family]}`;
+      case "rename_family": return `Dans ${project(change.projectId)} : renommer ${quoted(FAMILY_LABEL[change.family])} en ${quoted(change.name)}`;
+      case "move_module": return `Dans ${project(change.projectId)} : déplacer ${quoted(change.moduleId)} vers ${quoted(FAMILY_LABEL[change.family])}`;
     }
   });
 }

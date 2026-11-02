@@ -119,13 +119,14 @@ function isDurable(pending: Pending): boolean {
 
 /** What will happen, in plain words; the command shown whole when it is what will run, and everything the card holds
  * behind Details. */
-function approvalWords(pending: Pending, botName?: string): { line: string; summary?: string; inline?: string; note?: string; detail: string } {
+function approvalWords(pending: Pending, botName?: string): { line: string; summary?: string; inline?: string; note?: string; detail: string; lines?: string[] } {
   const card = pending.message.card;
   const outbound = card ? outboundSummary(card) : undefined;
   const turnOn = computerAskWords(card, botName ?? t("approval.someone"));
   if (turnOn) return { line: turnOn.line, summary: turnOn.why ?? turnOn.reason, ...(turnOn.why ? { note: turnOn.reason } : {}), detail: "" };
   const ask = yourComputerAsk(card, botName ?? t("approval.someone"));
   const detail = (pending.commandAllowlist?.command ?? ask?.detail ?? pending.detail).trim();
+  if (outbound?.lines) return { line: outbound.headline, lines: outbound.lines, detail: "" };
   if (outbound) return { line: outbound.headline, ...(outbound.summary ? { summary: outbound.summary } : {}), detail };
   if (ask) return { line: ask.line, detail };
   if (isDurable(pending)) return { line: label(pending), detail };
@@ -162,7 +163,7 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
   const heldNote = outbound?.opaque && pending.heldCode === "approval.held.outbound"
     ? t("approval.opaqueCode")
     : tFromServer(pending.heldCode, pending.held);
-  const { line, summary, inline, note, detail } = approvalWords(pending, botName ?? asker?.name);
+  const { line, summary, inline, note, detail, lines } = approvalWords(pending, botName ?? asker?.name);
   const detailsId = `approval-details-${pending.requestId}`;
   const hidden = detail && detail !== inline ? detail : "";
   const skill = pending.message.card?.skillRequest;
@@ -209,6 +210,7 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
         )}
       </div>
       {summary && <p dir="auto" className="mt-1.5 break-words text-[15px] font-medium leading-[22px] text-ink">{summary}</p>}
+      {lines && <ul dir="auto" className="mt-1.5 list-disc space-y-0.5 pl-5 text-[14px] leading-[21px] text-ink">{lines.map((change, index) => <li key={index}>{change}</li>)}</ul>}
       {inline && <AskDetail text={inline} mono label={t("approval.aria.reviewDetails")} />}
       {note && <p dir="auto" data-computer-ask-reason className="mt-1 break-words text-[13px] leading-[18px] text-ink-secondary">{note}</p>}
       {heldNote && (outbound ? (

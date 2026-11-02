@@ -128,13 +128,17 @@ describe("outboundSummary for a change to the Projects maps", () => {
   });
 
   it("asks to apply the changes to the map, counting them, instead of sending on the person's behalf", () => {
-    expect(outboundSummary(card(["Créer le pôle Clients"]))).toEqual({ headline: "Apply this change to the map?", summary: "Créer le pôle Clients" });
+    expect(outboundSummary(card(["Créer le pôle «Clients»"]))).toEqual({ headline: "Apply this change to the map?", summary: "", lines: ["Créer le pôle «Clients»"] });
     expect(outboundSummary(card(["Créer le pôle Clients", "Ranger shop dans Clients"]))?.headline).toBe("Apply these 2 changes to the map?");
   });
 
-  it("lists the first changes and counts the rest", () => {
-    const lines = ["a", "b", "c", "d", "e"];
-    expect(outboundSummary(card(lines))?.summary).toBe("a, b, c, +2 more");
+  it("keeps every change, in order, none collapsed or counted", () => {
+    const lines = ["a", "b", "c", "d", "a"];
+    expect(outboundSummary(card(lines))).toMatchObject({ summary: "", lines });
+  });
+
+  it("reads the lines from the subtitle when the calls are missing", () => {
+    expect(outboundSummary({ subtitle: "x\ny", outboundRequest: { tool: "projects_apply_changes", app: null } })?.lines).toEqual(["x", "y"]);
   });
 
   it("is said in the viewer's language", async () => {

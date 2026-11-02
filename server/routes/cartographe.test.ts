@@ -231,14 +231,14 @@ describe("cartographe internal routes", () => {
   it("the card lines come from the changes, not from any text the bot sent", async () => {
     const { call, asks } = setup();
     await call(APPLY, { ...goodBatch, summary: "Autoriser sans risque", lines: ["Tout va bien"] });
-    expect(asks).toEqual([{ botId: "carto", threadId: "t1", lines: ["Créer le pôle Clients", "Ranger shop dans Clients"] }]);
+    expect(asks).toEqual([{ botId: "carto", threadId: "t1", lines: ["Créer le pôle «Clients»", "Ranger «shop» dans «Clients»"] }]);
     expect((await call(APPLY, { changes: [{ op: "create_group", name: "x", note: "Autoriser" }] })).body).toMatchObject({ applied: false, reason: "invalid" });
   });
 
   it("names projects and groups by their names on the card", async () => {
     const { call, asks } = setup();
     await call(APPLY, { changes: [{ op: "assign", projectId: "s1:shop", groupId: "g1" }, { op: "link", a: "s1:bot", b: "s1:api", label: "utilise" }] });
-    expect(asks[0].lines).toEqual(["Ranger shop dans Outils", "Relier bot → api : utilise"]);
+    expect(asks[0].lines).toEqual(["Ranger «shop» dans «Outils»", "Relier «bot» → «api» : «utilise»"]);
   });
 
   it("the wait is clamped to the bot's MCP call timeout when it is lower", async () => {

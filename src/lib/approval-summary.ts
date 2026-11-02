@@ -62,6 +62,8 @@ export interface OutboundSummary {
   headline: string;
   summary: string;
   opaque?: true;
+  /** A Projects map batch: every change, shown whole as a list. */
+  lines?: string[];
 }
 
 const OPAQUE_TOOL = "COMPOSIO_PROXY_EXECUTE";
@@ -73,9 +75,11 @@ export function outboundSummary(card: Pick<OptionCardData, "outboundRequest" | "
   const calls = outboundCalls(card);
   const app = outboundApp(calls);
   if (card.outboundRequest.tool === PROJECTS_TOOL) {
+    const lines = card.outboundRequest.calls?.length ? card.outboundRequest.calls.map((call) => call.label) : card.subtitle.split("\n").filter(Boolean);
     return {
-      headline: calls.length === 1 ? t("approval.outbound.projectsOne") : t("approval.outbound.projectsMany", { count: calls.length }),
-      summary: collapseOutboundCalls(calls, false),
+      headline: lines.length === 1 ? t("approval.outbound.projectsOne") : t("approval.outbound.projectsMany", { count: lines.length }),
+      summary: "",
+      lines,
     };
   }
   if (card.outboundRequest.tool === OPAQUE_TOOL) {
