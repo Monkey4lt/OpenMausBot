@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildArchitecture, parseImports } from "./projects-architecture.ts";
-import { detectPieces, isManifestPath } from "./projects-inspect.ts";
+import { detectPieces, findCalls, findRoutes, isManifestPath, linkPieces, routeMatches } from "./projects-inspect.ts";
 import type { Piece } from "../shared/projects-pieces.ts";
 
 function project(files: Record<string, string>) {
@@ -132,5 +132,100 @@ describe("detectPieces", () => {
     const start = performance.now();
     detectPieces(project({ "package.json": JSON.stringify({ dependencies: deps }), "requirements.txt": requirements, "docker-compose.yml": compose, "pyproject.toml": `dependencies = [${'"a",'.repeat(20000)}` }));
     expect(performance.now() - start).toBeLessThan(100);
+  });
+});
+
+describe("routeMatches", () => {
+  it.each([
+    ["/api/orders/${id}", "/api/orders/:id", true], ["/api/orders/42", "/api/orders/{order_id}", true],
+    ["https://x.test/api/users", "/api/users", true], ["/api/users", "/api/orders", false],
+    ["/api/users/", "/api/users", true], ["/api/users?page=2", "/api/users", true], ["/items/7", "/items/<int:item_id>", true],
+    ["/api/users/7/posts", "/api/users/:id", false], ["/api", "/api/users", false], ["users", "/users", false],
+  ])("routeMatches(%s, %s) = %s", (a, b, ok) => expect(routeMatches(a as string, b as string)).toBe(ok));
+});
+
+describe("findCalls and findRoutes", () => {
+  it("finds fetch, axios, httpx and requests calls", () => {
+    expect(findCalls("src/api.ts", [
+      'fetch("/api/users");',
+      "await fetch(`${API}/api/orders/${id}`, { method: 'POST' });",
+      "fetch('https://shop.test/api/cart?x=1')",
+      "axios.get('/api/products'); axios.post(\"/api/orders\", body); axios('/api/me');",
+      "fetch(url); axios.get(base + '/x'); fetch('relative/path');",
+    ].join("\n"))).toEqual(["/api/users", "/api/orders/${id}", "/api/cart", "/api/products", "/api/orders", "/api/me"]);
+    expect(findCalls("client.py", 'httpx.get(f"{BASE}/api/items/{item_id}")\nrequests.post("http://localhost:8000/api/items")\nrequests.get(url)\n')).toEqual(["/api/items/{item_id}", "/api/items"]);
+  });
+
+  it("finds express, fastify, fastapi, flask and gin routes", () => {
+    expect(findRoutes("server/app.ts", [
+      "app.get('/api/users', list);", 'router.post("/api/orders", create);', "app.delete(`/api/orders/:id`, del);",
+      "fastify.get('/health', h); fastify.route({ method: 'GET', url: '/api/cart', handler });",
+      "axios.get('/not-a-route'); app.get(path, x);",
+    ].join("\n"))).toEqual(["/api/users", "/api/orders", "/api/orders/:id", "/health", "/api/cart"]);
+    expect(findRoutes("main.py", '@app.get("/items/{item_id}")\ndef read(): ...\n@router.post("/items")\n@app.route("/legacy/<int:id>", methods=["GET"])\n@bp.route(\'/bp\')\nrequests.get("/no")\n')).toEqual(["/items/{item_id}", "/items", "/legacy/<int:id>", "/bp"]);
+    expect(findRoutes("main.go", 'r := gin.Default()\nr.GET("/ping", ping)\nv1.POST("/api/orders", create)\n')).toEqual(["/ping", "/api/orders"]);
+    expect(findRoutes("src/main.rs", 'let app = Router::new().route("/api/users", get(list));\nApp::new().route("/health", web::get().to(h))\n')).toEqual(["/api/users", "/health"]);
+  });
+
+  it("stays fast on large and hostile input", () => {
+    const hostile = [
+      "fetch(".repeat(20000), "fetch(`" + "a".repeat(100000), "app.get('/" + "x".repeat(100000),
+      ".route({" + " ".repeat(100000), "@app.get(" + "f".repeat(50000), "r".repeat(100000) + ".GET(",
+      "fetch('/a');app.get('/a');".repeat(5000),
+    ].join("\n");
+    const start = performance.now();
+    findCalls("big.ts", hostile);
+    findRoutes("big.ts", hostile);
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+});
+
+describe("linkPieces", () => {
+  const shop = () => {
+    const files: Record<string, string> = {
+      "package.json": JSON.stringify({ dependencies: { react: "18", express: "4", pg: "8", stripe: "1" } }),
+      "web/components/Orders.tsx": 'import React from "react";\nexport const load = (id: string) => fetch(`/api/orders/${id}`);\nfetch("/api/users");\n',
+      "web/components/Cart.tsx": 'import React from "react";\naxios.post("/api/cart");\nfetch("/api/unknown");\n',
+      "web/components/C.tsx": "",
+      "server/routes/orders.ts": 'import express from "express";\nimport { pool } from "../db/pool";\nrouter.get("/api/orders/:id", h);\nrouter.post("/api/cart", h);\n',
+      "server/routes/users.ts": 'import Stripe from "stripe";\napp.get("/api/users", h);\n',
+      "server/routes/c.ts": "",
+      "server/db/pool.ts": 'import { Pool } from "pg";\n', "server/db/q.ts": 'import pg from "pg";\n', "server/db/r.ts": "",
+    };
+    const input = project(files);
+    return { input, pieces: detectPieces(input), texts: Object.entries(files).map(([path, text]) => ({ path, text })) };
+  };
+
+  it("ui → api link counts matched calls with one example each", () => {
+    const { input, pieces: list, texts } = shop();
+    const link = linkPieces(list, texts, input.read).find((l) => l.from === "ui" && l.to === "api");
+    expect(link).toEqual({
+      from: "ui", to: "api", count: 3,
+      examples: [
+        { from: "web/components/Cart.tsx", to: "server/routes/orders.ts" },
+        { from: "web/components/Orders.tsx", to: "server/routes/orders.ts" },
+        { from: "web/components/Orders.tsx", to: "server/routes/users.ts" },
+      ],
+    });
+  });
+
+  it("api → database link comes from modules importing the database client", () => {
+    const { input, pieces: list, texts } = shop();
+    const links = linkPieces(list, texts, input.read);
+    expect(links.map((l) => `${l.from}>${l.to}:${l.count}`)).toEqual(["ui>api:3", "api>database:2", "api>external:1"]);
+    expect(links.find((l) => l.to === "database")!.examples).toEqual([{ from: "server/db/pool.ts", to: "pg" }, { from: "server/db/q.ts", to: "pg" }]);
+  });
+
+  it("a project with ui and api but no matching call has no ui → api link", () => {
+    const files = {
+      "package.json": JSON.stringify({ dependencies: { react: "18", express: "4" } }),
+      "web/A.tsx": 'fetch("/api/nothing");\n', "server/a.ts": 'app.get("/api/users", h);\n',
+    };
+    const input = project(files);
+    expect(linkPieces(detectPieces(input), Object.entries(files).map(([path, text]) => ({ path, text })), input.read)).toEqual([]);
+  });
+
+  it("no pieces gives no links", () => {
+    expect(linkPieces([], [{ path: "a.ts", text: 'fetch("/x"); app.get("/x", h);' }], [])).toEqual([]);
   });
 });

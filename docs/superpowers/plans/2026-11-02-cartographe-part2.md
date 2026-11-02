@@ -62,7 +62,7 @@ it("keeps at most 5 evidence entries per piece", () => {});
 - Consumes: `Piece`, `FileImports`.
 - Produces: `interface PieceLink { from: PieceKind; to: PieceKind; count: number; examples: { from: string; to: string }[] }` ; `linkPieces(pieces: Piece[], texts: { path: string; text: string }[], read: FileImports[]): PieceLink[]` ; helpers exportés `findCalls(path, text): string[]` (chemins d'URL appelés) et `findRoutes(path, text): string[]` (chemins de routes définis), et `routeMatches(call: string, route: string): boolean` (segments `:id`, `{id}`, `<id>`, `${…}` équivalents ; schéma/hôte ignorés).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it.each([
@@ -76,8 +76,8 @@ it("api → database link comes from modules importing the database client", () 
 it("a project with ui and api but no matching call has no ui → api link", () => {});
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS.
-- [ ] **Step 5:** Commit `feat(cartographe): link the pieces of a project`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS.
+- [x] **Step 5:** Commit `feat(cartographe): link the pieces of a project`.
 
 ### Task 11: Outils `projects_inspect_project` et `projects_read_file`
 

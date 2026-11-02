@@ -1,8 +1,9 @@
+import { classify } from "./projects-architecture.ts";
 import type { Architecture, FileImports } from "./projects-architecture.ts";
 import { PIECE_KINDS } from "../shared/projects-pieces.ts";
-import type { Piece, PieceKind } from "../shared/projects-pieces.ts";
+import type { Piece, PieceKind, PieceLink } from "../shared/projects-pieces.ts";
 
-export type { Piece, PieceKind };
+export type { Piece, PieceKind, PieceLink };
 
 type Ecosystem = "npm" | "py" | "go" | "cargo" | "gem";
 
@@ -377,4 +378,121 @@ export function detectPieces(input: { paths: string[]; manifests: Record<string,
       evidence: [...d.evidence].sort(([a], [b]) => byText(a, b)).slice(0, MAX_EVIDENCE).map(([path, reason]) => ({ path, reason })),
       modules: moduleOrder.filter((id) => d.modules.has(id)),
     }));
+}
+
+const STRING_ARG = String.raw`\(\s*f?(?:"([^"\n]{0,2048})"|'([^'\n]{0,2048})'|` + "`([^`\\n]{0,2048})`)";
+const CALL_PATTERNS: readonly RegExp[] = [
+  new RegExp(String.raw`\bfetch` + STRING_ARG, "g"),
+  new RegExp(String.raw`\baxios(?:\.(?:get|post|put|patch|delete|head|options|request))?` + STRING_ARG, "g"),
+  new RegExp(String.raw`\b(?:httpx|requests)\.(?:get|post|put|patch|delete|head|options|request)` + STRING_ARG, "g"),
+];
+const ROUTE_PATTERNS: readonly RegExp[] = [
+  new RegExp(String.raw`\b(?:app|fastify|server|\w{0,40}[Rr]outer)\.(?:get|post|put|patch|delete|all)` + STRING_ARG, "g"),
+  new RegExp(String.raw`\.route\(\s*\{[^}]{0,500}?\burl\s*:\s*(?:"([^"\n]{0,2048})"|'([^'\n]{0,2048})'|` + "`([^`\\n]{0,2048})`)", "g"),
+  new RegExp(String.raw`@\w{1,40}\.(?:get|post|put|patch|delete|route|api_route)` + STRING_ARG, "g"),
+  new RegExp(String.raw`\b\w{1,40}\.(?:GET|POST|PUT|PATCH|DELETE|Any)` + STRING_ARG, "g"),
+  new RegExp(String.raw`\.route` + STRING_ARG, "g"),
+];
+
+const URL_ORIGIN = /^[a-z][a-z0-9+.-]{0,30}:\/\/[^/\s]{0,300}/i;
+const LEADING_PLACEHOLDER = /^(?:\$\{[^}]{0,200}\}|\{[^}]{0,200}\})+/;
+
+/** The path part of a URL or route as written in code, or null when it is not an absolute path. */
+function urlPath(raw: string): string | null {
+  const path = raw.trim().replace(URL_ORIGIN, "").replace(LEADING_PLACEHOLDER, "").split(/[?#]/)[0];
+  if (!path.startsWith("/")) return null;
+  return path.length > 1 ? path.replace(/\/+$/, "") || "/" : path;
+}
+
+function findPaths(patterns: readonly RegExp[], text: string): string[] {
+  const found: { at: number; path: string }[] = [];
+  const taken = new Set<number>();
+  for (const pattern of patterns) {
+    for (const m of text.matchAll(pattern)) {
+      const raw = m[1] ?? m[2] ?? m[3];
+      const at = m.index + m[0].length - raw.length;
+      const path = urlPath(raw);
+      if (path !== null && !taken.has(at)) { taken.add(at); found.push({ at, path }); }
+    }
+  }
+  return found.sort((a, b) => a.at - b.at).map((f) => f.path);
+}
+
+/** URL paths the file calls with fetch, axios, httpx or requests, in the order they appear. */
+export function findCalls(_path: string, text: string): string[] {
+  return findPaths(CALL_PATTERNS, text);
+}
+
+/** Route paths the file defines (Express, Koa, Hono, Fastify, FastAPI, Flask, Gin, Echo, Axum, Actix), in the order they appear. */
+export function findRoutes(_path: string, text: string): string[] {
+  return findPaths(ROUTE_PATTERNS, text);
+}
+
+const PARAM_SEGMENT = /^(?::\w{1,100}\??|\*|\{[^}]{0,200}\}|<[^>]{0,200}>|\$\{[^}]{0,200}\})$/;
+
+/** True when a called URL lands on a route: same segments, a parameter on either side matching any one segment; scheme and host are ignored. */
+export function routeMatches(call: string, route: string): boolean {
+  const a = urlPath(call);
+  const b = urlPath(route);
+  if (a === null || b === null) return false;
+  const left = a.split("/");
+  const right = b.split("/");
+  return left.length === right.length && left.every((seg, i) => seg === right[i] || PARAM_SEGMENT.test(seg) || PARAM_SEGMENT.test(right[i]));
+}
+
+const MAX_LINK_EXAMPLES = 5;
+const IMPORT_TARGETS: readonly PieceKind[] = ["database", "cache", "external"];
+
+/** Site → server links from calls matching routes, and server → database, cache or outside service links from imports of their clients. */
+export function linkPieces(pieces: Piece[], texts: { path: string; text: string }[], read: FileImports[]): PieceLink[] {
+  const links: PieceLink[] = [];
+  const has = (kind: PieceKind) => pieces.some((p) => p.kind === kind);
+  const finish = (from: PieceKind, to: PieceKind, count: number, pairs: Set<string>) => {
+    if (!count) return;
+    const examples = [...pairs].sort(byText).slice(0, MAX_LINK_EXAMPLES).map((pair) => {
+      const [a, b] = pair.split("\n");
+      return { from: a, to: b };
+    });
+    links.push({ from, to, count, examples });
+  };
+  const uiModules = pieces.filter((p) => p.kind === "ui").flatMap((p) => p.modules);
+  const onUiSide = (path: string) => classify(path) === "ui" || uiModules.some((m) => path.startsWith(`${m}/`));
+
+  if (has("ui") && has("api")) {
+    const sorted = [...texts].sort((a, b) => byText(a.path, b.path));
+    const routes = sorted.flatMap(({ path, text }) => findRoutes(path, text).map((route) => ({ path, route })));
+    let count = 0;
+    const pairs = new Set<string>();
+    for (const { path, text } of sorted) {
+      if (!onUiSide(path)) continue;
+      for (const call of findCalls(path, text)) {
+        const hit = routes.find((r) => r.path !== path && routeMatches(call, r.route));
+        if (!hit) continue;
+        count++;
+        pairs.add(`${path}\n${hit.path}`);
+      }
+    }
+    finish("ui", "api", count, pairs);
+  }
+
+  if (has("api")) {
+    for (const kind of IMPORT_TARGETS) {
+      const cues = pieces.filter((p) => p.kind === kind).flatMap((p) => PACKAGE_CUES.filter((c) => c.kind === p.kind && c.tech === p.tech));
+      if (!cues.length) continue;
+      const files = new Set<string>();
+      const pairs = new Set<string>();
+      for (const { path, imports } of read) {
+        const eco = importEcosystem(path);
+        if (!eco || onUiSide(path)) continue;
+        for (const { spec } of imports) {
+          const key = importKey(eco, spec);
+          if (!cues.some((cue) => importsCue(cue, eco, key))) continue;
+          files.add(path);
+          pairs.add(`${path}\n${key}`);
+        }
+      }
+      finish("api", kind, files.size, pairs);
+    }
+  }
+  return links;
 }
