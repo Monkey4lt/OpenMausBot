@@ -5,7 +5,7 @@ import * as wire from "../../shared/projects-architecture";
 import * as wirePieces from "../../shared/projects-pieces";
 
 import {
-  EVIDENCE_WORDS, FAMILY_COLORS, FAMILY_ORDER, PIECE_COLORS, evidenceLine, pieceBadges, pieceLinkRows, summaryPreview, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, moduleLabel, withFamilyName, withModuleFamily, type Architecture,
+  EVIDENCE_WORDS, FAMILY_COLORS, FAMILY_ORDER, PIECE_COLORS, evidenceLine, pieceBadges, pieceLinkRows, summaryPreview, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, mergeTwoWay, moduleLabel, plainModuleLabel, withFamilyName, withModuleFamily, type Architecture,
 } from "./projects-architecture-view";
 
 const arch: Architecture = {
@@ -208,5 +208,24 @@ describe("pieces", () => {
     expect(summaryPreview("\n\n  Deuxième ligne")).toBe("Deuxième ligne");
     expect(summaryPreview(undefined)).toBe("");
     expect(summaryPreview("x".repeat(300))).toBe(`${"x".repeat(119)}…`);
+  });
+});
+
+describe("drawn edges", () => {
+  it("merges a link both ways into one double-headed arrow, keeping one-way links as they are", () => {
+    expect(mergeTwoWay([
+      { from: "server", to: "data", weight: 3 },
+      { from: "ui", to: "server", weight: 4 },
+      { from: "data", to: "server", weight: 1 },
+    ])).toEqual([
+      { from: "server", to: "data", weight: 4, twoWay: true },
+      { from: "ui", to: "server", weight: 4, twoWay: false },
+    ]);
+  });
+
+  it("names the project's top folder in plain words", () => {
+    expect(plainModuleLabel("(root)/config", "dossier principal")).toBe("dossier principal");
+    expect(plainModuleLabel("(root)/x#tests", "dossier principal")).toBe("dossier principal (tests)");
+    expect(plainModuleLabel("src/components", "dossier principal")).toBe("components");
   });
 });

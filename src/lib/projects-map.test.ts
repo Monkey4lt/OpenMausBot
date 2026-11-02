@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { arrangeByGroup, edgePoint, groupZone, type Rect } from "./projects-map";
+import { arrangeByGroup, boundsOf, edgePoint, fitZoom, groupZone, type Rect } from "./projects-map";
 
 const r: Rect = { x: 0, y: 0, w: 100, h: 50 };
 
@@ -30,7 +30,7 @@ describe("projects map geometry", () => {
     const first = Array.from({ length: 5 }, (_, i) => ({ id: `a${i}`, h: 100 }));
     const pos = arrangeByGroup([first, [], [{ id: "b0", h: 100 }]]);
     expect(pos.a0).toEqual({ x: 60, y: 90 });
-    expect(pos.a3).toEqual({ x: 1080, y: 90 });
+    expect(pos.a3).toEqual({ x: 1200, y: 90 });
     expect(pos.a4).toEqual({ x: 60, y: 226 });
     expect(pos.b0).toEqual({ x: 60, y: 476 });
     expect(Object.keys(pos)).toHaveLength(6);
@@ -39,5 +39,17 @@ describe("projects map geometry", () => {
   it("arrangeByGroup uses the tallest block of a row for the next row", () => {
     const pos = arrangeByGroup([[{ id: "a", h: 50 }, { id: "b", h: 300 }, { id: "c", h: 10 }, { id: "d", h: 10 }, { id: "e", h: 10 }]]);
     expect(pos.e).toEqual({ x: 60, y: 90 + 300 + 36 });
+  });
+
+  it("boundsOf wraps every rect, and is null for none", () => {
+    expect(boundsOf([{ x: 10, y: 20, w: 100, h: 50 }, { x: 300, y: 0, w: 40, h: 40 }])).toEqual({ x: 10, y: 0, w: 330, h: 70 });
+    expect(boundsOf([])).toBeNull();
+  });
+
+  it("fitZoom shrinks a map that does not fit and never enlarges a small one", () => {
+    expect(fitZoom({ x: 0, y: 0, w: 2096, h: 400 }, { w: 1096, h: 800 })).toBe(0.48);
+    expect(fitZoom({ x: 0, y: 0, w: 300, h: 200 }, { w: 1200, h: 800 })).toBe(1);
+    expect(fitZoom({ x: 0, y: 0, w: 90000, h: 200 }, { w: 1200, h: 800 })).toBe(0.3);
+    expect(fitZoom(null, { w: 1200, h: 800 })).toBe(1);
   });
 });

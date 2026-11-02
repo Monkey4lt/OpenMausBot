@@ -3,7 +3,7 @@
 // Shown in place of the chat, like Team map. Layout is saved on the server.
 import {
   ChevronDown, ChevronRight, CircleHelp, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
-  Minus, Network, Pencil, Plus, RefreshCw, Search, Server, Sparkles, Trash2, X,
+  Maximize, Minus, Network, Pencil, Plus, RefreshCw, Search, Server, Sparkles, Trash2, X,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
@@ -12,7 +12,7 @@ import { leadComposerDraft } from "@/lib/drafts";
 import { t } from "@/lib/i18n";
 import { listenLiveFrames } from "@/lib/live-events";
 import { summaryPreview, type ArchOverrides } from "@/lib/projects-architecture-view";
-import { arrangeByGroup, edgePoint, groupZone } from "@/lib/projects-map";
+import { DOT_GRID_STYLE, arrangeByGroup, boundsOf, edgePoint, fitZoom, groupZone } from "@/lib/projects-map";
 import { createMapSync } from "@/lib/projects-map-sync";
 import { panelDraft, panelLayout, readPanelOpen, writePanelOpen } from "@/lib/projects-panel";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -43,7 +43,7 @@ interface MapState {
 }
 interface ProjectsResponse { state: MapState; projects: Project[]; errors: { sourceId: string; message: string }[]; cartographeBotId?: string | null }
 
-const BLOCK_W = 300;
+const BLOCK_W = 320;
 const newId = (prefix: string) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 const contains = (nodes: ProjectNode[], q: string): boolean => nodes.some((n) => n.n.toLowerCase().includes(q) || (n.c ? contains(n.c, q) : false));
 
@@ -286,7 +286,7 @@ export function ProjectsPage() {
   const q = query.trim().toLowerCase();
 
   // Projects without a saved position get a spot in a grid.
-  const pos = useCallback((p: Project, i: number) => S?.pos[p.id] ?? { x: 50 + (i % 4) * 360, y: 50 + Math.floor(i / 4) * 400 }, [S?.pos]);
+  const pos = useCallback((p: Project, i: number) => S?.pos[p.id] ?? { x: 50 + (i % 4) * 380, y: 50 + Math.floor(i / 4) * 400 }, [S?.pos]);
 
   // Block sizes, for drawing group zones and links.
   useLayoutEffect(() => {
@@ -320,6 +320,15 @@ export function ProjectsPage() {
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [ready, update]);
+
+  const fitRef = useRef<((save: boolean) => void) | null>(null);
+  const fitted = useRef(false);
+  const measured = projects.length > 0 && projects.every((p) => sizes[p.id]);
+  useEffect(() => {
+    if (!measured || fitted.current || !fitRef.current) return;
+    fitted.current = true;
+    fitRef.current(false);
+  }, [measured]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setLinkFrom(null); setPoleMenu(null); } };
@@ -380,6 +389,16 @@ export function ProjectsPage() {
     update((s) => ({ ...s, pos: next }));
   };
   const setZoom = (z: number) => update((s) => ({ ...s, zoom: Math.min(1.6, Math.max(0.3, +z.toFixed(2))) }));
+  const fit = (save: boolean) => {
+    const el = wrapRef.current;
+    const zones = S.groups.map((g) => groupZone(projects.filter((p) => S.member[p.id] === g.id).map((p) => rects.get(p.id)!))).flatMap((z) => (z ? [z] : []));
+    const content = boundsOf([...rects.values(), ...zones]);
+    if (!el || !content) return;
+    const z = fitZoom(content, { w: el.clientWidth, h: el.clientHeight });
+    if (save) update((s) => ({ ...s, zoom: z })); else setS((s) => (s ? { ...s, zoom: z } : s));
+    requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, content.x * z - 48), top: Math.max(0, content.y * z - 48) }));
+  };
+  fitRef.current = fit;
   const focus = (id: string) => {
     const r = rects.get(id); if (!r) return;
     wrapRef.current?.scrollTo({ left: r.x * zoom - 120, top: r.y * zoom - 100, behavior: "smooth" });
@@ -414,25 +433,34 @@ export function ProjectsPage() {
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-app" aria-label={t("projects.title")}>
       {/* barre du haut */}
-      <header className="flex items-center gap-2 border-b border-hairline/40 px-4 py-2.5">
-        <FolderTree size={16} className="shrink-0 text-ink-secondary" />
-        <h1 className="mr-2 text-[14px] font-semibold text-ink">{t("projects.title")}</h1>
-        <label className="flex h-8 max-w-[360px] flex-1 items-center gap-2 rounded-full bg-control px-3 text-ink-tertiary focus-within:ring-1 focus-within:ring-accent-border">
+      <header className="flex items-center gap-3 border-b border-hairline/40 px-4 py-2.5">
+        <div className="flex shrink-0 items-center gap-2">
+          <FolderTree size={16} className="text-ink-secondary" />
+          <h1 className="text-[14px] font-semibold text-ink">{t("projects.title")}</h1>
+        </div>
+        <label className="flex h-8 max-w-[320px] flex-1 items-center gap-2 rounded-full bg-control px-3 text-ink-tertiary focus-within:ring-1 focus-within:ring-accent-border">
           <Search size={14} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("projects.search")} className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-tertiary" />
         </label>
-        <div className="ml-auto flex items-center gap-1">
-          <ToolButton onClick={() => setSourcesOpen(true)} label={t("projects.sources.button")}><Server size={15} /><span className="hidden md:inline">{t("projects.sources.button")}</span></ToolButton>
-          <ToolButton onClick={arrange} label={t("projects.arrange")}><LayoutGrid size={15} /><span className="hidden md:inline">{t("projects.arrange")}</span></ToolButton>
-          <ToolButton onClick={() => setZoom(zoom - 0.1)} label={t("projects.zoomOut")}><Minus size={15} /></ToolButton>
-          <span className="w-10 text-center font-mono text-[12px] text-ink-tertiary">{Math.round(zoom * 100)}%</span>
-          <ToolButton onClick={() => setZoom(zoom + 0.1)} label={t("projects.zoomIn")}><Plus size={15} /></ToolButton>
-          <ToolButton onClick={() => void load()} label={t("projects.refresh")}><RefreshCw size={15} className={cn(loading && "animate-spin")} /></ToolButton>
-          <ToolButton onClick={() => update((s) => ({ ...s, help: !s.help }))} label={t("projects.help.button")}><CircleHelp size={15} /></ToolButton>
-          <CartographeButton bot={cartographe} onAsk={() => togglePanel(!panelOpen, mapOf?.name)} />
-          <span className={cn("ml-1 flex min-w-[90px] items-center justify-end gap-1.5 text-[12px]", saveState === "error" ? "text-danger" : "text-ink-tertiary")}>
+        <div className="ml-auto flex items-center gap-2">
+          <span className={cn("flex items-center gap-1.5 whitespace-nowrap text-[12px]", saveState === "error" ? "text-danger" : "text-ink-tertiary")}>
             {saveLabel && <span className={cn("size-[7px] rounded-full", saveState === "error" ? "bg-danger" : saveState === "saving" ? "bg-warning" : "bg-success")} />}{saveLabel}
           </span>
+          <ToolGroup>
+            <ToolButton onClick={() => setSourcesOpen(true)} label={t("projects.sources.button")}><Server size={15} /><span className="hidden lg:inline">{t("projects.sources.button")}</span></ToolButton>
+            <ToolButton onClick={arrange} label={t("projects.arrange")}><LayoutGrid size={15} /><span className="hidden lg:inline">{t("projects.arrange")}</span></ToolButton>
+          </ToolGroup>
+          <ToolGroup>
+            <ToolButton onClick={() => setZoom(zoom - 0.1)} label={t("projects.zoomOut")}><Minus size={15} /></ToolButton>
+            <span className="w-11 text-center text-[12.5px] tabular-nums text-ink-secondary">{Math.round(zoom * 100)}%</span>
+            <ToolButton onClick={() => setZoom(zoom + 0.1)} label={t("projects.zoomIn")}><Plus size={15} /></ToolButton>
+            {!mapOf && <ToolButton onClick={() => fit(true)} label={t("projects.fit")}><Maximize size={15} /></ToolButton>}
+          </ToolGroup>
+          <ToolGroup>
+            <ToolButton onClick={() => void load()} label={t("projects.refresh")}><RefreshCw size={15} className={cn(loading && "animate-spin")} /></ToolButton>
+            <ToolButton onClick={() => update((s) => ({ ...s, help: !s.help }))} label={t("projects.help.button")}><CircleHelp size={15} /></ToolButton>
+          </ToolGroup>
+          <CartographeButton bot={cartographe} onAsk={() => togglePanel(!panelOpen, mapOf?.name)} />
         </div>
       </header>
       {mapChanged && <MapChangedNotice onClose={() => setMapChanged(false)} />}
@@ -440,7 +468,7 @@ export function ProjectsPage() {
       <div className="relative flex min-h-0 flex-1">
         {/* pôles */}
         <aside className="flex w-56 shrink-0 flex-col border-r border-hairline/40 bg-panel">
-          <div className="flex items-center justify-between px-4 pb-2 pt-4 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-tertiary">
+          <div className="flex items-center justify-between pb-2 pl-4 pr-2 pt-3 text-[13px] font-medium text-ink-tertiary">
             {t("projects.poles")}
             <button className="ui-icon-button" aria-label={t("projects.pole.newTitle")} title={t("projects.pole.newTitle")} onClick={() => void newPole()}><Plus size={15} /></button>
           </div>
@@ -450,7 +478,7 @@ export function ProjectsPage() {
                 <div className="group/pole flex h-8 items-center gap-2 rounded-lg px-2 hover:bg-raised">
                   <span className="size-2 shrink-0 rounded-full" style={{ background: group?.color ?? "var(--color-hairline)" }} />
                   <span className={cn("min-w-0 flex-1 truncate text-[13px] font-medium", group ? "text-ink" : "text-ink-secondary")}>{group?.name ?? t("projects.noPole")}</span>
-                  <span className="font-mono text-[11.5px] text-ink-tertiary group-hover/pole:hidden">{list.length}</span>
+                  <span className="text-[12px] tabular-nums text-ink-tertiary group-hover/pole:hidden">{list.length}</span>
                   {group && <span className="hidden gap-0.5 group-hover/pole:flex">
                     <button className="rounded p-0.5 text-ink-tertiary hover:text-ink" aria-label={t("projects.pole.rename")} onClick={() => void renamePole(group)}><Pencil size={13} /></button>
                     <button className="rounded p-0.5 text-ink-tertiary hover:text-danger" aria-label={t("projects.delete")} onClick={() => void deletePole(group)}><Trash2 size={13} /></button>
@@ -470,8 +498,7 @@ export function ProjectsPage() {
         {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow}
           onAskCartographe={cartographe ? () => togglePanel(true, mapOf.name) : undefined} />}
         {/* toile */}
-        <div ref={wrapRef} className={cn("relative min-w-0 flex-1 overflow-auto", mapOf && "hidden")}
-          style={{ backgroundImage: "linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)", backgroundSize: "28px 28px" }}>
+        <div ref={wrapRef} className={cn("relative min-w-0 flex-1 overflow-auto", mapOf && "hidden")} style={DOT_GRID_STYLE}>
           {(data?.errors.length ?? 0) > 0 && (
             <div className="sticky left-0 top-0 z-10 flex flex-col gap-1.5 p-3">
               {data!.errors.map((e) => (
@@ -494,7 +521,7 @@ export function ProjectsPage() {
           <div className="relative" style={{ width: boardW, height: boardH, zoom }}>
             <svg className="pointer-events-none absolute inset-0 overflow-visible" width={boardW} height={boardH}>
               <defs>
-                <marker id="pm-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#8a8a8a" /></marker>
+                <marker id="pm-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" style={{ fill: "var(--color-ink-tertiary)" }} /></marker>
               </defs>
               {S.groups.map((g) => {
                 const zone = groupZone(projects.filter((p) => S.member[p.id] === g.id).map((p) => rects.get(p.id)!));
@@ -515,7 +542,7 @@ export function ProjectsPage() {
                 const [x1, y1] = edgePoint(A, B), [x2, y2] = edgePoint(B, A), mx = (x1 + x2) / 2, my = (y1 + y2) / 2, w = l.label.length * 6.6 + 20;
                 return (
                   <g key={`${l.a}-${l.b}-${i}`}>
-                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#5a5a5a" strokeWidth={1.6} strokeDasharray="6 4" markerEnd="url(#pm-arrow)" className="animate-link-flow" />
+                    <line x1={x1} y1={y1} x2={x2} y2={y2} style={{ stroke: "var(--color-ink-tertiary)" }} strokeOpacity={0.6} strokeWidth={1.4} strokeDasharray="6 4" markerEnd="url(#pm-arrow)" className="animate-link-flow" />
                     <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={16} className="cursor-pointer" style={{ pointerEvents: "stroke" }} onClick={() => void deleteLink(l)}>
                       <title>{t("projects.link.hover")}</title>
                     </line>
@@ -533,36 +560,39 @@ export function ProjectsPage() {
               const g = groupOf(p.id);
               const collapsed = Boolean(S.collapsed[p.id]);
               const hit = !q || p.name.toLowerCase().includes(q) || contains(p.tree, q);
+              const summary = S.overrides && Object.hasOwn(S.overrides, p.id) ? S.overrides[p.id]!.summary : undefined;
               return (
                 <div key={p.id} ref={measure} data-id={p.id}
-                  className={cn("absolute rounded-[14px] border bg-card shadow-xl shadow-black/30 transition-[opacity,box-shadow]",
+                  className={cn("absolute rounded-[14px] border bg-card transition-[opacity,box-shadow]",
                     linkFrom === p.id ? "border-accent-border ring-[3px] ring-accent/25" : "border-hairline", !hit && "opacity-25")}
                   style={{ left: r.x, top: r.y, width: BLOCK_W }}>
-                  <div className="flex cursor-grab touch-none select-none items-center gap-2.5 px-3.5 pb-2.5 pt-3 active:cursor-grabbing"
+                  <div className="relative flex cursor-grab touch-none select-none items-start gap-3 px-3.5 pb-2 pt-3 active:cursor-grabbing"
                     onPointerDown={(e) => startDrag(e, p, i)}>
-                    <div className="grid size-[30px] shrink-0 place-items-center rounded-[9px] bg-control text-[13px] font-semibold text-ink-secondary"
-                      style={g ? { background: `${g.color}26`, color: g.color } : undefined}>
-                      {p.name.replace(/[^a-z0-9]/gi, "").slice(0, 2).toUpperCase() || "·"}
-                    </div>
+                    <span className="grid size-[30px] shrink-0 place-items-center rounded-[9px] bg-control text-ink-secondary"
+                      style={g ? { background: `${g.color}22`, color: g.color } : undefined}>
+                      <SourceIcon kind={S.sources.find((o) => o.id === p.sourceId)?.kind ?? "local"} size={15} tinted={false} />
+                    </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[14.5px] font-semibold text-ink" title={p.name}><Highlight text={p.name} q={q} /></div>
-                      <div className="truncate font-mono text-[11px] text-ink-tertiary">
-                        {multiSource && `${sourceLabel(p.sourceId)} · `}{t("projects.counts", { dirs: p.dirs, files: p.files })}{p.truncated && "+"}
-                      </div>
-                      <ProjectBlockSummary summary={S.overrides && Object.hasOwn(S.overrides, p.id) ? S.overrides[p.id]!.summary : undefined} />
+                      <div className="truncate text-[14.5px] font-semibold leading-[20px] text-ink" title={p.name}><Highlight text={p.name} q={q} /></div>
+                      <ProjectBlockMeta dirs={p.dirs} files={p.files} truncated={p.truncated} source={multiSource ? sourceLabel(p.sourceId) : undefined} />
                     </div>
-                    <ProjectBlockHeaderActions name={p.name} linking={linkFrom === p.id} collapsed={collapsed}
-                      onMap={() => setMapOf(p)} onLink={() => void onLink(p.id)}
-                      onFold={() => update((s) => { const c = { ...s.collapsed }; if (c[p.id]) delete c[p.id]; else c[p.id] = 1; return { ...s, collapsed: c }; })} />
+                    <div className="-mr-1.5 -mt-0.5 flex shrink-0 items-center">
+                      {g && <ProjectBlockPole group={g} onClick={() => setPoleMenu(poleMenu === p.id ? null : p.id)} />}
+                      <ProjectBlockHeaderActions name={p.name} linking={linkFrom === p.id} collapsed={collapsed}
+                        onMap={() => setMapOf(p)} onLink={() => void onLink(p.id)}
+                        onFold={() => update((s) => { const c = { ...s.collapsed }; if (c[p.id]) delete c[p.id]; else c[p.id] = 1; return { ...s, collapsed: c }; })} />
+                    </div>
                   </div>
-                  <div className="relative px-3.5 pb-2.5">
-                    <button onClick={() => setPoleMenu(poleMenu === p.id ? null : p.id)}
-                      className={cn("inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[12px]", g ? "border-hairline text-ink" : "border-dashed border-hairline text-ink-tertiary hover:text-ink")}>
-                      {g ? <span className="size-[7px] rounded-full" style={{ background: g.color }} /> : <Plus size={12} />}
-                      {g ? g.name : t("projects.pole.choose")}
-                    </button>
+                  <div className={cn("relative pl-[56px] pr-3.5", (!g || summary) && "pb-3")}>
+                    <ProjectBlockSummary summary={summary} />
+                    {!g && (
+                      <button onClick={() => setPoleMenu(poleMenu === p.id ? null : p.id)}
+                        className="mt-2 inline-flex h-6 items-center gap-1.5 rounded-full border border-dashed border-hairline px-2.5 text-[12px] text-ink-tertiary hover:text-ink">
+                        <Plus size={12} />{t("projects.pole.choose")}
+                      </button>
+                    )}
                     {poleMenu === p.id && (
-                      <Menu onClose={() => setPoleMenu(null)}>
+                      <Menu onClose={() => setPoleMenu(null)} className={g ? "right-3 top-0" : undefined}>
                         {S.groups.map((o) => <MenuRow key={o.id} onClick={() => { setPole(p.id, o.id); setPoleMenu(null); }}><span className="size-2 rounded-full" style={{ background: o.color }} />{o.name}</MenuRow>)}
                         {S.groups.length > 0 && <hr className="mx-1 my-1 border-hairline/40" />}
                         <MenuRow onClick={async () => { setPoleMenu(null); const ng = await newPole(); if (ng) setPole(p.id, ng.id); }}><Plus size={14} />{t("projects.pole.new")}</MenuRow>
@@ -571,7 +601,7 @@ export function ProjectsPage() {
                     )}
                   </div>
                   {!collapsed && (
-                    <div className="max-h-[330px] overflow-auto rounded-b-[13px] border-t border-hairline/40 bg-inset px-2 py-1.5 font-mono text-[12.5px]">
+                    <div className="max-h-[330px] overflow-auto rounded-b-[13px] border-t border-hairline/50 bg-inset px-2 py-1.5 font-mono text-[12.5px]">
                       {p.tree.length ? <TreeList nodes={p.tree} q={q} /> : <div className={cn(rowCls, "italic text-ink-tertiary")}>{t("projects.emptyFolder")}</div>}
                     </div>
                   )}
@@ -600,7 +630,7 @@ export function ProjectsPage() {
           <ol className="flex flex-col gap-2.5">
             {(["projects.help.step1", "projects.help.step2", "projects.help.step3", "projects.help.step4"] as const).map((key, i) => (
               <li key={key} className="flex gap-2.5 text-[13px] leading-snug text-ink-secondary">
-                <span className="grid size-[22px] shrink-0 place-items-center rounded-[7px] bg-control font-mono text-[12px] text-ink">{i + 1}</span>{t(key)}
+                <span className="grid size-[22px] shrink-0 place-items-center rounded-[7px] bg-control text-[12px] tabular-nums text-ink">{i + 1}</span>{t(key)}
               </li>
             ))}
           </ol>
@@ -666,7 +696,12 @@ export function CartographePanel({ botId, bot, width, chat, onClose, onOpenInCha
 
 export function CartographeButton<B extends CartographeBot>({ bot, onAsk }: { bot: B | null; onAsk: (bot: B) => void }) {
   if (!bot) return null;
-  return <ToolButton onClick={() => onAsk(bot)} label={t("projects.cartographe.ask")}><Sparkles size={15} /><span className="hidden md:inline">{t("projects.cartographe.ask")}</span></ToolButton>;
+  return (
+    <button type="button" onClick={() => onAsk(bot)} title={t("projects.cartographe.ask")} aria-label={t("projects.cartographe.ask")}
+      className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-ink px-3.5 text-[13px] font-medium text-app hover:bg-ink/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+      <Sparkles size={15} /><span className="hidden md:inline">{t("projects.cartographe.ask")}</span>
+    </button>
+  );
 }
 
 export function MapChangedNotice({ onClose }: { onClose: () => void }) {
@@ -683,7 +718,24 @@ export function MapChangedNotice({ onClose }: { onClose: () => void }) {
 export function ProjectBlockSummary({ summary }: { summary: string | undefined }) {
   const line = summaryPreview(summary);
   if (!line) return null;
-  return <div className="mt-0.5 truncate text-[12px] text-ink-secondary" title={summary}>{line}</div>;
+  return <p className="line-clamp-2 text-[12.5px] leading-[18px] text-ink-secondary" title={summary}>{line}</p>;
+}
+
+/** One count that always fits; the folders and the source are in its tooltip. */
+export function ProjectBlockMeta({ dirs, files, truncated, source }: { dirs: number; files: number; truncated: boolean; source?: string }) {
+  const shown = truncated ? `${files}+` : files;
+  const title = source ? t("projects.countsIn", { dirs, files: shown, source }) : t("projects.counts", { dirs, files: shown });
+  return <div className="whitespace-nowrap text-[12px] leading-[18px] tabular-nums text-ink-tertiary" title={title}>{t(shown === 1 ? "projects.files.one" : "projects.files", { files: shown })}</div>;
+}
+
+/** The block's pole, shown as its color only: the pole's name is already on the zone around the block. */
+export function ProjectBlockPole({ group, onClick }: { group: { name: string; color: string }; onClick: () => void }) {
+  const label = t("projects.pole.change", { name: group.name });
+  return (
+    <button type="button" onClick={onClick} title={label} aria-label={label} className="grid size-7 place-items-center rounded-lg hover:bg-raised-hover">
+      <span className="size-2.5 rounded-full" style={{ background: group.color }} />
+    </button>
+  );
 }
 
 export function ProjectBlockHeaderActions({ name, linking, collapsed, onMap, onLink, onFold }: {
@@ -738,28 +790,32 @@ function GithubAccount({ onUseAccount }: { onUseAccount: (login: string) => void
   );
 }
 
-function SourceIcon({ kind, size }: { kind: Source["kind"]; size: number }) {
+function SourceIcon({ kind, size, tinted = true }: { kind: Source["kind"]; size: number; tinted?: boolean }) {
   const Icon = kind === "ssh" ? Server : kind === "github" ? Github : HardDrive;
-  return <Icon size={size} className="shrink-0 text-ink-secondary" />;
+  return <Icon size={size} className={cn("shrink-0", tinted && "text-ink-secondary")} />;
+}
+
+function ToolGroup({ children }: { children: ReactNode }) {
+  return <div className="flex items-center gap-0.5 rounded-full border border-hairline/60 p-0.5">{children}</div>;
 }
 
 function ToolButton({ onClick, label, children }: { onClick: () => void; label: string; children: ReactNode }) {
   return (
     <button type="button" onClick={onClick} title={label} aria-label={label}
-      className="flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[13px] text-ink-secondary hover:bg-raised-hover hover:text-ink">
+      className="flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[13px] text-ink-secondary hover:bg-raised-hover hover:text-ink">
       {children}
     </button>
   );
 }
 
-function Menu({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+function Menu({ onClose, className = "left-3 top-8", children }: { onClose: () => void; className?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onDown = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
     const id = setTimeout(() => window.addEventListener("pointerdown", onDown));
     return () => { clearTimeout(id); window.removeEventListener("pointerdown", onDown); };
   }, [onClose]);
-  return <div ref={ref} className="animate-pop-in absolute left-3 top-8 z-20 min-w-[200px] rounded-[14px] border border-hairline bg-card p-1.5 shadow-xl shadow-black/40">{children}</div>;
+  return <div ref={ref} className={cn("animate-pop-in absolute z-20 min-w-[200px] rounded-[14px] border border-hairline bg-card p-1.5 shadow-xl shadow-black/40", className)}>{children}</div>;
 }
 
 function MenuRow({ onClick, muted, children }: { onClick: () => void; muted?: boolean; children: ReactNode }) {

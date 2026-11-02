@@ -1,19 +1,51 @@
-import { ArrowLeft, ChevronRight, File, Loader2, Pencil, Sparkles, TriangleAlert } from "lucide-react";
+import {
+  ArrowLeft, BookOpen, ChevronRight, Database, File, FlaskConical, Folder, FolderInput, Globe, Image as ImageIcon, Loader2, MessageSquare, Monitor,
+  Pencil, Plug, Rocket, Server, SlidersHorizontal, Sparkles, Terminal, Timer, TriangleAlert, Zap, type LucideIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { cn } from "@/lib/cn";
 import { activeLocale, t } from "@/lib/i18n";
 import {
-  FAMILY_COLORS, FAMILY_ORDER, MAX_READ_FILES, edgeCurve, edgeWidth, evidenceLine, layoutLevel, levelOf, moduleLabel, pieceBadges, pieceLinkRows, withFamilyName, withModuleFamily,
-  type Architecture, type ArchitectureWithPieces, type ArchOverrides, type Family, type LevelNode, type Piece, type PieceLink,
+  FAMILY_COLORS, FAMILY_ORDER, MAX_READ_FILES, edgeCurve, edgeWidth, evidenceLine, layoutLevel, levelOf, mergeTwoWay, pieceBadges, pieceLinkRows, plainModuleLabel,
+  withFamilyName, withModuleFamily,
+  type Architecture, type ArchitectureWithPieces, type ArchOverrides, type Family, type LevelNode, type Piece, type PieceKind, type PieceLink,
 } from "@/lib/projects-architecture-view";
+import { DOT_GRID_STYLE } from "@/lib/projects-map";
 import { api } from "@/state/api";
 import type { LocaleKey } from "@/locales";
 
 type Focus = { family?: Family; module?: string };
 type SavedState = { overrides?: Record<string, ArchOverrides> };
 
-const NODE = { perRow: 4, w: 220, h: 88, gapX: 90, gapY: 80, x0: 40, y0: 40 };
+const NODE = { perRow: 4, w: 240, h: 96, gapX: 64, gapY: 64, x0: 40, y0: 48 };
+
+const FAMILY_ICONS: Readonly<Record<Family, LucideIcon>> = {
+  ui: Monitor, server: Server, data: Database, tests: FlaskConical, docs: BookOpen,
+  config: SlidersHorizontal, scripts: Terminal, assets: ImageIcon, i18n: Globe, other: Folder,
+};
+
+const PIECE_ICONS: Readonly<Record<PieceKind, LucideIcon>> = {
+  ui: Monitor, api: Server, database: Database, cache: Zap, jobs: Timer, external: Plug, chatbot: MessageSquare, tests: FlaskConical, deploy: Rocket,
+};
+
+const BRIEF_OPEN_KEY = "projects.map.briefOpen";
+
+function readBriefOpen(): boolean {
+  try {
+    return window.localStorage.getItem(BRIEF_OPEN_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function writeBriefOpen(open: boolean) {
+  try {
+    window.localStorage.setItem(BRIEF_OPEN_KEY, open ? "1" : "0");
+  } catch {
+    // The choice is only remembered where the browser allows it.
+  }
+}
 
 export function familyLabel(arch: Architecture, family: Family): string {
   const name = arch.families.find((f) => f.id === family)?.name;
@@ -70,7 +102,7 @@ export function ArchitectureView<S extends SavedState>({ project, onBack, state,
 
   const crumbs: { label: string; onClick?: () => void }[] = [{ label: project.name, onClick: focus.family ? () => { setFocus({}); setFile(null); } : undefined }];
   if (arch && focus.family) crumbs.push({ label: familyLabel(arch, focus.family), onClick: focus.module ? () => { setFocus({ family: focus.family }); setFile(null); } : undefined });
-  if (focus.module) crumbs.push({ label: moduleLabel(focus.module) });
+  if (focus.module) crumbs.push({ label: plainModule(focus.module) });
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -132,61 +164,71 @@ export function ArchitectureView<S extends SavedState>({ project, onBack, state,
 function ProjectSummary({ summary, pieces, links, piece, onPiece, onAsk }: {
   summary: string | undefined; pieces: Piece[]; links: PieceLink[]; piece: number | null; onPiece: (index: number | null) => void; onAsk?: () => void;
 }) {
+  const [open, setOpen] = useState(readBriefOpen);
   const badges = pieceBadges(pieces, locale());
   const chosen = piece === null ? undefined : pieces[piece];
   if (!summary && !onAsk && !badges.length) return null;
   return (
-    <section className="border-b border-hairline/40 px-4 py-3">
-      {summary ? (
-        <div className="mb-3 max-w-[760px]">
-          <h3 className="mb-1 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-tertiary">{t("projects.map.brief")}</h3>
-          <p className="whitespace-pre-line text-[13.5px] leading-relaxed text-ink">{summary}</p>
-        </div>
-      ) : onAsk && (
-        <button type="button" onClick={onAsk} className="mb-3 inline-flex h-8 items-center gap-1.5 rounded-full border border-hairline px-3 text-[12.5px] text-ink-secondary hover:bg-raised-hover hover:text-ink">
-          <Sparkles size={14} />{t("projects.map.briefAsk")}
-        </button>
-      )}
-      {badges.length > 0 && (
-        <div>
-          <h3 className="mb-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-tertiary">{t("projects.map.pieces")}</h3>
-          <div className="flex flex-wrap gap-1.5" title={t("projects.map.piecesHint")}>
-            {badges.map((b, i) => (
-              <button key={`${b.kind}:${b.tech}`} type="button" data-piece={b.kind} onClick={() => onPiece(piece === i ? null : i)} aria-pressed={piece === i}
-                className={cn("inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12.5px]", piece === i ? "border-accent-border bg-raised text-ink" : "border-hairline bg-card text-ink hover:bg-raised-hover")}>
-                <span className="size-2 rounded-full" style={{ background: b.color }} />
-                <span>{b.label}</span>
-                {b.tech && <span className="font-mono text-[11px] text-ink-tertiary">{b.tech}</span>}
-              </button>
-            ))}
-          </div>
-          <PieceLinksLegend links={links} />
-          {chosen && (
-            <div className="mt-2 max-w-[760px] rounded-xl border border-hairline bg-card px-3 py-2 text-[12.5px] text-ink-secondary">
-              <p className="mb-1 font-medium text-ink">{t("projects.map.pieceEvidence", { name: badges[piece!]!.label })}</p>
-              <ul className="flex flex-col gap-0.5">{chosen.evidence.map((e) => <li key={e.path} className="break-all">{evidenceLine(e, locale())}</li>)}</ul>
-              {chosen.modules.length > 0 && <p className="mt-1 text-ink-tertiary">{t("projects.map.pieceModules", { modules: [...new Set(chosen.modules.map(plainModule))].join(", ") })}</p>}
+    <details open={open} onToggle={(e) => { const next = e.currentTarget.open; setOpen(next); writeBriefOpen(next); }} data-brief
+      className="group/brief border-b border-hairline/40">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium text-ink-secondary hover:text-ink [&::-webkit-details-marker]:hidden">
+        <ChevronRight size={14} className="shrink-0 text-ink-tertiary transition-transform group-open/brief:rotate-90" />
+        {t("projects.map.brief")}
+      </summary>
+      <div className="flex flex-col gap-3 px-4 pb-3.5 pl-[38px]">
+        {summary ? (
+          <p className="max-w-[72ch] whitespace-pre-line text-[13.5px] leading-relaxed text-ink">{summary}</p>
+        ) : onAsk && (
+          <button type="button" onClick={onAsk} className="inline-flex h-8 w-fit items-center gap-1.5 rounded-full border border-hairline px-3 text-[12.5px] text-ink-secondary hover:bg-raised-hover hover:text-ink">
+            <Sparkles size={14} />{t("projects.map.briefAsk")}
+          </button>
+        )}
+        {badges.length > 0 && (
+          <div>
+            <h3 className="mb-1.5 text-[12.5px] text-ink-tertiary">{t("projects.map.pieces")}</h3>
+            <div className="flex flex-wrap gap-1.5" title={t("projects.map.piecesHint")}>
+              {badges.map((b, i) => {
+                const Icon = PIECE_ICONS[b.kind];
+                return (
+                  <button key={`${b.kind}:${b.tech}`} type="button" data-piece={b.kind} onClick={() => onPiece(piece === i ? null : i)} aria-pressed={piece === i}
+                    className={cn("inline-flex h-7 items-center gap-1.5 rounded-[10px] border pl-2 pr-2.5 text-[12.5px]", piece === i ? "border-accent-border bg-raised text-ink" : "border-hairline bg-card text-ink hover:bg-raised-hover")}>
+                    <Icon size={14} className="shrink-0" style={{ color: b.color }} />
+                    <span>{b.label}</span>
+                    {b.tech && <span className="text-ink-tertiary">{b.tech}</span>}
+                  </button>
+                );
+              })}
             </div>
-          )}
-        </div>
-      )}
-    </section>
+            <PieceLinksLegend links={links} />
+            {chosen && (
+              <div className="mt-2.5 max-w-[760px] rounded-[14px] border border-hairline bg-card px-3.5 py-2.5 text-[12.5px] text-ink-secondary">
+                <p className="mb-1 font-medium text-ink">{t("projects.map.pieceEvidence", { name: badges[piece!]!.label })}</p>
+                <ul className="flex flex-col gap-0.5">{chosen.evidence.map((e) => <li key={e.path} className="break-all">{evidenceLine(e, locale())}</li>)}</ul>
+                {chosen.modules.length > 0 && <p className="mt-1 text-ink-tertiary">{t("projects.map.pieceModules", { modules: [...new Set(chosen.modules.map(plainModule))].join(", ") })}</p>}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 
 function PieceLinksLegend({ links }: { links: PieceLink[] }) {
   if (!links.length) return null;
   return (
-    <div className="mt-2.5">
-      <h3 className="mb-1 flex items-center gap-2 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-tertiary">
-        <svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" stroke={PIECE_LINK_COLOR} strokeWidth="2" strokeDasharray="2 4" strokeLinecap="round" /></svg>
+    <div className="mt-3">
+      <h3 className="mb-1 flex items-center gap-2 text-[12.5px] text-ink-tertiary">
+        <svg width="24" height="8" aria-hidden="true"><line x1="1" y1="4" x2="23" y2="4" style={{ stroke: PIECE_LINK_COLOR }} strokeWidth="2" strokeDasharray="2 4" strokeLinecap="round" /></svg>
         {t("projects.map.pieceLinks")}
       </h3>
       <ul className="flex flex-wrap gap-x-5 gap-y-1">
         {pieceLinkRows(links, locale()).map((row) => (
           <li key={`${row.from}->${row.to}`} data-piece-link={`${row.from}->${row.to}`} className="flex items-center gap-2 text-[12.5px] text-ink">
             <span>{row.text}</span>
-            <span className="font-mono text-[11px] text-ink-tertiary">{t(row.from === "ui" && row.to === "api" ? "projects.map.pieceLinkCalls" : "projects.map.pieceLinkFiles", { count: row.count })}</span>
+            <span className="tabular-nums text-ink-tertiary">{t(row.from === "ui" && row.to === "api"
+              ? row.count === 1 ? "projects.map.pieceLinkCalls.one" : "projects.map.pieceLinkCalls"
+              : row.count === 1 ? "projects.map.pieceLinkFiles.one" : "projects.map.pieceLinkFiles", { count: row.count })}</span>
           </li>
         ))}
       </ul>
@@ -194,9 +236,10 @@ function PieceLinksLegend({ links }: { links: PieceLink[] }) {
   );
 }
 
-const PIECE_LINK_COLOR = "#e0a33a";
+const PIECE_LINK_COLOR = "var(--color-accent)";
+const EDGE_COLOR = "var(--color-ink-tertiary)";
 
-const plainModule = (id: string) => (id.startsWith("(root)/") ? t("projects.map.rootFolder") : moduleLabel(id));
+const plainModule = (id: string) => plainModuleLabel(id, t("projects.map.rootFolder"));
 
 /** Families that only describe a project, never where a piece's code runs. */
 const NOT_CODE: ReadonlySet<Family> = new Set(["config", "docs", "assets", "i18n", "scripts"]);
@@ -225,91 +268,113 @@ function MapCanvas({ arch, focus, menu, setMenu, onMove, onOpen, texts }: {
   onMove: (moduleId: string, family: Family) => void; onOpen: (id: string) => void; texts?: ArchOverrides;
 }) {
   const level = levelOf(arch, focus.module ? { family: focus.family } : focus);
-  const rects = layoutLevel(level, NODE);
-  const twoWay = new Set(level.edges.map((e) => `${e.from}->${e.to}`));
-  const all = Object.values(rects);
-  const width = Math.max(...all.map((r) => r.x + r.w), 0) + 80;
-  const height = Math.max(...all.map((r) => r.y + r.h), 0) + 80;
-  const colorOf = (node: LevelNode) => FAMILY_COLORS[focus.family ?? (node.id as Family)] ?? FAMILY_COLORS.other;
   const atTop = !focus.family;
   const describe = (id: string): string | undefined => {
     if (atTop) return texts?.familyText?.[id as Family];
     return texts?.moduleText && Object.hasOwn(texts.moduleText, id) ? texts.moduleText[id] : undefined;
   };
+  const edges = mergeTwoWay(level.edges);
+  const pieceArrows = atTop ? (arch.pieceLinks ?? []).flatMap((link) => {
+    const ends = pieceLinkEnds(arch, link);
+    return ends ? [{ link, from: ends[0], to: ends[1] }] : [];
+  }) : [];
+  const placed = { ...level, edges: [...level.edges, ...pieceArrows.map((p) => ({ from: p.from, to: p.to, weight: 1 }))] };
+  const rects = layoutLevel(placed, level.nodes.some((n) => describe(n.id)) ? NODE : { ...NODE, h: 52 });
+  const all = Object.values(rects);
+  const pieceOn = (from: string, to: string) => pieceArrows.find((p) => (p.from === from && p.to === to) || (p.from === to && p.to === from));
+  const showExternal = atTop && arch.external.length > 0;
+  const width = Math.max(...all.map((r) => r.x + r.w), 0) + 80;
+  const height = Math.max(...all.map((r) => r.y + r.h), 0) + 80;
+  const colorOf = (node: LevelNode) => FAMILY_COLORS[focus.family ?? (node.id as Family)] ?? FAMILY_COLORS.other;
+  const iconOf = (node: LevelNode): LucideIcon => (atTop ? FAMILY_ICONS[node.id as Family] ?? Folder : focus.module ? File : Folder);
+  const moving = Boolean(focus.family && !focus.module);
   return (
-    <div className="relative min-w-0 flex-1 overflow-auto"
-      style={{ backgroundImage: "linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)", backgroundSize: "28px 28px" }}>
-      {!level.nodes.length && <p className="p-8 text-[13px] text-ink-tertiary">{t("projects.map.empty")}</p>}
-      <div className="relative" style={{ width, height }}>
-        <svg className="pointer-events-none absolute inset-0 overflow-visible" width={width} height={height}>
-          <defs>
-            <marker id="pa-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#8a8a8a" /></marker>
-            <marker id="pa-piece-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill={PIECE_LINK_COLOR} /></marker>
-          </defs>
-          {atTop && (arch.pieceLinks ?? []).map((link) => {
-            const ends = pieceLinkEnds(arch, link);
-            const A = ends && rects[ends[0]], B = ends && rects[ends[1]];
-            if (!A || !B) return null;
-            const { d } = edgeCurve(A, B, -48);
-            return <path key={`piece:${link.from}->${link.to}`} data-piece-arrow={`${link.from}->${link.to}`} d={d} fill="none" stroke={PIECE_LINK_COLOR} strokeWidth={2} strokeDasharray="2 5" strokeLinecap="round" markerEnd="url(#pa-piece-arrow)" />;
-          })}
-          {level.edges.map((e) => {
-            const A = rects[e.from], B = rects[e.to];
-            if (!A || !B) return null;
-            const { d, label } = edgeCurve(A, B, twoWay.has(`${e.to}->${e.from}`) || A.x === B.x ? 36 : 0);
+    <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative min-h-0 flex-1 overflow-auto" style={DOT_GRID_STYLE}>
+        {!level.nodes.length && <p className="p-8 text-[13px] text-ink-tertiary">{t("projects.map.empty")}</p>}
+        <div className="relative" style={{ width, height }}>
+          <svg className="pointer-events-none absolute inset-0 overflow-visible" width={width} height={height}>
+            <defs>
+              <marker id="pa-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" style={{ fill: EDGE_COLOR }} /></marker>
+              <marker id="pa-piece-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" style={{ fill: PIECE_LINK_COLOR }} /></marker>
+            </defs>
+            {pieceArrows.filter((p) => !edges.some((e) => pieceOn(e.from, e.to) === p)).map(({ link, from, to }) => {
+              const A = rects[from], B = rects[to];
+              if (!A || !B) return null;
+              const { d } = edgeCurve(A, B, A.x === B.x ? 36 : 0);
+              return <path key={`piece:${link.from}->${link.to}`} data-piece-arrow={`${link.from}->${link.to}`} d={d} fill="none" style={{ stroke: PIECE_LINK_COLOR }} strokeWidth={2} strokeDasharray="2 5" strokeLinecap="round" markerEnd="url(#pa-piece-arrow)" />;
+            })}
+            {edges.map((e) => {
+              const A = rects[e.from], B = rects[e.to];
+              if (!A || !B) return null;
+              const piece = pieceOn(e.from, e.to);
+              const both = e.twoWay || (piece !== undefined && piece.from !== e.from);
+              const { d, label } = edgeCurve(A, B, A.x === B.x ? 36 : 0);
+              const key = both ? `${e.from}<->${e.to}` : `${e.from}->${e.to}`;
+              const marker = piece ? "url(#pa-piece-arrow)" : "url(#pa-arrow)";
+              return (
+                <g key={key} data-edge={key} data-piece-arrow={piece ? `${piece.link.from}->${piece.link.to}` : undefined}>
+                  <path d={d} fill="none" style={{ stroke: piece ? PIECE_LINK_COLOR : EDGE_COLOR }} strokeOpacity={piece ? 1 : 0.7} strokeWidth={edgeWidth(e.weight)}
+                    strokeDasharray={piece ? "2 5" : "6 4"} strokeLinecap={piece ? "round" : undefined}
+                    markerEnd={marker} markerStart={both ? marker : undefined} className="animate-link-flow" />
+                  <text x={label[0]} y={label[1] - 7} textAnchor="middle" className="fill-ink-tertiary text-[11.5px] tabular-nums">{e.weight}</text>
+                </g>
+              );
+            })}
+          </svg>
+          {level.nodes.map((node) => {
+            const r = rects[node.id];
+            const color = colorOf(node);
+            const Icon = iconOf(node);
+            const label = atTop ? familyLabel(arch, node.id as Family) : focus.module ? node.label : plainModule(node.id);
+            const text = describe(node.id);
             return (
-              <g key={`${e.from}->${e.to}`} data-edge={`${e.from}->${e.to}`}>
-                <path d={d} fill="none" stroke="#5a5a5a" strokeWidth={edgeWidth(e.weight)} strokeDasharray="6 4" markerEnd="url(#pa-arrow)" className="animate-link-flow" />
-                <text x={label[0]} y={label[1] - 6} textAnchor="middle" className="fill-ink-tertiary font-mono text-[11px]">{e.weight}</text>
-              </g>
+              <div key={node.id} data-node={node.id} className="group/node absolute rounded-[14px] border border-hairline bg-card"
+                style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
+                <button type="button" onClick={() => onOpen(node.id)} title={atTop ? label : node.id}
+                  className={cn("flex h-full w-full flex-col gap-1.5 rounded-[14px] px-3 py-2.5 text-left hover:bg-raised-hover", !text && "justify-center")}>
+                  <span className="flex w-full items-center gap-2.5">
+                    <span className="grid size-7 shrink-0 place-items-center rounded-[8px]" style={{ background: `${color}22`, color }}><Icon size={15} /></span>
+                    <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-ink">{label}</span>
+                    <span className="shrink-0 whitespace-nowrap text-[12px] tabular-nums text-ink-tertiary">{t(node.files === 1 ? "projects.map.files.one" : "projects.map.files", { count: node.files })}</span>
+                  </span>
+                  {text && <span className="line-clamp-2 text-[12.5px] leading-[18px] text-ink-secondary" title={text}>{text}</span>}
+                </button>
+                {moving && (
+                  <div data-node-toolbar className={cn("absolute bottom-full left-0 z-10 pb-1.5 opacity-0 transition-opacity group-hover/node:opacity-100 group-focus-within/node:opacity-100 touch:opacity-100", menu === node.id && "opacity-100")}>
+                    <div className="relative flex items-center rounded-full border border-hairline bg-card p-0.5">
+                      <button type="button" onClick={() => setMenu(menu === node.id ? null : node.id)} aria-expanded={menu === node.id}
+                        className="flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[12.5px] text-ink-secondary hover:bg-raised-hover hover:text-ink">
+                        <FolderInput size={14} />{t("projects.map.moveTo")}
+                      </button>
+                      {menu === node.id && (
+                        <div className="animate-pop-in absolute left-0 top-9 z-20 min-w-[200px] rounded-[14px] border border-hairline bg-card p-1.5 shadow-xl shadow-black/40">
+                          {FAMILY_ORDER.filter((f) => f !== focus.family).map((f) => {
+                            const FamilyIcon = FAMILY_ICONS[f];
+                            return (
+                              <button key={f} type="button" onClick={() => onMove(node.id, f)}
+                                className="flex h-8 w-full items-center gap-2.5 rounded-[9px] px-2.5 text-left text-[13px] text-ink hover:bg-menu-hover">
+                                <FamilyIcon size={14} className="shrink-0" style={{ color: FAMILY_COLORS[f] }} />{familyLabel(arch, f)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             );
           })}
-        </svg>
-        {level.nodes.map((node) => {
-          const r = rects[node.id];
-          const color = colorOf(node);
-          const label = atTop ? familyLabel(arch, node.id as Family) : node.label;
-          return (
-            <div key={node.id} data-node={node.id} className="absolute rounded-[14px] border border-hairline bg-card shadow-xl shadow-black/30"
-              style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
-              <button type="button" onClick={() => onOpen(node.id)} title={atTop ? label : node.id}
-                className={cn("flex h-full w-full items-center gap-3 rounded-[14px] px-3.5 text-left hover:bg-raised-hover", focus.family && !focus.module && "pb-6")}>
-                <span className="grid size-[30px] shrink-0 place-items-center rounded-[9px] text-[13px] font-semibold" style={{ background: `${color}26`, color }}>
-                  {label.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2).toUpperCase() || "·"}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14.5px] font-semibold text-ink">{label}</span>
-                  {describe(node.id) && <span className="block truncate text-[11.5px] text-ink-secondary" title={describe(node.id)}>{describe(node.id)}</span>}
-                  <span className="block truncate font-mono text-[11px] text-ink-tertiary">{t("projects.map.files", { count: node.files })}</span>
-                </span>
-              </button>
-              {focus.family && !focus.module && (
-                <div className="absolute bottom-2 left-[58px]">
-                  <button type="button" onClick={() => setMenu(menu === node.id ? null : node.id)}
-                    className="rounded-full border border-hairline px-2 py-0.5 text-[11.5px] text-ink-secondary hover:bg-raised hover:text-ink">{t("projects.map.moveTo")}</button>
-                  {menu === node.id && (
-                    <div className="animate-pop-in absolute left-0 top-7 z-20 min-w-[180px] rounded-[14px] border border-hairline bg-card p-1.5 shadow-xl shadow-black/40">
-                      {FAMILY_ORDER.filter((f) => f !== focus.family).map((f) => (
-                        <button key={f} type="button" onClick={() => onMove(node.id, f)}
-                          className="flex h-8 w-full items-center gap-2.5 rounded-[9px] px-2.5 text-left text-[13px] text-ink hover:bg-menu-hover">
-                          <span className="size-2 rounded-full" style={{ background: FAMILY_COLORS[f] }} />{familyLabel(arch, f)}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        </div>
       </div>
-      {atTop && arch.external.length > 0 && (
-        <section className="sticky bottom-0 left-0 border-t border-hairline/40 bg-panel/95 px-4 py-3">
-          <h3 className="mb-2 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-tertiary">{t("projects.map.external")}</h3>
+      {showExternal && (
+        <section className="shrink-0 border-t border-hairline/40 bg-panel px-4 py-3">
+          <h3 className="mb-2 text-[12.5px] text-ink-tertiary">{t("projects.map.external")}</h3>
           <div className="flex flex-wrap gap-1.5">
             {arch.external.map((e) => (
-              <span key={e.name} className="inline-flex h-6 items-center gap-1.5 rounded-full border border-hairline bg-card px-2.5 font-mono text-[12px] text-ink-secondary">
-                {e.name}<span className="text-ink-tertiary">{e.count}</span>
+              <span key={e.name} className="inline-flex h-6 items-center gap-1.5 rounded-full border border-hairline bg-card px-2.5 text-[12px] text-ink-secondary">
+                {e.name}<span className="tabular-nums text-ink-tertiary">{e.count}</span>
               </span>
             ))}
           </div>
@@ -324,7 +389,7 @@ function FilePanel({ arch, module, file, onPick }: { arch: Architecture; module:
   const selected = arch.files.find((f) => f.path === file);
   return (
     <aside className="flex w-[340px] shrink-0 flex-col border-l border-hairline/40 bg-panel">
-      <h3 className="px-4 pb-2 pt-4 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-tertiary">{t("projects.map.fileList", { name: moduleLabel(module) })}</h3>
+      <h3 className="px-4 pb-2 pt-4 text-[13px] font-medium text-ink-secondary">{t("projects.map.fileList", { name: plainModule(module) })}</h3>
       <ul className="max-h-[45%] overflow-y-auto px-2 font-mono text-[12.5px]">
         {files.map((f) => (
           <li key={f.path}>

@@ -77,6 +77,12 @@ export function moduleLabel(id: string): string {
   return family ? `${name} (${family})` : name;
 }
 
+/** A module's name for people: the project's top folder is called `rootName` instead of "(root)". */
+export function plainModuleLabel(id: string, rootName: string): string {
+  const label = moduleLabel(id);
+  return label === ROOT_MODULE || label.startsWith(`${ROOT_MODULE} (`) ? rootName + label.slice(ROOT_MODULE.length) : label;
+}
+
 const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -102,6 +108,20 @@ export function levelOf(arch: Architecture, focus: { family?: Family; module?: s
     nodes: families.map((f) => ({ id: f.id, label: f.name, files: f.files })),
     edges: arch.edges.filter((e) => e.level === "family").map(({ from, to, weight }) => ({ from, to, weight })),
   };
+}
+
+export type DrawnEdge = { from: string; to: string; weight: number; twoWay: boolean };
+
+/** One arrow per pair of nodes: a link both ways becomes a single double-headed arrow carrying both weights. */
+export function mergeTwoWay(edges: Level["edges"]): DrawnEdge[] {
+  const out = new Map<string, DrawnEdge>();
+  for (const e of edges) {
+    const back = out.get(`${e.to}->${e.from}`);
+    if (back) { back.weight += e.weight; back.twoWay = true; continue; }
+    const same = out.get(`${e.from}->${e.to}`);
+    if (same) same.weight += e.weight; else out.set(`${e.from}->${e.to}`, { ...e, twoWay: false });
+  }
+  return [...out.values()];
 }
 
 export function edgeWidth(weight: number): number {

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadLocale, setLocale } from "@/lib/i18n";
-import { CartographeButton, CartographePanel, MapChangedNotice, ProjectBlockHeaderActions, ProjectBlockSummary } from "./ProjectsPage";
+import { CartographeButton, CartographePanel, MapChangedNotice, ProjectBlockHeaderActions, ProjectBlockMeta, ProjectBlockPole, ProjectBlockSummary } from "./ProjectsPage";
 
 beforeEach(async () => { await loadLocale("fr"); });
 afterEach(() => { setLocale("en"); });
@@ -24,9 +24,38 @@ describe("project block header", () => {
 describe("project block summary", () => {
   it("shows the first line of the En bref card under the project's name, and nothing without one", () => {
     const html = renderToStaticMarkup(createElement(ProjectBlockSummary, { summary: "Une boutique en ligne.\nAvec un site." }));
-    expect(html).toContain(">Une boutique en ligne.</div>");
+    expect(html).toContain(">Une boutique en ligne.</p>");
+    expect(html).toContain("line-clamp-2");
     expect(html).toContain('title="Une boutique en ligne.');
     expect(renderToStaticMarkup(createElement(ProjectBlockSummary, { summary: undefined }))).toBe("");
+  });
+});
+
+describe("project block meta", () => {
+  it("shows one count that fits whole, never a line cut mid-word, with the rest in its tooltip", () => {
+    const html = renderToStaticMarkup(createElement(ProjectBlockMeta, { dirs: 9, files: 27, truncated: false }));
+    expect(html).toContain(">27 fichiers</div>");
+    expect(html).toContain('title="9 dossiers, 27 fichiers"');
+    expect(html).toContain("whitespace-nowrap");
+    expect(html).not.toContain("truncate");
+    expect(html).not.toContain("font-mono");
+    expect(html).not.toContain("·");
+  });
+
+  it("says one file in the singular, a cut list with a plus, and the source in the tooltip", () => {
+    expect(renderToStaticMarkup(createElement(ProjectBlockMeta, { dirs: 1, files: 1, truncated: false }))).toContain(">1 fichier</div>");
+    const cut = renderToStaticMarkup(createElement(ProjectBlockMeta, { dirs: 40, files: 500, truncated: true, source: "Mon serveur" }));
+    expect(cut).toContain(">500+ fichiers</div>");
+    expect(cut).toContain('title="40 dossiers, 500+ fichiers, dans « Mon serveur »"');
+  });
+});
+
+describe("project block pole", () => {
+  it("shows the pole as its color only and names it for screen readers", () => {
+    const html = renderToStaticMarkup(createElement(ProjectBlockPole, { group: { name: "Boutique", color: "#1084fe" }, onClick: () => {} }));
+    expect(html).toContain('aria-label="Changer de pôle (actuellement « Boutique »)"');
+    expect(html).toContain("background:#1084fe");
+    expect(html).not.toContain(">Boutique<");
   });
 });
 
@@ -37,6 +66,8 @@ describe("the Cartographe button", () => {
     const html = renderToStaticMarkup(createElement(CartographeButton, { bot, onAsk: () => {} }));
     expect(html).toContain("Demander au Cartographe");
     expect(html).toContain('data-icon="Sparkles"');
+    expect(html).toContain("bg-ink");
+    expect(html).toContain("text-app");
     expect(html.match(/<button/g)).toHaveLength(1);
     expect(renderToStaticMarkup(createElement(CartographeButton, { bot: null, onAsk: () => {} }))).toBe("");
   });

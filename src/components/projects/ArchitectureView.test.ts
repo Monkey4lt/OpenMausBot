@@ -63,9 +63,9 @@ describe("ArchitectureView", () => {
     expect(html).toContain("animate-link-flow");
   });
 
-  it("lists external dependencies at the family level", () => {
+  it("lists outside tools at the family level", () => {
     const html = render();
-    expect(html).toContain("Dépendances externes");
+    expect(html).toContain("Outils externes utilisés");
     expect(html).toContain("react");
     expect(html).toContain("zod");
   });
@@ -83,8 +83,46 @@ describe("ArchitectureView", () => {
     const html = render({ initialFocus: { family: "ui" } });
     expect(html).toContain("Interface");
     expect(html).toContain("components");
-    expect(html).not.toContain("Dépendances externes");
-    expect(html).toContain("Déplacer vers…");
+    expect(html).not.toContain("Outils externes utilisés");
+    expect(html).toMatch(/data-node-toolbar[^>]*>.*Déplacer vers…/);
+    expect(html.match(/Déplacer vers…/g)).toHaveLength(1);
+  });
+
+  it("calls the project's top folder « dossier principal » inside a family, in its block and its file list", () => {
+    const rooted: Architecture = {
+      ...arch,
+      families: [{ id: "ui", name: "ui", files: 1, modules: ["(root)/ui"] }],
+      modules: [{ id: "(root)/ui", family: "ui", files: 1 }],
+      files: [{ path: "index.html", module: "(root)/ui", uses: [], usedBy: [] }],
+      edges: [],
+    };
+    expect(render({ initial: rooted, initialFocus: { family: "ui" } })).toContain(">dossier principal<");
+    expect(render({ initial: rooted, initialFocus: { family: "ui" } })).not.toContain(">(root)<");
+    expect(render({ initial: rooted, initialFocus: { family: "ui", module: "(root)/ui" } })).toContain("Fichiers de dossier principal");
+  });
+
+  it("merges links both ways between two families into one double-headed arrow", () => {
+    const both = { ...arch, edges: [...arch.edges, { level: "family" as const, from: "server", to: "ui", weight: 2 }] };
+    const html = render({ initial: both });
+    expect(html.match(/data-edge=/g)).toHaveLength(1);
+    expect(html).toContain('data-edge="ui&lt;-&gt;server"');
+    expect(html).toContain('marker-start="url(#pa-arrow)"');
+    expect(html).toContain(">6</text>");
+  });
+
+  it("shows each family with its own icon, never two letters, and no all-caps labels", () => {
+    const html = render({ initial: withPieces, state: described });
+    expect(html).toContain('data-icon="Monitor"');
+    expect(html).toContain('data-icon="Server"');
+    expect(html).not.toContain(">IN<");
+    expect(html).not.toContain("uppercase");
+    expect(html).not.toContain("font-mono");
+  });
+
+  it("puts the En bref card in a section that can be folded", () => {
+    const html = render({ initial: withPieces, state: described });
+    expect(html).toMatch(/<details[^>]*open=""[^>]*data-brief|<details[^>]*data-brief[^>]*open=""/);
+    expect(html).toMatch(/<summary[^>]*>.*En bref<\/summary>/);
   });
 
   it("a file panel lists uses and used by", () => {
@@ -161,7 +199,11 @@ describe("ArchitectureView", () => {
     };
     expect(render({ initial: mixed })).not.toContain("data-piece-arrow");
     const apart: ArchitectureWithPieces = { ...withPieces };
-    expect(render({ initial: apart })).toContain('data-piece-arrow="ui-&gt;api"');
+    const html = render({ initial: apart });
+    expect(html).toContain('data-piece-arrow="ui-&gt;api"');
+    expect(html.match(/stroke-dasharray="2 5"/g)).toHaveLength(1);
+    expect(html).not.toContain('stroke-dasharray="6 4"');
+    expect(html).toContain("stroke:var(--color-accent)");
   });
 
   it("draws piece links with the legend", () => {
@@ -170,6 +212,7 @@ describe("ArchitectureView", () => {
     expect(html).toContain("Site / interface → Serveur / API");
     expect(html).toContain('data-piece-link="ui-&gt;api"');
     expect(html).toContain("4 appels");
+    expect(render({ initial: { ...withPieces, pieceLinks: [{ ...withPieces.pieceLinks[0]!, count: 1 }] } })).toContain("1 appel<");
     expect(render()).not.toContain("Liens entre pièces");
   });
 });
