@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,7 +52,7 @@ async function call(route: RouteHandler, method: string, path: string, body?: un
 describe("projects routes", () => {
   it("GET /api/projects on an empty data dir returns no sources and no projects", async () => {
     const route = createProjectRoutes({ dataDir: tmp() });
-    expect(await call(route, "GET", "/api/projects")).toEqual({ status: 200, body: { state: expect.objectContaining({ sources: [], rev: 0 }), projects: [], errors: [], cartographeBotId: null } });
+    expect(await call(route, "GET", "/api/projects")).toEqual({ status: 200, body: { state: expect.objectContaining({ sources: [], rev: 0 }), projects: [], errors: [], cartographeBotId: null, pieceKinds: {} } });
   });
 
   it("GET /api/projects returns cartographeBotId from the dependency, or null", async () => {
@@ -238,6 +238,54 @@ describe("projects routes", () => {
     const route = createProjectRoutes({ dataDir: tmp() });
     expect(await route(ctx("GET", "/api/other"))).toBe(PASS);
     expect(await route(ctx("DELETE", "/api/projects"))).toBe(PASS);
+  });
+});
+
+describe("the pieces of each project on the overview", () => {
+  function localRoot(files: Record<string, string>) {
+    const root = tmp();
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, "shop", ...path.split("/").slice(0, -1)), { recursive: true });
+      writeFileSync(join(root, "shop", ...path.split("/")), text);
+    }
+    mkdirSync(join(root, "blog"));
+    return root;
+  }
+
+  it("each read of a project saves its kinds of pieces, and only them, in a private file the overview then returns", async () => {
+    const dataDir = tmp();
+    const root = localRoot({ "package.json": JSON.stringify({ dependencies: { react: "18", express: "4", stripe: "1" } }), "web/App.tsx": "", "secret/notes.ts": "" });
+    const route = createProjectRoutes({ dataDir });
+    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "Here", kind: "local", path: root }], baseRev: 0 });
+    expect(((await call(route, "GET", "/api/projects")).body as { pieceKinds: unknown }).pieceKinds).toEqual({});
+    expect((await call(route, "GET", "/api/projects/architecture?id=s1%3Ashop")).status).toBe(200);
+    const file = join(dataDir, "projects-pieces.json");
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    const text = readFileSync(file, "utf8");
+    expect(JSON.parse(text)).toEqual({ v: 1, kinds: { "s1:shop": ["ui", "api", "external"] } });
+    expect(text).not.toContain("App.tsx");
+    expect(text).not.toContain("secret");
+    expect(text).not.toContain(root);
+    expect(((await call(route, "GET", "/api/projects")).body as { pieceKinds: unknown }).pieceKinds).toEqual({ "s1:shop": ["ui", "api", "external"] });
+  });
+
+  it("the overview never reads a project's files: it only returns what was saved, for projects that still exist", async () => {
+    const dataDir = tmp();
+    const root = localRoot({ "a.ts": "" });
+    let inspected = 0;
+    const readers = {
+      architecture: async () => { inspected++; return null; },
+      inspection: async () => { inspected++; return null; },
+    };
+    const route = createProjectRoutes({ dataDir, readers });
+    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "Here", kind: "local", path: root }], baseRev: 0 });
+    writeFileSync(join(dataDir, "projects-pieces.json"), JSON.stringify({ v: 1, kinds: { "s1:shop": ["api", "database"], "s1:gone": ["ui"] } }));
+    expect(((await call(route, "GET", "/api/projects")).body as { pieceKinds: unknown }).pieceKinds).toEqual({ "s1:shop": ["api", "database"] });
+    expect(inspected).toBe(0);
+    writeFileSync(join(dataDir, "projects-pieces.json"), JSON.stringify({ v: 1, kinds: { "s1:shop": ["magic"] } }));
+    expect(((await call(route, "GET", "/api/projects")).body as { pieceKinds: unknown }).pieceKinds).toEqual({});
+    writeFileSync(join(dataDir, "projects-pieces.json"), "{not json");
+    expect(((await call(route, "GET", "/api/projects")).body as { pieceKinds: unknown }).pieceKinds).toEqual({});
   });
 });
 

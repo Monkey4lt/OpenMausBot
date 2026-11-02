@@ -10,6 +10,7 @@ import type { ArchitectureWithPieces } from "../../shared/projects-pieces.ts";
 import {
   isCodeFile, readGithubImports, readGithubInspect, readLocalImports, readLocalInspect, readSshImports, readSshInspect, type ImportSet, type InspectSet,
 } from "../projects-sources.ts";
+import { readPieceKinds, savePieceKinds } from "../projects-pieces-store.ts";
 import { PromiseLru } from "../promise-lru.ts";
 import {
   existingFolder, findProject, githubTarget, localRoot, readProjectMapState, scanLocalLines, scanSshLines, scanSource, withoutStamp,
@@ -32,7 +33,8 @@ export interface ProjectRouteDeps {
 const ARCHITECTURE_CACHE_SIZE = 32;
 
 /**
- * GET /api/projects        → the saved layout plus a fresh scan of every source, and the Cartographe's bot id or null
+ * GET /api/projects        → the saved layout plus a fresh scan of every source, the Cartographe's bot id or null, and
+ *   `pieceKinds` {projectId: PieceKind[]} as saved by the last read of each project; it never reads a project's files
  * PUT /api/projects/state {...layout, baseRev} → 200 {ok, rev}; 409 {error, rev} when baseRev is not the saved rev
  * POST /api/projects/cartographe → 200 {cartographeBotId}, making it again if it was deleted; 404 where there can be none.
  *   Not in CLIENT_ALLOW: only the owner and admins.
@@ -66,7 +68,9 @@ export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
     if (path === "/api/projects" && method === "GET") {
       const state = readProjectMapState(deps.dataDir);
       const { projects, errors } = await scanProjects(state);
-      return json(res, 200, { state, projects, errors, cartographeBotId: state.sources.length ? cartographeFor(deps) : deps.cartographeBotId?.() ?? null });
+      const saved = readPieceKinds(deps.dataDir);
+      const pieceKinds = Object.fromEntries(projects.flatMap((p) => (Object.hasOwn(saved, p.id) ? [[p.id, saved[p.id]!]] : [])));
+      return json(res, 200, { state, projects, errors, cartographeBotId: state.sources.length ? cartographeFor(deps) : deps.cartographeBotId?.() ?? null, pieceKinds });
     }
     if (path === "/api/projects/state" && method === "PUT") {
       const body = await readBody(req, 2_000_000) as { baseRev?: unknown } | null;
@@ -164,6 +168,11 @@ export function createProjectReaders(deps: { dataDir: string; onArchitectureRead
       const inspection = await inspections.get(opened.id, opened.version, async () => {
         const material = await reader.inspect(reader.paths);
         const pieces = detectPieces({ paths: reader.paths, manifests: material.manifests, read: built.read, arch: built.architecture });
+        try {
+          savePieceKinds(deps.dataDir, opened.id, pieces.map((p) => p.kind));
+        } catch (error) {
+          console.warn("could not save the project's pieces", error);
+        }
         return { pieces, links: linkPieces(pieces, material.texts, built.read), languages: languagesOf(reader.paths), truncated: material.truncated || built.architecture.truncated };
       });
       return { architecture: built.architecture, inspection };
