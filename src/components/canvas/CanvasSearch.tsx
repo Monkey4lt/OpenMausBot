@@ -22,7 +22,7 @@ export function matchCanvasItems<T extends CanvasSearchItem>(items: readonly T[]
 const MAX_SHOWN = 8;
 
 /** "Find a block": a box over the canvas listing what matches; Enter or a click picks. */
-export function CanvasSearch({ items, onPick, onClose }: { items: CanvasSearchItem[]; onPick: (id: string) => void; onClose: () => void }) {
+export function CanvasSearch({ items, onPick, onClose, placeholder = t("atelier.search.placeholder") }: { items: CanvasSearchItem[]; onPick: (id: string) => void; onClose: () => void; placeholder?: string }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const box = useRef<HTMLDivElement>(null);
@@ -38,7 +38,7 @@ export function CanvasSearch({ items, onPick, onClose }: { items: CanvasSearchIt
   return <div ref={box} role="search" data-canvas-chrome className="pointer-events-auto w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-[14px] border border-hairline/80 bg-panel">
     <label className="flex h-10 items-center gap-2 px-3 text-ink-tertiary">
       <Search size={15} className="shrink-0" />
-      <input autoFocus value={query} placeholder={t("atelier.search.placeholder")} aria-label={t("atelier.search.placeholder")}
+      <input autoFocus value={query} placeholder={placeholder} aria-label={placeholder}
         onChange={(event) => { setQuery(event.target.value); setActive(0); }}
         onKeyDown={(event) => {
           if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
@@ -50,7 +50,7 @@ export function CanvasSearch({ items, onPick, onClose }: { items: CanvasSearchIt
       <button type="button" onClick={onClose} aria-label={t("atelier.search.close")} title={t("atelier.search.close")}
         className="grid size-6 place-items-center rounded-md text-ink-tertiary hover:bg-control hover:text-ink"><X size={14} /></button>
     </label>
-    {query.trim() && <ul role="listbox" aria-label={t("atelier.search.placeholder")} className="border-t border-hairline/60 p-1">
+    {query.trim() && <ul role="listbox" aria-label={placeholder} className="border-t border-hairline/60 p-1">
       {hits.map((item, index) => <li key={item.id} role="option" aria-selected={index === active}>
         <button type="button" onClick={() => pick(item.id)} onPointerMove={() => setActive(index)}
           className={cn("flex h-8 w-full items-center gap-2 rounded-[9px] px-2.5 text-left text-[13px]", index === active ? "bg-control text-ink" : "text-ink-secondary")}>

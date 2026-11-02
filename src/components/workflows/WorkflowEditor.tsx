@@ -11,7 +11,7 @@ import {
   addNode, connect, duplicateNode, hasBlockOfKind, insertApprovalBefore, moveNode, newEditorId, NODE_HEIGHT, NODE_WIDTH, nodeSummary, openingView,
   portsFor, problemsByTarget, problemText, removeEdge, removeNode, updateNodeData, type ConnectRefusal, type WorkflowProblem,
 } from "@/lib/workflows/editor";
-import { formatUsd, isRunning, stepsByNode, type RunRefusal } from "@/lib/workflows/run";
+import { formatUsdLimit, isRunning, stepsByNode, type RunRefusal } from "@/lib/workflows/run";
 import { viewerTimeZone } from "@/lib/workflows/schedule";
 import { useEngineLimits } from "@/lib/limit-resets";
 import type { LocaleKey } from "@/locales";
@@ -51,6 +51,8 @@ export type EditorProps = {
   confirm: (title: string, text: string) => Promise<boolean>;
   /** An existing automation shown as Trigger → Bot: nothing here changes it. */
   readOnly?: { workflow: Workflow; routine: { enabled: boolean; nextRunAt: number | null }; onOpenAutomation: () => void };
+  /** The Atelier's assistant button, in the canvas corner. */
+  assistant?: ReactNode;
 };
 
 /** The AIs a trigger can wait for: those whose limits the app reads, then every AI that is set up. */
@@ -73,14 +75,14 @@ export default function WorkflowEditor(props: EditorProps) {
   if (readOnly) {
     const noop = async () => null;
     return <WorkflowEditorView workflow={readOnly.workflow} problems={[]} saveState="idle" changedElsewhere={false} runs={[]} refusal={null}
-      projects={props.projects} bots={props.bots} models={props.models} engines={engines} routine={readOnly.routine} readOnly onOpenAutomation={readOnly.onOpenAutomation}
+      projects={props.projects} bots={props.bots} models={props.models} engines={engines} routine={readOnly.routine} readOnly onOpenAutomation={readOnly.onOpenAutomation} assistant={props.assistant}
       onEdit={() => {}} onPreview={() => {}} onRun={noop} onRunStep={noop} onRetry={noop} onCancel={noop}
       onBack={props.onBack} onDelete={() => {}} onReload={() => {}} onDismissChanged={() => {}} onDismissRefusal={() => {}} />;
   }
   return <LiveEditor {...props} engines={engines} />;
 }
 
-function LiveEditor({ workflowId, projects, bots, models, engines, onBack, onDeleted, confirm }: EditorProps & { engines: EngineOption[] }) {
+function LiveEditor({ workflowId, projects, bots, models, engines, onBack, onDeleted, confirm, assistant }: EditorProps & { engines: EngineOption[] }) {
   const wf = useWorkflow(workflowId);
   if (wf.gone) {
     return <Centered>
@@ -96,7 +98,7 @@ function LiveEditor({ workflowId, projects, bots, models, engines, onBack, onDel
   return <WorkflowEditorView workflow={wf.workflow} problems={wf.problems} saveState={wf.saveState} changedElsewhere={wf.changedElsewhere}
     runs={wf.runs} refusal={wf.refusal} projects={projects} bots={bots} models={models} engines={engines} routine={wf.routine} routineError={wf.routineError}
     onEdit={wf.edit} onPreview={wf.preview} onRun={wf.run} onRunStep={wf.runStep} onRetry={wf.retry} onCancel={wf.cancel}
-    onBack={onBack} onReload={wf.reload} onDismissChanged={wf.dismissChanged} onDismissRefusal={wf.dismissRefusal}
+    onBack={onBack} onReload={wf.reload} onDismissChanged={wf.dismissChanged} onDismissRefusal={wf.dismissRefusal} assistant={assistant}
     onDelete={async () => {
       if (!await confirm(t("workflows.delete.title", { name: wf.workflow!.name }), t("workflows.delete.text"))) return;
       await wf.remove().then(onDeleted, () => {});
@@ -138,6 +140,7 @@ export type EditorViewProps = {
   onOpenAutomation?: () => void;
   /** For screenshots and tests: what is open at first. */
   initial?: { panel?: boolean; openStep?: string; selected?: string; now?: number };
+  assistant?: ReactNode;
 };
 
 export function WorkflowEditorView(props: EditorViewProps) {
@@ -313,7 +316,7 @@ export function WorkflowEditorView(props: EditorViewProps) {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && (e.target as Element).closest("[data-canvas]")) { e.preventDefault(); setSearchOpen(true); }
         if (!readOnly && (e.key === "Delete" || e.key === "Backspace") && selected && (e.target as Element).matches("[data-canvas]") && rects.has(selected)) { onEdit((w) => removeNode(w, selected)); setSelected(null); }
       }}>
-      <Canvas view={view} onViewChange={setView} tool={tool} rects={frame} minimap label={workflow.name} readOnly={readOnly}
+      <Canvas view={view} onViewChange={setView} tool={tool} rects={frame} minimap label={workflow.name} readOnly={readOnly} bottomRight={props.assistant}
         onBackgroundClick={() => { setSelected(null); setAddOpen(false); }}
         toolbar={<div className="relative">
           {addOpen && <AddMenu onPick={add} onClose={() => setAddOpen(false)} />}
@@ -340,7 +343,7 @@ export function WorkflowEditorView(props: EditorViewProps) {
         {hint && <Pill tone="ink">{hint}</Pill>}
       </div>}
       {searchOpen && <div className="absolute inset-x-0 top-3 z-30 flex justify-center px-3">
-        <CanvasSearch items={searchItems} onPick={focus} onClose={() => setSearchOpen(false)} />
+        <CanvasSearch items={searchItems} onPick={focus} onClose={() => setSearchOpen(false)} placeholder={t("atelier.search.steps")} />
       </div>}
       {panelOpen && <RunPanel workflow={workflow} runs={runs} shown={shown} openStep={openStep} onOpenStep={setOpenStep}
         onShowRun={(id) => { setShownRunId(id); setOpenStep(null); }} onRetry={(runId, id) => void retry(runId, id)} onCancel={(id) => void props.onCancel(id)}
@@ -454,7 +457,7 @@ function EditorHeader({ readOnly, workflow, projects, saveState, running, lastRu
       </span>
       <div className="relative">
         <button type="button" className={headerButton} aria-expanded={limitsOpen} onClick={() => setLimitsOpen(!limitsOpen)} title={t("workflows.limits.title")}>
-          <Gauge size={15} /><span className="hidden tabular-nums lg:inline">{t("workflows.limits.summary", { steps: workflow.limits.maxSteps, cost: formatUsd(workflow.limits.maxCostUsd, activeLocale()) })}</span>
+          <Gauge size={15} /><span className="hidden tabular-nums lg:inline">{t("workflows.limits.summary", { steps: workflow.limits.maxSteps, cost: formatUsdLimit(workflow.limits.maxCostUsd, activeLocale()) })}</span>
         </button>
         {limitsOpen && <LimitsPopover workflow={workflow} onEdit={onEdit} onClose={() => setLimitsOpen(false)} />}
       </div>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { WorkflowRun } from "../../../shared/workflows";
-import { formatUsd, isRunning, runRefusal, runTotals, stepsByNode, upsertRun } from "./run";
+import { formatUsd, formatUsdLimit, isRunning, runRefusal, runTotals, stepsByNode, upsertRun } from "./run";
 
 const run = (id: string, startedAt: number, extra: Partial<WorkflowRun> = {}): WorkflowRun =>
   ({ id, workflowId: "w", status: "succeeded", steps: [], startedAt, ...extra });
@@ -34,6 +34,8 @@ describe("workflow runs", () => {
   it("writes a cost in dollars for the reader's language, with small amounts kept readable", () => {
     expect(formatUsd(0.0123, "fr")).toBe("0,012\u00a0$");
     expect(formatUsd(1, "fr")).toBe("1,00\u00a0$");
+    expect(formatUsdLimit(1, "fr")).toBe("1\u00a0$");
+    expect(formatUsdLimit(0.5, "fr")).toBe("0,50\u00a0$");
     expect(formatUsd(1, "en")).toBe("$1.00");
     expect(formatUsd(0, "en")).toBe("$0.00");
   });

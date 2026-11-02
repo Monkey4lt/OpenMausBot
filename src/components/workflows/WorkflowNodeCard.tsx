@@ -16,6 +16,10 @@ export const KIND_LABEL: Record<NodeKind, LocaleKey> = {
   trigger: "workflows.kind.trigger", ai: "workflows.kind.ai", bot: "workflows.kind.bot", condition: "workflows.kind.condition",
   approval: "workflows.kind.approval", send: "workflows.kind.send", note: "workflows.kind.note",
 };
+export const KIND_PLAIN: Record<NodeKind, LocaleKey> = {
+  trigger: "workflows.kind.trigger.plain", ai: "workflows.kind.ai.plain", bot: "workflows.kind.bot.plain", condition: "workflows.kind.condition.plain",
+  approval: "workflows.kind.approval.plain", send: "workflows.kind.send.plain", note: "workflows.kind.note.plain",
+};
 export const STEP_LABEL: Record<StepStatus, LocaleKey> = {
   pending: "workflows.status.pending", running: "workflows.status.running", succeeded: "workflows.status.succeeded",
   failed: "workflows.status.failed", skipped: "workflows.status.skipped",
@@ -67,7 +71,7 @@ export function WorkflowNodeCard({ node, rect, selected, step, problems, ctx, bu
     : { label: t("workflows.runStep"), run: () => onRunStep(node.id) };
   return <NodeFrame id={node.id} nodeRef={nodeRef} rect={rect} autoHeight selected={selected} locked={false}
     ports={portsFor(node.kind)} onSelect={onSelect} onMove={onMove} onMoveEnd={onMoveEnd}
-    label={{ icon: Icon, text: t(KIND_LABEL[node.kind]) }}
+    label={{ icon: Icon, text: t(KIND_LABEL[node.kind]), ...(node.kind === "note" ? {} : { hint: t(KIND_PLAIN[node.kind]) }) }}
     actions={ctx.readOnly ? undefined : { onDuplicate: () => onDuplicate(node.id), onDelete: () => onDelete(node.id) }}
     className={cn(step?.status === "skipped" && "opacity-60")}
     cardClassName={cn(step && STEP_CARD[step.status], node.kind === "note" && "bg-warning/10 border-warning/30")}>

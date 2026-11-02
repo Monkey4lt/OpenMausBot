@@ -555,10 +555,7 @@ export function ProjectsPage() {
               </div>
             ))}
             <div className="mt-3 border-t border-hairline/40 pt-1">
-              <div className="flex items-center justify-between pb-1 pl-2 pr-0 pt-2 text-[13px] font-medium text-ink-tertiary">
-                {t("workflows.section")}
-                <button className="ui-icon-button" aria-label={t("workflows.new")} title={t("workflows.new")} onClick={() => void newWorkflow()}><Plus size={15} /></button>
-              </div>
+              <WorkflowSectionTitle onNew={() => void newWorkflow()} />
               <WorkflowList workflows={workflows} automations={automations} activeId={openWorkflow} onOpen={openFlow} onNew={() => void newWorkflow()} />
             </div>
           </div>
@@ -574,7 +571,8 @@ export function ProjectsPage() {
             readOnly={openedAutomation ? { workflow: automationAsWorkflow(openedAutomation), routine: { enabled: openedAutomation.enabled, nextRunAt: openedAutomation.nextRunAt },
               onOpenAutomation: () => dispatch({ type: "showRoutines", routineId: openedAutomation.routineId }) } : undefined}
             onBack={() => setOpenWorkflow(null)} onDeleted={() => { setOpenWorkflow(null); loadWorkflows(); }}
-            confirm={async (title, text) => Boolean(await ask({ title, text, ok: t("projects.delete"), danger: true, input: false }))} />
+            confirm={async (title, text) => Boolean(await ask({ title, text, ok: t("projects.delete"), danger: true, input: false }))}
+            assistant={<CartographeFab bot={cartographe} busy={making} open={panelShown} onAsk={() => void askCartographe()} />} />
         </Suspense>}
         <div ref={setBox} className={cn("relative flex min-w-0 flex-1", (mapOf || openWorkflow) && "hidden")}
           onKeyDown={(e) => {
@@ -704,6 +702,19 @@ const RUN_DOT_LABEL = {
   idle: "workflows.lastRun.idle", running: "workflows.run.status.running", succeeded: "workflows.run.status.succeeded",
   failed: "workflows.run.status.failed", cancelled: "workflows.run.status.cancelled",
 } as const;
+
+/** The left bar's heading for workflows, with a plain subtitle and the + to make one. */
+export function WorkflowSectionTitle({ onNew }: { onNew: () => void }) {
+  return (
+    <div className="flex items-start justify-between pb-1 pl-2 pr-0 pt-2">
+      <span className="flex min-w-0 flex-col leading-tight">
+        <span className="text-[13px] font-medium text-ink-tertiary">{t("workflows.section")}</span>
+        <span className="truncate text-[11.5px] text-ink-tertiary/80">{t("workflows.section.subtitle")}</span>
+      </span>
+      <button className="ui-icon-button" aria-label={t("workflows.new")} title={t("workflows.new")} onClick={onNew}><Plus size={15} /></button>
+    </div>
+  );
+}
 
 /** The left bar's workflows, each with the state of its last run; null while loading. */
 export function WorkflowList({ workflows, automations = [], activeId, onOpen, onNew }: {

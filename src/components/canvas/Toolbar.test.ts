@@ -14,16 +14,16 @@ describe("Toolbar", () => {
     const html = renderToStaticMarkup(createElement(Toolbar, { tool: "hand", onTool: () => {}, search: () => {} }));
     expect(html).toMatch(/aria-pressed="true"[^>]*aria-label="Main"|aria-label="Main"[^>]*aria-pressed="true"/);
     expect((html.match(/aria-pressed="true"/g) ?? []).length).toBe(1);
-    for (const label of ["Sélection", "Crayon", "Note", "Forme", "Texte", "Trouver un bloc"]) expect(html).toContain(`aria-label="${label}"`);
+    for (const label of ["Sélection", "Crayon", "Note", "Forme", "Texte", "Chercher"]) expect(html).toContain(`aria-label="${label}"`);
     expect(html).toContain('role="toolbar"');
   });
 
   it("shows the add button only with onAdd, and search only with search", () => {
     const bare = renderToStaticMarkup(createElement(Toolbar, { tool: "select", onTool: () => {} }));
-    expect(bare).not.toContain("Ajouter un bloc");
-    expect(bare).not.toContain("Trouver un bloc");
+    expect(bare).not.toContain("Ajouter une étape");
+    expect(bare).not.toContain("Chercher");
     const add = renderToStaticMarkup(createElement(Toolbar, { tool: "select", onTool: () => {}, onAdd: () => {} }));
-    expect(add).toContain("Ajouter un bloc");
+    expect(add).toContain("Ajouter une étape");
     const custom = renderToStaticMarkup(createElement(Toolbar, { tool: "select", onTool: () => {}, onAdd: () => {}, addLabel: "Nouveau projet" }));
     expect(custom).toContain("Nouveau projet");
   });

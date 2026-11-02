@@ -1,5 +1,5 @@
-import type { ReactNode, TextareaHTMLAttributes } from "react";
-import { ChevronDown, Clock, Gauge, Play, TriangleAlert } from "lucide-react";
+import { useState, type ReactNode, type TextareaHTMLAttributes } from "react";
+import { ChevronDown, ChevronRight, Clock, Gauge, Play, TriangleAlert } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -174,7 +174,19 @@ function YesNoRows() {
   </>;
 }
 
-/** The settings of one block, inside its card. */
+/** Settings most people never need, folded under one quiet toggle; open from the start when one of them is set. */
+function Advanced({ initiallyOpen, children }: { initiallyOpen: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(initiallyOpen);
+  return <div className="flex flex-col gap-1">
+    <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
+      className="flex h-6 w-fit items-center gap-1 rounded-md px-1.5 text-[12px] text-ink-tertiary hover:text-ink">
+      <ChevronRight size={12} className={cn("shrink-0 transition-transform", open && "rotate-90")} />{t("workflows.advanced")}
+    </button>
+    {open && <NodeField className="flex flex-col gap-2 py-1.5">{children}</NodeField>}
+  </div>;
+}
+
+/** The settings of one step, inside its card. */
 export function NodeSettings({ node, onPatch, ctx }: { node: WorkflowNode; onPatch: Patch; ctx: SettingsContext }) {
   const ro = ctx.readOnly;
   switch (node.kind) {
@@ -185,24 +197,30 @@ export function NodeSettings({ node, onPatch, ctx }: { node: WorkflowNode; onPat
         <NodeField className="flex flex-col gap-2 pb-1.5">
           <NodeTextarea rows={4} value={node.data.prompt} placeholder={t("workflows.ai.prompt")} aria-label={t("workflows.ai.prompt")} readOnly={ro}
             onChange={(event) => onPatch({ prompt: event.target.value })} />
+        </NodeField>
+        <Advanced key={node.id} initiallyOpen={Boolean(node.data.model || node.data.system)}>
           <div className="-mx-1.5 flex items-center justify-between">
             <ModelSelect value={node.data.model} models={ctx.models} emptyLabel={t("workflows.model.auto")} disabled={ro} onChange={(model) => onPatch({ model })} />
           </div>
-        </NodeField>
-        <NodeField>
           <NodeTextarea rows={1} value={node.data.system ?? ""} placeholder={t("workflows.ai.system")} aria-label={t("workflows.ai.system")} readOnly={ro}
             onChange={(event) => onPatch({ system: event.target.value || undefined })} />
-        </NodeField>
+        </Advanced>
       </>;
     case "bot":
-      return <NodeField className="flex flex-col gap-2 pb-1.5">
-        <NodeTextarea rows={4} value={node.data.instruction} placeholder={t("workflows.bot.instruction")} aria-label={t("workflows.bot.instruction")} readOnly={ro}
-          onChange={(event) => onPatch({ instruction: event.target.value })} />
-        <div className="-mx-1.5 flex items-center justify-between gap-2">
-          <BotSelect value={node.data.botId} bots={ctx.bots} disabled={ro} onChange={(botId) => onPatch({ botId })} />
-          <ModelSelect value={node.data.model} models={ctx.models} emptyLabel={t("workflows.model.bot")} disabled={ro} onChange={(model) => onPatch({ model })} />
-        </div>
-      </NodeField>;
+      return <>
+        <NodeField className="flex flex-col gap-2 pb-1.5">
+          <NodeTextarea rows={4} value={node.data.instruction} placeholder={t("workflows.bot.instruction")} aria-label={t("workflows.bot.instruction")} readOnly={ro}
+            onChange={(event) => onPatch({ instruction: event.target.value })} />
+          <div className="-mx-1.5 flex items-center justify-between gap-2">
+            <BotSelect value={node.data.botId} bots={ctx.bots} disabled={ro} onChange={(botId) => onPatch({ botId })} />
+          </div>
+        </NodeField>
+        <Advanced key={node.id} initiallyOpen={Boolean(node.data.model)}>
+          <div className="-mx-1.5 flex items-center justify-between">
+            <ModelSelect value={node.data.model} models={ctx.models} emptyLabel={t("workflows.model.bot")} disabled={ro} onChange={(model) => onPatch({ model })} />
+          </div>
+        </Advanced>
+      </>;
     case "condition":
       return <>
         <NodeField>

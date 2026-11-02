@@ -34,6 +34,7 @@ describe("CanvasSearch", () => {
   it("opens as a labelled search box", () => {
     const html = renderToStaticMarkup(createElement(CanvasSearch, { items, onPick: () => {}, onClose: () => {} }));
     expect(html).toContain('role="search"');
-    expect(html).toContain('placeholder="Trouver un bloc ou une note"');
+    expect(html).toContain('placeholder="Trouver un projet ou une note"');
+    expect(renderToStaticMarkup(createElement(CanvasSearch, { items: [], onPick: () => {}, onClose: () => {}, placeholder: "Trouver une étape ou une note" }))).toContain('placeholder="Trouver une étape ou une note"');
   });
 });

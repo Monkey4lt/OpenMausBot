@@ -1,5 +1,5 @@
 import { Fragment, useRef, type ButtonHTMLAttributes, type Ref, type HTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { Check, Copy, Lock, LockKeyhole, Play, Trash2, Type, X, type LucideIcon } from "lucide-react";
+import { Check, Copy, Lock, LockKeyhole, Play, Trash2, X, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { portPoint, type PortAnchor, type Point, type Rect, type Side } from "@/lib/canvas/geometry";
@@ -31,8 +31,8 @@ export function portAnchors(rect: Rect, ports: NodePort[]): Record<string, PortA
   return out;
 }
 
-const PORT_GLYPH: Record<NonNullable<NodePort["kind"]>, { icon: LucideIcon; label: "atelier.canvas.port.text" | "atelier.canvas.port.yes" | "atelier.canvas.port.no" }> = {
-  text: { icon: Type, label: "atelier.canvas.port.text" },
+const PORT_GLYPH: Record<NonNullable<NodePort["kind"]>, { icon: LucideIcon | null; label: "atelier.canvas.port.text" | "atelier.canvas.port.yes" | "atelier.canvas.port.no" }> = {
+  text: { icon: null, label: "atelier.canvas.port.text" },
   yes: { icon: Check, label: "atelier.canvas.port.yes" },
   no: { icon: X, label: "atelier.canvas.port.no" },
 };
@@ -53,8 +53,8 @@ export function NodeFrame({ id, rect, selected, locked, ports = [], onMove, onMo
   onMoveEnd?: (id: string, x: number, y: number) => void;
   onSelect: (id: string) => void;
   actions?: NodeActions;
-  /** The block's type, written above the card: a small icon and a word. */
-  label?: { icon?: LucideIcon; text: string };
+  /** The block's type, written above the card: a small icon, a word and, after it, a plain hint. */
+  label?: { icon?: LucideIcon; text: string; hint?: string };
   children?: ReactNode;
   className?: string;
   cardClassName?: string;
@@ -109,7 +109,8 @@ export function NodeFrame({ id, rect, selected, locked, ports = [], onMove, onMo
     onPointerDown={down} onPointerMove={move} onPointerUp={(event) => up(event)} onPointerCancel={(event) => up(event, true)}>
     {label && <div className="pointer-events-none absolute bottom-full left-1 mb-1.5 flex max-w-full items-center gap-1 truncate text-[12px] font-medium text-ink-secondary">
       {LabelIcon && <LabelIcon size={12} strokeWidth={1.75} className="shrink-0" />}
-      <span className="truncate">{label.text}</span>
+      <span className={label.hint ? "shrink-0" : "truncate"}>{label.text}</span>
+      {label.hint && <span className="truncate font-normal text-ink-tertiary">· {label.hint}</span>}
     </div>}
     <div className={cn("flex h-full flex-col gap-1.5 overflow-hidden rounded-[14px] border bg-card p-1.5 text-[13px] text-ink",
       selected ? "border-ink/45" : "border-hairline/80", cardClassName)}>
@@ -118,11 +119,11 @@ export function NodeFrame({ id, rect, selected, locked, ports = [], onMove, onMo
     {ports.map((port) => {
       const anchor = anchors[port.id];
       const glyph = PORT_GLYPH[port.kind ?? "text"];
-      const Icon = glyph.icon;
+      const Icon = port.kind && port.kind !== "text" ? glyph.icon : null;
       return <span key={port.id} role="img" data-canvas-port={port.id} data-port-side={port.side} aria-label={t(glyph.label)} title={t(glyph.label)}
         className="absolute grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-hairline/80 bg-control text-ink-secondary"
         style={{ left: anchor.x, top: anchor.y, width: PORT_SIZE, height: PORT_SIZE }}>
-        <Icon size={12} strokeWidth={2} />
+        {Icon ? <Icon size={12} strokeWidth={2} /> : <span data-port-dot className="size-1.5 rounded-full bg-ink-tertiary" />}
       </span>;
     })}
     {bar && <div data-node-actions role="group" aria-label={t("atelier.canvas.nodeActions")}

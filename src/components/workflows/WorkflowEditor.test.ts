@@ -44,7 +44,7 @@ describe("workflow editor", () => {
   it("draws a 3-block workflow: each block with its type above it and its ports, and a clickable wire for each link", () => {
     const html = render();
     expect(html.match(/data-canvas-node="/g)).toHaveLength(3);
-    for (const label of ["Déclencheur", "Condition", "Bot"]) expect(html).toContain(`<span class="truncate">${label}</span>`);
+    for (const label of ["Déclencheur", "Condition", "Bot"]) expect(html).toContain(`<span class="shrink-0">${label}</span>`);
     expect(html.match(/data-canvas-port="in"/g)).toHaveLength(2);
     expect(html).toContain('data-canvas-port="yes"');
     expect(html).toContain('data-canvas-port="no"');
@@ -54,7 +54,22 @@ describe("workflow editor", () => {
     expect(html).toContain('value="Factures du mois"');
     expect(html).toContain("Lancer maintenant");
     expect(html.match(/Lancer cette étape/g)).toHaveLength(2);
-    expect(html).toContain("Ajouter un bloc");
+    expect(html).toContain("Ajouter une étape");
+  });
+
+  it("says each step in plain words: a subtitle under its type, a neutral dot for text ports, and limits as a sentence", () => {
+    const html = render();
+    expect(html).toContain("Quand ça démarre");
+    expect(html).toContain("Si… alors");
+    expect(html).toContain("Un de tes bots agit");
+    expect(html).toMatch(/data-canvas-port="in"[^>]*><span data-port-dot/);
+    expect(html).toMatch(/data-canvas-port="yes"[^>]*><svg data-icon="Check"/);
+    expect(html).toMatch(/Au plus 20 étapes et 1\s\$ par lancement/);
+    expect(html).not.toMatch(/\bbloc\b/);
+  });
+
+  it("shows the Cartographe's button in the editor", () => {
+    expect(render({ assistant: createElement("button", { "data-cartographe-fab": "" }) })).toContain("data-cartographe-fab");
   });
 
   it("says plainly that bots act without asking and offers an approval, until there is one", () => {
@@ -72,12 +87,12 @@ describe("workflow editor", () => {
     const html = render({ problems: [
       { nodeId: "b", code: "unknown-bot", message_fr: "Le bot choisi est introuvable (supprimé ?). Choisis-en un autre.", message_en: "x" },
       { edgeId: "e2", code: "bad-port", message_fr: "Ce fil n'est pas branché au bon endroit.", message_en: "x" },
-      { code: "no-trigger", message_fr: "Ajoute un bloc Déclencheur.", message_en: "x" },
+      { code: "no-trigger", message_fr: "Ajoute une étape Déclencheur.", message_en: "x" },
     ] });
     expect(html).toContain("data-node-problems");
     expect(html).toContain("Le bot choisi est introuvable (supprimé ?). Choisis-en un autre.");
     expect(html).toContain("Ce fil n&#x27;est pas branché au bon endroit.");
-    expect(html).toContain("Ajoute un bloc Déclencheur.");
+    expect(html).toContain("Ajoute une étape Déclencheur.");
     expect(html).not.toContain("unknown-bot");
   });
 
@@ -102,7 +117,7 @@ describe("workflow editor", () => {
 
   it("names a refused run in plain words", () => {
     expect(render({ refusal: { kind: "busy" } })).toContain("Ce workflow tourne déjà.");
-    expect(render({ refusal: { kind: "invalid", problems: [] } })).toContain("Corrige d&#x27;abord ce qui est signalé sur les blocs.");
+    expect(render({ refusal: { kind: "invalid", problems: [] } })).toContain("Corrige d&#x27;abord ce qui est signalé sur les étapes.");
   });
 
   it("opens on a step's details: what it received and produced, and its cost", () => {
@@ -135,12 +150,24 @@ describe("block settings", () => {
     expect(html).toContain('aria-label="Lundi"');
   });
 
-  it("an AI block has its instruction, an optional system instruction and the app's models", () => {
-    const html = renderToStaticMarkup(createElement(NodeSettings, { ctx, onPatch: noop, node: { id: "a", kind: "ai", x: 0, y: 0, data: { prompt: "Résume", model: "claude/haiku" } } }));
-    expect(html).toContain("Écris la consigne ici");
-    expect(html).toContain("Consigne système (facultatif)");
-    expect(html).toContain("Modèle choisi par l&#x27;appli");
-    expect(html).toContain('<option value="claude/haiku" selected="">Claude Haiku</option>');
+  it("an AI step shows its instruction, and keeps the permanent instruction and the model behind « Réglages avancés »", () => {
+    const plain = renderToStaticMarkup(createElement(NodeSettings, { ctx, onPatch: noop, node: { id: "a", kind: "ai", x: 0, y: 0, data: { prompt: "Résume" } } }));
+    expect(plain).toContain("Écris la consigne ici");
+    expect(plain).toContain("Réglages avancés");
+    expect(plain).toContain('aria-expanded="false"');
+    expect(plain).not.toContain("Consigne permanente");
+    expect(plain).not.toContain("<select");
+    const set = renderToStaticMarkup(createElement(NodeSettings, { ctx, onPatch: noop, node: { id: "a", kind: "ai", x: 0, y: 0, data: { prompt: "Résume", model: "claude/haiku" } } }));
+    expect(set).toContain('aria-expanded="true"');
+    expect(set).toContain("Consigne permanente (facultatif)");
+    expect(set).toContain("Modèle choisi par l&#x27;appli");
+    expect(set).toContain('<option value="claude/haiku" selected="">Claude Haiku</option>');
+  });
+
+  it("a bot step shows the bot to pick, and its model only behind « Réglages avancés »", () => {
+    const html = renderToStaticMarkup(createElement(NodeSettings, { ctx, onPatch: noop, node: { id: "b", kind: "bot", x: 0, y: 0, data: { instruction: "Range", botId: "bot1" } } }));
+    expect(html).toContain("Réglages avancés");
+    expect(html).not.toContain("Modèle du bot");
   });
 
   it("a send block can go to a bot's chat, with a bot to choose", () => {
@@ -177,7 +204,7 @@ describe("an existing automation", () => {
     const html = render({ readOnly: true, onOpenAutomation: noop });
     expect(html).toContain("Automatisation existante, affichée ici en lecture seule.");
     expect(html).toContain("La modifier dans Automatisations");
-    expect(html).not.toContain("Ajouter un bloc");
+    expect(html).not.toContain("Ajouter une étape");
     expect(html).not.toContain("Lancer cette étape");
     expect(html).not.toContain("Lancer maintenant");
     expect(html).not.toContain("data-edge-hit");

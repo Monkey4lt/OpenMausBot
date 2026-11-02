@@ -79,9 +79,9 @@ function judgeEdges(w: Workflow): Map<string, EdgeVerdict> {
     const from = byId.get(edge.from.node), to = byId.get(edge.to.node);
     let verdict: EdgeVerdict = { ok: true };
     if (!from || !to) {
-      verdict = { ok: false, code: "dangling-edge", fr: "Ce fil mène à un bloc qui n'existe plus. Supprime-le.", en: "This wire leads to a block that no longer exists. Delete it." };
+      verdict = { ok: false, code: "dangling-edge", fr: "Ce fil mène à une étape qui n'existe plus. Supprime-le.", en: "This wire leads to a step that no longer exists. Delete it." };
     } else if (from.id === to.id) {
-      verdict = { ok: false, code: "self-loop", fr: "Un bloc ne peut pas être relié à lui-même.", en: "A block cannot be wired to itself." };
+      verdict = { ok: false, code: "self-loop", fr: "Une étape ne peut pas être reliée à elle-même.", en: "A step cannot be wired to itself." };
     } else if (to.kind === "note") {
       verdict = { ok: false, code: "edge-to-note", fr: "Une note ne reçoit rien : ce fil ne peut pas y arriver.", en: "A note takes nothing in: this wire cannot end on it." };
     } else if (from.kind === "note") {
@@ -94,7 +94,7 @@ function judgeEdges(w: Workflow): Map<string, EdgeVerdict> {
       };
     } else {
       const key = `${edge.from.node}\u0000${edge.from.port}\u0000${edge.to.node}\u0000${edge.to.port}`;
-      if (seen.has(key)) verdict = { ok: false, code: "duplicate-edge", fr: "Ces deux blocs sont déjà reliés par ce fil.", en: "These two blocks are already wired this way." };
+      if (seen.has(key)) verdict = { ok: false, code: "duplicate-edge", fr: "Ces deux étapes sont déjà reliées par ce fil.", en: "These two steps are already wired this way." };
       seen.add(key);
     }
     verdicts.set(edge.id, verdict);
@@ -111,7 +111,7 @@ export function validateWorkflow(w: Workflow, ctx: GraphContext): Problem[] {
   const problems: Problem[] = [];
   const triggers = w.nodes.filter((n) => n.kind === "trigger");
   if (!triggers.length) {
-    problems.push({ code: "no-trigger", message_fr: "Ajoute un bloc Déclencheur : c'est lui qui lance le workflow.", message_en: "Add a Trigger block: it is what starts the workflow." });
+    problems.push({ code: "no-trigger", message_fr: "Ajoute une étape Déclencheur : c'est elle qui lance le workflow.", message_en: "Add a Trigger step: it is what starts the workflow." });
   }
   for (const extra of triggers.slice(1)) {
     problems.push({ nodeId: extra.id, code: "two-triggers", message_fr: "Un workflow n'a qu'un seul déclencheur. Supprime celui-ci ou fais-en un autre workflow.", message_en: "A workflow has only one trigger. Delete this one or make it a separate workflow." });
@@ -134,7 +134,7 @@ export function validateWorkflow(w: Workflow, ctx: GraphContext): Problem[] {
     problems.push({
       edgeId: back.id, nodeId: back.to.node, code: "cycle",
       message_fr: "Ce fil fait revenir le workflow en arrière, ce qui le ferait tourner en rond. Supprime-le.",
-      message_en: "This wire sends the workflow back to an earlier block, so it would go round in circles. Delete it.",
+      message_en: "This wire sends the workflow back to an earlier step, so it would go round in circles. Delete it.",
     });
   }
   return problems;

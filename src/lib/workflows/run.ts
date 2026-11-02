@@ -30,6 +30,12 @@ export function formatUsd(value: number, locale: string): string {
   return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", currencyDisplay: "narrowSymbol", minimumFractionDigits: 2, maximumFractionDigits: 3 }).format(value);
 }
 
+/** A limit as people say it: "1 $", "0,50 $". */
+export function formatUsdLimit(value: number, locale: string): string {
+  const whole = Number.isInteger(value);
+  return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", currencyDisplay: "narrowSymbol", minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 3 }).format(value);
+}
+
 export function isRunning(run: WorkflowRun | null | undefined): boolean {
   return run?.status === "running";
 }

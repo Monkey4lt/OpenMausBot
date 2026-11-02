@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadLocale, setLocale, t } from "@/lib/i18n";
 import { projectWorkflowBadges } from "@/lib/workflows/overview";
-import { AtelierTitle, CartographeFab, CartographePanel, MapChangedNotice, ProjectBlockPole, ProjectCard, WorkflowBadge, WorkflowList } from "./ProjectsPage";
+import { AtelierTitle, CartographeFab, CartographePanel, MapChangedNotice, ProjectBlockPole, ProjectCard, WorkflowBadge, WorkflowList, WorkflowSectionTitle } from "./ProjectsPage";
 
 beforeEach(async () => { await loadLocale("fr"); });
 afterEach(() => { setLocale("en"); });
@@ -196,6 +196,12 @@ describe("workflows in the Atelier", () => {
     expect(html).toContain('data-run-dot="idle"');
     expect(html).toContain('data-run-dot="failed"');
     expect(html).toContain("Nouveau workflow");
+  });
+
+  it("names the workflows section with a plain subtitle", () => {
+    const html = renderToStaticMarkup(createElement(WorkflowSectionTitle, { onNew: () => {} }));
+    expect(html).toContain(">Workflows<");
+    expect(html).toContain("Tes automatisations en étapes");
   });
 
   it("says when there is no workflow yet", () => {
