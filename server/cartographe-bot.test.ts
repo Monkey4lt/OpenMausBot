@@ -88,6 +88,26 @@ describe("the Cartographe bot", () => {
     expect(reloaded.bots.some((b) => b.name === CARTOGRAPHE_NAME)).toBe(false);
   });
 
+  it("upgrades a Cartographe made by an older version: new tools and the new soul, nothing removed", () => {
+    const store = new Store(selection);
+    const bot = boot(store)!;
+    const olderSoul = "You are the Cartographe. You tidy the two maps of the Projects tab.\n\nExplain briefly.";
+    const olderAllow = ["mcp:agents:projects_read_map", "mcp:agents:projects_read_architecture", "mcp:agents:projects_apply_changes", "mcp:agents:tool_result_read", "mcp:ogb:ask_user", "native:*", "mcp:agents:list_bots"];
+    store.patchBot(bot.id, { soul: olderSoul, toolScope: { allow: olderAllow } });
+    const fixed = repairCartographeBot(new Store(selection), { dataDir: DATA_DIR })!;
+    for (const tool of [...PROJECT_TOOLS, ...MORE_TOOLS]) expect(fixed.toolScope!.allow).toContain(tool);
+    expect(fixed.toolScope!.allow).toContain("mcp:agents:list_bots");
+    expect(fixed.soul).toBe(CARTOGRAPHE_SOUL);
+    expect(new Store(selection).bot(bot.id)!.soul).toBe(CARTOGRAPHE_SOUL);
+  });
+
+  it("keeps a soul the person rewrote themselves", () => {
+    const store = new Store(selection);
+    const bot = boot(store)!;
+    store.patchBot(bot.id, { soul: "Tu es mon assistant de cartes, parle comme un pirate." });
+    expect(repairCartographeBot(new Store(selection), { dataDir: DATA_DIR })!.soul).toBe("Tu es mon assistant de cartes, parle comme un pirate.");
+  });
+
   it("is not the default bot, has approvalMode ask, and uses the app's default model", () => {
     const store = new Store(selection);
     const bot = boot(store)!;

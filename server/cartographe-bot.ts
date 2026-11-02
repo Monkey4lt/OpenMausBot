@@ -66,14 +66,20 @@ export function cartographeBotId(dataDir: string, exists?: (botId: string) => bo
   return id && (!exists || exists(id)) ? id : null;
 }
 
-/** Gives back native:* to a Cartographe saved without it; never makes one. */
+/** Brings a Cartographe made by an older version up to date (missing tools, native:*, our own older soul); never makes one, never removes a tool, keeps a soul the person rewrote. */
 export function repairCartographeBot(store: CartographeStore, options: { dataDir: string }): BotRecord | null {
   const id = ledgerId(options.dataDir);
   const bot = id ? store.bot(id) : undefined;
   if (!bot) return null;
+  const patch: Partial<Pick<BotRecord, "soul" | "toolScope">> = {};
   const allow = bot.toolScope?.allow;
-  if (!allow || allow.includes("native:*")) return bot;
-  return store.patchBot(bot.id, { toolScope: { ...bot.toolScope, allow: [...allow, "native:*"] } }) ?? bot;
+  if (allow) {
+    const missing = cartographeToolScope().allow!.filter((tool) => !allow.includes(tool));
+    if (missing.length) patch.toolScope = { ...bot.toolScope, allow: [...allow, ...missing] };
+  }
+  if (bot.soul !== CARTOGRAPHE_SOUL && (bot.soul ?? "").startsWith("You are the Cartographe.")) patch.soul = CARTOGRAPHE_SOUL;
+  if (!Object.keys(patch).length) return bot;
+  return store.patchBot(bot.id, patch) ?? bot;
 }
 
 /** Makes the Cartographe once per place, on the app's default model; one that is gone is never made again. */
