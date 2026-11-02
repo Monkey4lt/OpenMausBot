@@ -184,10 +184,38 @@ const GO_SINGLE = /\bimport[ \t]+(?:[\w.]+[ \t]+)?"([^"\n]+)"/g;
 const GO_BLOCK = /\bimport\s*\(([^()]*)\)/g;
 const GO_SPEC = /(?:[\w.]+[ \t]+)?"([^"\n]+)"/g;
 const RS_MOD = /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?mod[ \t]+(\w+)[ \t]*;/gm;
-const RS_USE = /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?use[ \t]+((?:::)?[\w:]+)/gm;
+const RS_USE = /^[ \t]*(?:pub(?:\([^)\n]{0,40}\))?[ \t]+)?use[ \t]+([^;]{1,4000});/gm;
 
 function findAll(re: RegExp, code: string, group: number): Found[] {
   return [...code.matchAll(re)].map((m) => ({ spec: m[group], at: m.index }));
+}
+
+function expandRustUse(tree: string): string[] {
+  const text = tree.replace(/\s+as\s+\w+/g, "").replace(/\s+/g, "");
+  let i = 0;
+  const group = (prefix: string): string[] => {
+    const out: string[] = [];
+    for (;;) {
+      out.push(...path(prefix));
+      if (text[i] === ",") { i++; if (text[i] === "}") break; continue; }
+      break;
+    }
+    return out;
+  };
+  const path = (prefix: string): string[] => {
+    const start = i;
+    while (i < text.length && /[\w:]/.test(text[i])) i++;
+    let segment = text.slice(start, i).replace(/^::|::$/g, "");
+    if (text[i] === "*") i++;
+    if (segment === "self" && prefix) segment = "";
+    const full = [prefix, segment].filter(Boolean).join("::");
+    if (text[i] !== "{") return full ? [full] : [];
+    i++;
+    const inner = group(full);
+    if (text[i] === "}") i++;
+    return inner;
+  };
+  return [...new Set(group(""))];
 }
 
 function findImports(language: Language, code: string): Found[] {
@@ -210,7 +238,7 @@ function findImports(language: Language, code: string): Found[] {
     ];
     case "rs": return [
       ...findAll(RS_MOD, code, 1).map((f) => ({ ...f, spec: `self::${f.spec}` })),
-      ...findAll(RS_USE, code, 1).map((f) => ({ ...f, spec: f.spec.replace(/::$/, "") })),
+      ...findAll(RS_USE, code, 1).flatMap((f) => expandRustUse(f.spec).map((spec) => ({ spec, at: f.at }))),
     ];
   }
 }
@@ -326,7 +354,8 @@ function resolveRust(from: string, spec: string, files: ReadonlySet<string>): st
     const found = firstExisting([`${target}.rs`, `${target}/mod.rs`], files);
     if (found) return found;
   }
-  return null;
+  const own = base ? `${base}/` : "";
+  return firstExisting([`${base}.rs`, `${own}mod.rs`, `${own}lib.rs`, `${own}main.rs`], files);
 }
 
 function resolveGo(spec: string, files: ReadonlySet<string>, aliases: Record<string, string>): string | null {
@@ -398,7 +427,7 @@ function isProjectSpec(from: string, spec: string, aliases: Record<string, strin
   if (/^\.{1,2}(\/|$)|^\//.test(spec)) return true;
   switch (extensionOf(from)) {
     case ".py": return spec.startsWith(".");
-    case ".rs": return /^(crate|self|super)::/.test(spec);
+    case ".rs": return /^(crate|self|super)(::|$)/.test(spec);
     default: return applyAlias(spec, aliases) !== null;
   }
 }

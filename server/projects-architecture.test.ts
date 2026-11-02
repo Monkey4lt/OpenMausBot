@@ -94,7 +94,7 @@ describe("parseImports", () => {
     ["Python lists, aliases, relative parents and comments", "a.py", "import os, sys as system  # import nope\nfrom .. import x\nfrom ..pkg.mod import (a, b)\n# import gone", ["os", "sys", "..", "..pkg.mod"]],
     ["Python docstring", "a.py", '"""\nimport nope\n"""\nimport real', ["real"]],
     ["Go single import with alias", "a.go", 'package main\n\nimport f "fmt"\nimport (\n  db "example.com/app/db" // the store\n  _ "embed"\n)', ["fmt", "example.com/app/db", "embed"]],
-    ["Rust pub mod, grouped use and external crates", "lib.rs", "pub mod api;\nmod inline { }\nuse crate::api::{routes, auth};\nuse serde::Serialize;\n// use crate::gone;", ["self::api", "crate::api", "serde::Serialize"]],
+    ["Rust pub mod, grouped use and external crates", "lib.rs", "pub mod api;\nmod inline { }\nuse crate::api::{routes, auth};\nuse serde::Serialize;\n// use crate::gone;", ["self::api", "crate::api::routes", "crate::api::auth", "serde::Serialize"]],
     ["SCSS use and css url()", "a.scss", '@use "./vars";\n@import url("./reset.css");\n// @import "./gone";', ["./vars", "./reset.css"]],
   ])("%s", (_name, path, text, specs) => expect(parseImports(path, text).map((r) => r.spec)).toEqual(specs));
 
@@ -313,5 +313,28 @@ describe("parseImports on hostile input", () => {
 
   it("a long but legal import list is still read", () => {
     expect(parseImports("a.ts", `import {${" a,".repeat(300)} } from "./many";`).map((r) => r.spec)).toEqual(["./many"]);
+  });
+});
+
+describe("Rust use groups and super", () => {
+  it.each([
+    ["use crate::{api, db};", ["crate::api", "crate::db"]],
+    ["use crate::api::{routes, auth::{login, Session}};", ["crate::api::routes", "crate::api::auth::login", "crate::api::auth::Session"]],
+    ["use super::*;", ["super"]],
+    ["use self::{a::*, b};", ["self::a", "self::b"]],
+    ["use crate::{self as me, x};", ["crate", "crate::x"]],
+    ["pub(crate) use super::model::User;", ["super::model::User"]],
+  ])("%s", (text, specs) => expect(parseImports("src/lib.rs", text).map((r) => r.spec)).toEqual(specs));
+
+  it("super, self and crate imports are never external", () => {
+    const arch = buildArchitecture(["src/lib.rs", "src/a/b.rs"], [
+      { path: "src/a/b.rs", imports: [{ spec: "super", line: 1 }, { spec: "crate::gone", line: 2 }, { spec: "self::x", line: 3 }, { spec: "crate", line: 4 }] },
+    ], {});
+    expect(arch.external).toEqual([]);
+  });
+
+  it("use super::* resolves to the parent module file", () => {
+    const files = new Set(["src/lib.rs", "src/net.rs", "src/net/tcp.rs"]);
+    expect(resolveImport("src/net/tcp.rs", "super", files, {})).toBe("src/net.rs");
   });
 });
