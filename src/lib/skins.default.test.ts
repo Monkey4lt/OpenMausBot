@@ -43,13 +43,13 @@ describe("default skin", () => {
     expect(await boot()).toEqual({ skin: "daylight", advanced: false, stored: "system" });
     values.set("omb-installed", "2026-10-17T00:00:00.000Z");
     os.dark = true;
-    expect(await boot()).toEqual({ skin: "midnight", advanced: false, stored: "system" });
+    expect(await boot()).toEqual({ skin: "aurora", advanced: false, stored: "system" });
   });
 
-  it("switches between Daylight and Midnight when the computer does, while following it", async () => {
+  it("switches between Daylight and Aurora when the computer does, while following it", async () => {
     await boot();
     setOsDark(true);
-    expect(document.documentElement.dataset.skin).toBe("midnight");
+    expect(document.documentElement.dataset.skin).toBe("aurora");
     setOsDark(false);
     expect(document.documentElement.dataset.skin).toBe("daylight");
   });
