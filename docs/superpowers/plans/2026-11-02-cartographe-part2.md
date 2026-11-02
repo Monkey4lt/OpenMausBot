@@ -149,3 +149,14 @@ it("draws piece links with the legend", () => {});
 - [ ] **Step 1:** Toute la suite projets/cartographe → PASS ; `generate-locale --check` PASS ; tsc strict sur les fichiers serveur touchés.
 - [ ] **Step 2:** Relecture de toute la branche par un agent séparé (sécurité de `read_file`, consignes d'automatisation, règle n°1 dans les textes) ; corrections.
 - [ ] **Step 3:** Fusion dans `main`, push.
+
+### Task 15: Passe finale « intégration simple »
+
+Demandée par l'utilisateur : une dernière passe sur **toutes** les modifications (carte d'architecture, thème Aurora, Cartographe parties 1 et 2) pour que l'ensemble s'installe et s'utilise sans effort par quelqu'un qui n'est pas dans la tech.
+
+- [ ] **Step 1 : Parcours de première utilisation.** Ouvrir Projets sans source → l'écran vide propose en un seul endroit : ajouter un dossier, se connecter à GitHub, demander au Cartographe. Test de rendu de cet écran.
+- [ ] **Step 2 : Textes.** Relire chaque texte fr ajouté par les trois chantiers (clés `projects.*`, `sidebar.nav.projects`, messages du Cartographe, cartes d'accord) avec la règle n°1 ; corriger le jargon ; `generate-locale --check` PASS.
+- [ ] **Step 3 : Cohérence.** Mêmes mots partout pour les mêmes choses (pôle, famille, module, pièce, carte), mêmes couleurs de familles dans la carte et les étiquettes, bouton « Demander au Cartographe » au même style que les autres boutons de la barre.
+- [ ] **Step 4 : Installation.** Le script Windows `OpenMausBot.bat` : vérifier qu'il récupère, installe et lance la version fusionnée en un double-clic, ferme proprement une ancienne MausBot ouverte (ou explique quoi faire), et affiche un message clair en cas d'erreur ; le publier dans le dépôt (`scripts/windows/OpenMausBot.bat`) avec un `docs/projets-guide-fr.md` d'une page : installer, ajouter ses projets, lire la carte, parler au Cartographe, mettre à jour.
+- [ ] **Step 5 : Mises à jour de MausBot.** Vérifier que la branche fusionnée reste simple à mettre à jour depuis l'amont : lister les fichiers amont touchés et le nombre de lignes, réduire ce qui peut l'être ; documenter la commande de mise à jour dans le guide.
+- [ ] **Step 6 :** Relecture finale par un agent séparé de l'ensemble ; corrections ; fusion dans `main`, push.
