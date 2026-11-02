@@ -2781,6 +2781,11 @@
   "projects.sources.remove": "Retirer",
   "projects.sources.github": "GitHub",
   "projects.sources.githubPlaceholder": "Compte ou dépôt, ex. monpseudo ou monpseudo/mon-depot",
-  "projects.sources.githubHint": "Un compte donne un bloc par dépôt ; un dépôt donne un seul bloc. Pour les dépôts privés, l'appli utilise la connexion GitHub déjà enregistrée par Git sur cet ordinateur.",
-  "projects.sourceError": "Impossible de lire « {name} » :"
+  "projects.sources.githubHint": "Un compte donne un bloc par dépôt ; un dépôt donne un seul bloc.",
+  "projects.sourceError": "Impossible de lire « {name} » :",
+  "projects.github.signedIn": "Connecté à GitHub en tant que {login}",
+  "projects.github.signedOut": "Pas connecté à GitHub : seuls les dépôts publics sont visibles",
+  "projects.github.signIn": "Se connecter à GitHub",
+  "projects.github.switch": "Changer de compte",
+  "projects.github.waiting": "Une fenêtre GitHub s'ouvre : connecte-toi dedans, puis reviens ici"
 }

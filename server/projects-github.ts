@@ -5,55 +5,64 @@ const MAX_REPOS = 100;
 
 export interface GithubRepo { name: string; fullName: string; defaultBranch: string; pushedAt: string }
 
-function run(cmd: string, args: string[], input: string | null, timeout: number): Promise<string | null> {
+function run(cmd: string, args: string[], input: string, options: { timeout: number; env?: NodeJS.ProcessEnv; hide?: boolean }): Promise<string | null> {
   return new Promise((resolve) => {
-    const child = execFile(cmd, args, { timeout, windowsHide: true }, (error, stdout) => resolve(error ? null : stdout));
-    child.stdin?.end(input ?? "");
+    const child = execFile(cmd, args, { timeout: options.timeout, env: options.env, windowsHide: options.hide ?? true }, (error, stdout) => resolve(error ? null : stdout));
+    child.stdin?.end(input);
   });
 }
 
-/** A token from the GitHub CLI, when it is installed and signed in. */
-async function ghCliToken(): Promise<string | null> {
-  return (await run("gh", ["auth", "token"], null, 10_000))?.trim() || null;
-}
+const GITHUB_HOST = "protocol=https\nhost=github.com\n\n";
 
 /**
- * The github.com login Git already keeps (Git Credential Manager, osxkeychain, a store file).
- * With no stored login, Git Credential Manager opens its own sign-in window (it skips that when
- * GIT_TERMINAL_PROMPT=0, so the variable is left alone); the person has two minutes to finish.
+ * The github.com login Git keeps (Git Credential Manager, osxkeychain, a store file).
+ * Quiet reads set GIT_TERMINAL_PROMPT=0 and GCM_INTERACTIVE=never so a scan never opens a window;
+ * a sign-in leaves both alone so Git Credential Manager shows its own window, and does not pass
+ * windowsHide, which on Windows would hide that window too.
  */
-export function gitCredentialToken(): Promise<string | null> {
-  return new Promise((resolve) => {
-    const child = execFile(
-      "git",
-      ["credential", "fill"],
-      // No windowsHide: on Windows it would also hide Git Credential Manager's sign-in window.
-      { timeout: 120_000 },
-      (error, stdout) => {
-        if (error) return resolve(null);
-        const line = stdout.split("\n").find((l) => l.startsWith("password="));
-        resolve(line ? line.slice("password=".length).trim() || null : null);
-      },
-    );
-    child.stdin?.end("protocol=https\nhost=github.com\n\n");
-  });
+async function gitCredential(interactive: boolean): Promise<string | null> {
+  const env = interactive ? process.env : { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" };
+  const out = await run("git", ["credential", "fill"], GITHUB_HOST, { timeout: interactive ? 180_000 : 15_000, env, hide: !interactive });
+  const line = out?.split("\n").find((l) => l.startsWith("password="));
+  return line?.slice("password=".length).trim() || null;
 }
 
-let tokenPromise: Promise<string | null> | null = null;
-/** A missing token is asked for again on the next scan, so signing in later takes effect without a restart. */
-function token(): Promise<string | null> {
-  tokenPromise ??= (async () => (await ghCliToken()) ?? (await gitCredentialToken()))();
-  return tokenPromise.then((value) => {
-    if (!value) tokenPromise = null;
-    return value;
-  });
+async function forgetGitCredential(): Promise<void> {
+  await run("git", ["credential", "reject"], GITHUB_HOST, { timeout: 15_000 });
 }
 
-export async function githubSignedIn(): Promise<boolean> {
-  return Boolean(await token());
+async function ghCliToken(): Promise<string | null> {
+  return (await run("gh", ["auth", "token"], "", { timeout: 10_000 }))?.trim() || null;
 }
 
-async function gh<T>(path: string, auth: string | null): Promise<T> {
+let session: { token: string; login: string } | null = null;
+
+async function loginFor(candidate: string | null): Promise<{ token: string; login: string } | null> {
+  if (!candidate) return null;
+  const user = await gh<{ login: string }>("/user", candidate, false).catch(() => null);
+  return user ? { token: candidate, login: user.login } : null;
+}
+
+/** The stored login, read without opening any window; null when this computer is not signed in. */
+async function token(): Promise<string | null> {
+  session ??= (await loginFor(await gitCredential(false))) ?? (await loginFor(await ghCliToken()));
+  return session?.token ?? null;
+}
+
+export async function githubLogin(): Promise<string | null> {
+  await token();
+  return session?.login ?? null;
+}
+
+/** Opens Git Credential Manager's sign-in window; `switchAccount` forgets the stored login first. */
+export async function githubSignIn(switchAccount: boolean): Promise<string | null> {
+  if (switchAccount) await forgetGitCredential();
+  session = await loginFor(await gitCredential(true));
+  if (!session && !switchAccount) session = await loginFor(await ghCliToken());
+  return session?.login ?? null;
+}
+
+async function gh<T>(path: string, auth: string | null, retryAnonymous = true): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     headers: {
       accept: "application/vnd.github+json",
@@ -63,8 +72,8 @@ async function gh<T>(path: string, auth: string | null): Promise<T> {
     },
     signal: AbortSignal.timeout(20_000),
   }).catch(() => { throw new Error("GitHub unreachable: check the internet connection"); });
-  if (res.status === 401 && auth) {
-    tokenPromise = null;
+  if (res.status === 401 && auth && retryAnonymous) {
+    session = null;
     return gh<T>(path, null);
   }
   if (!res.ok) {

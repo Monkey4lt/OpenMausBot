@@ -136,6 +136,7 @@ function SourcesDialog({ sources, errors, onSave, onClose }: { sources: Source[]
               <input className={cn(field, "font-mono")} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t(kind === "github" ? "projects.sources.githubPlaceholder" : "projects.sources.pathPlaceholder")} />
             </div>
             {kind !== "local" && <p className="mt-2 text-[12px] leading-relaxed text-ink-tertiary">{t(kind === "ssh" ? "projects.sources.sshHint" : "projects.sources.githubHint")}</p>}
+            {kind === "github" && <GithubAccount />}
             <button disabled={!valid} onClick={add} className="mt-3 flex items-center gap-2 rounded-lg bg-raised px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-40"><Plus size={14} />{t("projects.sources.add")}</button>
           </div>
         </div>
@@ -576,6 +577,34 @@ export function ProjectsPage() {
       )}
       {askNode}
     </main>
+  );
+}
+
+function GithubAccount() {
+  const [login, setLogin] = useState<string | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api<{ login: string | null }>("/api/projects/github").then((r) => setLogin(r.login), () => setLogin(null));
+  }, []);
+  const signIn = (switchAccount: boolean) => {
+    setBusy(true);
+    api<{ login: string | null }>("/api/projects/github/signin", { method: "POST", body: JSON.stringify({ switch: switchAccount }), timeoutMs: 200_000 })
+      .then((r) => setLogin(r.login), () => undefined)
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="mt-3 flex items-center gap-2 rounded-lg bg-inset px-3 py-2 text-[12.5px]">
+      <Github size={14} className="shrink-0 text-ink-secondary" />
+      <span className="min-w-0 flex-1 leading-snug text-ink-secondary">
+        {busy ? t("projects.github.waiting") : login === undefined ? "…" : login ? t("projects.github.signedIn", { login }) : t("projects.github.signedOut")}
+      </span>
+      {!busy && login !== undefined && (
+        <button onClick={() => signIn(Boolean(login))} className={cn("shrink-0 rounded-md px-2.5 py-1 text-[12.5px] font-medium", login ? "text-ink-secondary hover:bg-raised hover:text-ink" : "bg-accent text-white hover:brightness-110")}>
+          {t(login ? "projects.github.switch" : "projects.github.signIn")}
+        </button>
+      )}
+      {busy && <Loader2 size={14} className="shrink-0 animate-spin text-ink-tertiary" />}
+    </div>
   );
 }
 
