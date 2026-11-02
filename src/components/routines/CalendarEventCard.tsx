@@ -1,5 +1,5 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Video } from "lucide-react";
+import { Video, Workflow as WorkflowIcon } from "lucide-react";
 
 import { BotAvatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
@@ -9,6 +9,7 @@ import { CALENDAR_SLOT_MINUTES } from "@/lib/routine-calendar";
 import { routineHeldNote, routineRunLabel } from "@/lib/routine-display";
 import type { RoutineRunStatus } from "@/lib/routines";
 import { intervalLabel, niceTime } from "@/lib/schedule-label";
+import { isWorkflowRoutineBot } from "@/lib/workflows/open-request";
 import type { Bot, Group } from "@/state/store";
 import type { CalendarEventItem } from "../RoutineCalendarPage";
 import { EVENT_DRAG_TYPE } from "./LimitResetMarkers";
@@ -59,6 +60,7 @@ export function CalendarEventCard({
   const ownerIds = isCall ? item.call.botIds : [run?.botId ?? routine?.botId ?? ""];
   const ownerBots = ownerIds.flatMap((id) => bots.find((bot) => bot.id === id) ?? []);
   const primary = ownerBots[0];
+  const isWorkflow = !isCall && isWorkflowRoutineBot(run?.botId ?? routine?.botId);
   const name = isCall ? item.call.name : run?.routineName ?? routine?.name ?? "Automation";
   const color = isCall ? "var(--color-accent)" : primary ? MAUS_COLORS[primary.color] : "var(--color-ink-tertiary)";
   const paused = Boolean(routine && !run && !routine.enabled);
@@ -72,7 +74,7 @@ export function CalendarEventCard({
   const intervalCadence = schedule?.type === "interval" ? intervalLabel(schedule.everyMinutes) : null;
   const height = Math.max(16, (previewDuration / 60) * HOUR_HEIGHT);
   const fit = cardLayout(height);
-  const who = isCall ? t(ownerBots.length === 1 ? "routines.botCountOne" : "routines.botCountMany", { count: ownerBots.length }) : room ? room.name : primary?.name;
+  const who = isCall ? t(ownerBots.length === 1 ? "routines.botCountOne" : "routines.botCountMany", { count: ownerBots.length }) : room ? room.name : isWorkflow ? t("workflows.routine.owner") : primary?.name;
   const details = [name, niceTime(item.at), who, intervalCadence, paused ? (routine && routineHeldNote(routine)) ?? t("routines.pausedSchedule") : statusLabel].filter(Boolean).join(" · ");
   const cronHint = routine?.schedule.type === "cron" ? "Open this automation to change its repeating schedule and time zone." : "";
 
@@ -103,6 +105,7 @@ export function CalendarEventCard({
   const dot = !isCall && <span data-event-status={paused ? "paused" : attention ? "needs-you" : "working"} className={cn("size-1.5 shrink-0 rounded-full", paused ? "bg-ink-tertiary" : attention ? "bg-warning" : "bg-success")} />;
   const avatar = (size: number) => isCall
     ? <Video size={13} className="mt-0.5 shrink-0" />
+    : isWorkflow ? <WorkflowIcon size={Math.min(13, size)} className="mt-0.5 shrink-0" />
     : primary ? <BotAvatar bot={primary} state={status ? statusState(status) : paused ? "sleeping" : "idle"} size={size} animated={status === "running" || status === "waiting"} /> : null;
 
   return (

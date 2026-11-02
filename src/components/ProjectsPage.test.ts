@@ -152,4 +152,13 @@ describe("workflows in the Atelier", () => {
   it("says when there is no workflow yet", () => {
     expect(renderToStaticMarkup(createElement(WorkflowList, { workflows: [], activeId: null, onOpen: () => {}, onNew: () => {} }))).toContain("Aucun workflow pour l&#x27;instant");
   });
+
+  it("lists existing automations after the workflows, to open read-only", () => {
+    const automation = { id: "routine-r1", routineId: "r1", name: "Mails du matin", readOnly: true as const, enabled: false, nextRunAt: null, nodes: [], edges: [] };
+    const html = renderToStaticMarkup(createElement(WorkflowList, { workflows: list, automations: [automation], activeId: null, onOpen: () => {}, onNew: () => {} }));
+    expect(html).toContain('data-automation="r1"');
+    expect(html).toContain("Mails du matin");
+    expect(html).toContain("en pause");
+    expect(html.indexOf("Rapport du matin")).toBeLessThan(html.indexOf("Mails du matin"));
+  });
 });

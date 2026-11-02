@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { nextRunAt, scheduleOfKind } from "./schedule";
+import { nextRunAt, scheduleOfKind, triggerNext } from "./schedule";
 
 const PARIS = "Europe/Paris";
 // Monday 2 November 2026, 10:00 in Paris (UTC+1).
@@ -38,5 +38,22 @@ describe("workflow trigger schedule", () => {
     expect(scheduleOfKind("weekdays", { kind: "daily", at: "07:15" }, "2026-11-02")).toEqual({ kind: "weekdays", at: "07:15", days: [1, 2, 3, 4, 5] });
     expect(scheduleOfKind("interval", { kind: "daily", at: "07:15" }, "2026-11-02")).toEqual({ kind: "interval", everyMinutes: 60 });
     expect(scheduleOfKind("once", { kind: "daily", at: "07:15" }, "2026-11-02")).toEqual({ kind: "once", at: "07:15", date: "2026-11-02" });
+  });
+
+  it("shows the next run the app planned once the workflow has its routine, and the estimate before", () => {
+    const daily = { mode: "schedule" as const, schedule: { kind: "daily" as const, at: "11:30" } };
+    expect(triggerNext({ mode: "manual" }, undefined, now, PARIS, [])).toEqual({ kind: "manual" });
+    expect(triggerNext(daily, { enabled: true, nextRunAt: 123 }, now, PARIS, [])).toEqual({ kind: "at", at: 123 });
+    expect(triggerNext(daily, { enabled: false, nextRunAt: 123 }, now, PARIS, [])).toEqual({ kind: "paused" });
+    expect(triggerNext(daily, undefined, now, PARIS, [])).toEqual({ kind: "at", at: Date.UTC(2026, 10, 2, 10, 30) });
+    expect(triggerNext({ mode: "schedule", schedule: { kind: "interval", everyMinutes: 30 } }, undefined, now, PARIS, [])).toEqual({ kind: "interval", minutes: 30 });
+    expect(triggerNext({ mode: "schedule" }, null, now, PARIS, [])).toEqual({ kind: "none" });
+  });
+
+  it("an AI-limit trigger waits for that AI's reset, when it is known", () => {
+    const engines = [{ engine: "claude", name: "Claude", resetsAt: now + 3_600_000 }, { engine: "codex", name: "Codex", resetsAt: null }];
+    expect(triggerNext({ mode: "ai-reset", engine: "claude" }, { enabled: true, nextRunAt: null }, now, PARIS, engines)).toEqual({ kind: "reset", at: now + 3_600_000 });
+    expect(triggerNext({ mode: "ai-reset", engine: "codex" }, null, now, PARIS, engines)).toEqual({ kind: "reset", at: null });
+    expect(triggerNext({ mode: "ai-reset" }, null, now, PARIS, engines)).toEqual({ kind: "none" });
   });
 });

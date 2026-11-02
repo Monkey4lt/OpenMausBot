@@ -1,9 +1,9 @@
 import type { ReactNode, TextareaHTMLAttributes } from "react";
-import { ChevronDown, Clock, Play } from "lucide-react";
+import { ChevronDown, Clock, Gauge, Play, TriangleAlert } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { nextRunAt, scheduleOfKind } from "@/lib/workflows/schedule";
+import { scheduleOfKind, triggerNext, type TriggerNext } from "@/lib/workflows/schedule";
 import type { NodeData, WorkflowNode, WorkflowSchedule } from "../../../shared/workflows";
 import { NodeField } from "../canvas/NodeFrame";
 
@@ -11,7 +11,16 @@ export type BotOption = { id: string; name: string; color?: string };
 export type ModelOption = { value: string; label: string; group: string };
 
 type Patch = (patch: Record<string, unknown>) => void;
-export type SettingsContext = { bots: readonly BotOption[]; models: readonly ModelOption[]; now: number; timeZone: string; locale: string; readOnly?: boolean };
+export type EngineOption = { engine: string; name: string; resetsAt: number | null };
+export type TriggerRoutine = { enabled: boolean; nextRunAt: number | null };
+export type SettingsContext = {
+  bots: readonly BotOption[]; models: readonly ModelOption[]; now: number; timeZone: string; locale: string; readOnly?: boolean;
+  /** The AIs whose usage limit a trigger can wait for. */
+  engines?: readonly EngineOption[];
+  /** The routine the app made for a scheduled trigger (null: none), and why it could not, in plain words. */
+  routine?: TriggerRoutine | null;
+  routineError?: string;
+};
 
 const fieldText = "w-full resize-none bg-transparent text-[13px] leading-[19px] text-ink outline-none placeholder:text-ink-tertiary";
 
@@ -74,21 +83,22 @@ export function formatWhen(at: number, locale: string, timeZone: string): string
 function TriggerSettings({ data, patch, ctx }: { data: NodeData<"trigger">; patch: Patch; ctx: SettingsContext }) {
   const s = data.schedule;
   const setSchedule = (next: WorkflowSchedule) => patch({ schedule: next });
-  const next = nextRunAt(data, ctx.now, ctx.timeZone);
-  const nextText = data.mode === "manual" ? t("workflows.trigger.nextManual")
-    : next !== null ? formatWhen(next, ctx.locale, ctx.timeZone)
-    : s?.kind === "interval" && s.everyMinutes ? t("workflows.trigger.nextInterval", { n: s.everyMinutes }) : "—";
+  const next = triggerNext(data, ctx.routine, ctx.now, ctx.timeZone, ctx.engines ?? []);
+  const nextText = nextLine(next, ctx);
+  const engines = ctx.engines ?? [];
+  const engineKnown = !data.engine || engines.some((e) => e.engine === data.engine);
   return <>
     <NodeField className="flex flex-col gap-0 p-0">
       <div className="flex items-center gap-2 px-3 py-2">
         <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-[7px] bg-warning/15 text-warning">
-          {data.mode === "schedule" ? <Clock size={13} strokeWidth={2} /> : <Play size={12} strokeWidth={2} />}
+          {data.mode === "schedule" ? <Clock size={13} strokeWidth={2} /> : data.mode === "ai-reset" ? <Gauge size={13} strokeWidth={2} /> : <Play size={12} strokeWidth={2} />}
         </span>
         <PillSelect value={data.mode} label={t("workflows.trigger.mode")} disabled={ctx.readOnly} className="flex-1"
-          onChange={(mode) => patch(mode === "schedule" ? { mode, schedule: s ?? scheduleOfKind("daily", undefined, today(ctx.now, ctx.timeZone)) } : { mode })}>
+          onChange={(mode) => patch(mode === "schedule" ? { mode, schedule: s ?? scheduleOfKind("daily", undefined, today(ctx.now, ctx.timeZone)) }
+            : mode === "ai-reset" ? { mode, engine: data.engine ?? engines[0]?.engine } : { mode })}>
           <option value="manual">{t("workflows.trigger.mode.manual")}</option>
           <option value="schedule">{t("workflows.trigger.mode.schedule")}</option>
-          {data.mode === "ai-reset" && <option value="ai-reset">{t("workflows.trigger.mode.aiReset")}</option>}
+          <option value="ai-reset">{t("workflows.trigger.mode.aiReset")}</option>
         </PillSelect>
       </div>
       {data.mode === "schedule" && s && <div className="flex flex-wrap items-center gap-1.5 border-t border-hairline/50 px-3 py-2 text-[12.5px] text-ink-tertiary">
@@ -126,13 +136,35 @@ function TriggerSettings({ data, patch, ctx }: { data: NodeData<"trigger">; patc
           })}
         </div>}
       </div>}
+      {data.mode === "ai-reset" && <div className="flex flex-wrap items-center gap-1.5 border-t border-hairline/50 px-3 py-2 text-[12.5px] text-ink-tertiary">
+        <span>{t("workflows.trigger.engine")}</span>
+        <PillSelect value={data.engine ?? ""} label={t("workflows.trigger.engine")} disabled={ctx.readOnly} className="rounded-[8px] bg-ink/[0.06]"
+          onChange={(engine) => patch({ engine: engine || undefined })}>
+          <option value="">{t("workflows.trigger.engine.pick")}</option>
+          {!engineKnown && <option value={data.engine}>{data.engine}</option>}
+          {engines.map((e) => <option key={e.engine} value={e.engine}>{e.name}</option>)}
+        </PillSelect>
+      </div>}
       <div className="flex items-center justify-between gap-3 border-t border-hairline/50 px-3 py-2 text-[12.5px]">
         <span className="text-ink-tertiary">{t("workflows.trigger.next")}</span>
         <span data-next-run className="truncate font-medium tabular-nums text-ink">{nextText}</span>
       </div>
     </NodeField>
-    {data.mode === "schedule" && <p className="px-1.5 text-[11.5px] leading-snug text-ink-tertiary">{t("workflows.trigger.notYet")}</p>}
+    {ctx.routineError && data.mode !== "manual" && <NodeField data-routine-error className="flex gap-1.5 bg-danger/10 py-1.5 text-[12px] leading-snug text-danger">
+      <TriangleAlert size={13} className="mt-[3px] shrink-0" />{t("workflows.trigger.routineError", { reason: ctx.routineError })}
+    </NodeField>}
   </>;
+}
+
+function nextLine(next: TriggerNext, ctx: SettingsContext): string {
+  switch (next.kind) {
+    case "manual": return t("workflows.trigger.nextManual");
+    case "paused": return t("workflows.trigger.paused");
+    case "none": return "—";
+    case "at": return formatWhen(next.at, ctx.locale, ctx.timeZone);
+    case "interval": return t("workflows.trigger.nextInterval", { n: next.minutes });
+    case "reset": return next.at !== null ? formatWhen(next.at, ctx.locale, ctx.timeZone) : t("workflows.trigger.nextReset");
+  }
 }
 
 function YesNoRows() {

@@ -62,3 +62,30 @@ export function scheduleOfKind(kind: WorkflowSchedule["kind"], previous: Workflo
 export function viewerTimeZone(): string {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
 }
+
+export type TriggerNext =
+  | { kind: "manual" } | { kind: "paused" } | { kind: "none" }
+  | { kind: "at"; at: number } | { kind: "interval"; minutes: number } | { kind: "reset"; at: number | null };
+
+/** What « Prochaine exécution » says: the routine the app planned when there is one, else an estimate from the block. */
+export function triggerNext(
+  trigger: TriggerData,
+  routine: { enabled: boolean; nextRunAt: number | null } | null | undefined,
+  now: number,
+  timeZone: string,
+  engines: readonly { engine: string; resetsAt: number | null }[],
+): TriggerNext {
+  if (trigger.mode !== "schedule" && trigger.mode !== "ai-reset") return { kind: "manual" };
+  if (routine && !routine.enabled) return { kind: "paused" };
+  if (trigger.mode === "ai-reset") {
+    if (!trigger.engine) return { kind: "none" };
+    if (routine?.nextRunAt) return { kind: "at", at: routine.nextRunAt };
+    const reset = engines.find((e) => e.engine === trigger.engine)?.resetsAt ?? null;
+    return { kind: "reset", at: reset !== null && reset > now ? reset : null };
+  }
+  if (routine?.nextRunAt) return { kind: "at", at: routine.nextRunAt };
+  const at = nextRunAt(trigger, now, timeZone);
+  if (at !== null) return { kind: "at", at };
+  if (trigger.schedule?.kind === "interval" && trigger.schedule.everyMinutes) return { kind: "interval", minutes: trigger.schedule.everyMinutes };
+  return { kind: "none" };
+}

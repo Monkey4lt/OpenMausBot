@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BADGE_GAP, BADGE_H, badgeHooks, projectWorkflowBadges, runDot, withRun, type WorkflowSummary } from "./overview";
+import { automationAsWorkflow, BADGE_GAP, BADGE_H, badgeHooks, projectWorkflowBadges, runDot, withRun, type WorkflowSummary } from "./overview";
 
 const summary = (id: string, extra: Partial<WorkflowSummary> = {}): WorkflowSummary => ({ id, name: id, rev: 1, updatedAt: 1, ...extra });
 
@@ -41,5 +41,12 @@ describe("workflows on the Atelier overview", () => {
     expect(withRun(list, run(20, "running"))[0]!.lastRun).toEqual({ status: "running", startedAt: 20 });
     expect(withRun(list, run(5, "failed"))).toBe(list);
     expect(withRun(list, { ...run(20, "running"), workflowId: "gone" })).toBe(list);
+  });
+
+  it("shows an existing automation as a read-only workflow: its trigger and its bot", () => {
+    const nodes = [{ id: "t", kind: "trigger", x: 0, y: 0, data: { mode: "schedule", schedule: { kind: "daily", at: "08:00" } } }, { id: "b", kind: "bot", x: 420, y: 0, data: { instruction: "Lis mes mails", botId: "bot1" } }];
+    const edges = [{ id: "e", from: { node: "t", port: "out" }, to: { node: "b", port: "in" } }];
+    const w = automationAsWorkflow({ id: "routine-r1", routineId: "r1", name: "Mails du matin", readOnly: true, enabled: true, nextRunAt: 5, routineSchedule: {}, nodes, edges } as never);
+    expect(w).toMatchObject({ id: "routine-r1", name: "Mails du matin", nodes, edges, annotations: [], limits: { maxSteps: 20, maxCostUsd: 1 }, rev: 0 });
   });
 });

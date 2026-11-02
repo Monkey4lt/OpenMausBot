@@ -1,4 +1,4 @@
-import type { RunStatus } from "../../../shared/workflows";
+import { DEFAULT_LIMITS, type RunStatus, type Workflow } from "../../../shared/workflows";
 
 type Rect = { x: number; y: number; w: number; h: number };
 
@@ -10,6 +10,8 @@ export interface WorkflowSummary {
   rev: number;
   updatedAt: number;
   lastRun?: { status: RunStatus; startedAt: number };
+  /** Its routine's next run, when its trigger starts it on its own. */
+  nextRunAt?: number | null;
 }
 
 export type RunDot = RunStatus | "idle";
@@ -63,4 +65,20 @@ export function withRun(list: WorkflowSummary[], run: { id: string; workflowId: 
   const next = [...list];
   next[index] = { ...list[index]!, lastRun: { status: run.status, startedAt: run.startedAt } };
   return next;
+}
+
+/** GET /api/workflows/automations: an automation of a bot, shown as Trigger → Bot. */
+export interface AutomationSummary {
+  id: string;
+  routineId: string;
+  name: string;
+  readOnly: true;
+  enabled: boolean;
+  nextRunAt: number | null;
+  nodes: Workflow["nodes"];
+  edges: Workflow["edges"];
+}
+
+export function automationAsWorkflow(a: AutomationSummary): Workflow {
+  return { id: a.id, name: a.name, nodes: a.nodes, edges: a.edges, annotations: [], limits: { ...DEFAULT_LIMITS }, rev: 0, createdAt: 0, updatedAt: 0 };
 }

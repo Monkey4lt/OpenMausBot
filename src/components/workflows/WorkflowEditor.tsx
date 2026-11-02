@@ -13,6 +13,7 @@ import {
 } from "@/lib/workflows/editor";
 import { formatUsd, isRunning, stepsByNode, type RunRefusal } from "@/lib/workflows/run";
 import { viewerTimeZone } from "@/lib/workflows/schedule";
+import { useEngineLimits } from "@/lib/limit-resets";
 import type { LocaleKey } from "@/locales";
 import { DEFAULT_LIMITS, NODE_KINDS, type NodeKind, type OutputPort, type Workflow, type WorkflowRun } from "../../../shared/workflows";
 import { AnnotationLayer } from "../canvas/AnnotationLayer";
@@ -21,7 +22,7 @@ import { CanvasSearch, type CanvasSearchItem } from "../canvas/CanvasSearch";
 import { EdgeLayer, type CanvasEdge } from "../canvas/EdgeLayer";
 import { portAnchors } from "../canvas/NodeFrame";
 import { Toolbar } from "../canvas/Toolbar";
-import type { BotOption, ModelOption } from "./NodeSettings";
+import type { BotOption, EngineOption, ModelOption, TriggerRoutine } from "./NodeSettings";
 import { PillSelect } from "./NodeSettings";
 import { RUN_DOT, RunPanel } from "./RunPanel";
 import { useWorkflow } from "./useWorkflow";
@@ -48,10 +49,38 @@ export type EditorProps = {
   onDeleted: () => void;
   /** Asks the person to confirm; resolves true on yes. */
   confirm: (title: string, text: string) => Promise<boolean>;
+  /** An existing automation shown as Trigger → Bot: nothing here changes it. */
+  readOnly?: { workflow: Workflow; routine: { enabled: boolean; nextRunAt: number | null }; onOpenAutomation: () => void };
 };
 
+/** The AIs a trigger can wait for: those whose limits the app reads, then every AI that is set up. */
+function useEngines(models: readonly ModelOption[]): EngineOption[] {
+  const limits = useEngineLimits();
+  return useMemo(() => {
+    const out = new Map<string, EngineOption>(limits.map((l) => [l.engine, { engine: l.engine, name: l.name, resetsAt: l.resetsAt }]));
+    for (const m of models) {
+      const engine = m.value.split("/")[0]!;
+      if (!out.has(engine)) out.set(engine, { engine, name: m.group, resetsAt: null });
+    }
+    return [...out.values()];
+  }, [limits, models]);
+}
+
 /** The workflow editor on the Atelier canvas (loaded on demand). */
-export default function WorkflowEditor({ workflowId, projects, bots, models, onBack, onDeleted, confirm }: EditorProps) {
+export default function WorkflowEditor(props: EditorProps) {
+  const engines = useEngines(props.models);
+  const { readOnly } = props;
+  if (readOnly) {
+    const noop = async () => null;
+    return <WorkflowEditorView workflow={readOnly.workflow} problems={[]} saveState="idle" changedElsewhere={false} runs={[]} refusal={null}
+      projects={props.projects} bots={props.bots} models={props.models} engines={engines} routine={readOnly.routine} readOnly onOpenAutomation={readOnly.onOpenAutomation}
+      onEdit={() => {}} onPreview={() => {}} onRun={noop} onRunStep={noop} onRetry={noop} onCancel={noop}
+      onBack={props.onBack} onDelete={() => {}} onReload={() => {}} onDismissChanged={() => {}} onDismissRefusal={() => {}} />;
+  }
+  return <LiveEditor {...props} engines={engines} />;
+}
+
+function LiveEditor({ workflowId, projects, bots, models, engines, onBack, onDeleted, confirm }: EditorProps & { engines: EngineOption[] }) {
   const wf = useWorkflow(workflowId);
   if (wf.gone) {
     return <Centered>
@@ -65,7 +94,7 @@ export default function WorkflowEditor({ workflowId, projects, bots, models, onB
       : <Loader2 size={20} className="animate-spin text-ink-secondary" />}</Centered>;
   }
   return <WorkflowEditorView workflow={wf.workflow} problems={wf.problems} saveState={wf.saveState} changedElsewhere={wf.changedElsewhere}
-    runs={wf.runs} refusal={wf.refusal} projects={projects} bots={bots} models={models}
+    runs={wf.runs} refusal={wf.refusal} projects={projects} bots={bots} models={models} engines={engines} routine={wf.routine} routineError={wf.routineError}
     onEdit={wf.edit} onPreview={wf.preview} onRun={wf.run} onRunStep={wf.runStep} onRetry={wf.retry} onCancel={wf.cancel}
     onBack={onBack} onReload={wf.reload} onDismissChanged={wf.dismissChanged} onDismissRefusal={wf.dismissRefusal}
     onDelete={async () => {
@@ -101,6 +130,12 @@ export type EditorViewProps = {
   onReload: () => void;
   onDismissChanged: () => void;
   onDismissRefusal: () => void;
+  engines?: readonly EngineOption[];
+  routine?: TriggerRoutine | null;
+  routineError?: string;
+  /** An existing automation, shown but never changed here. */
+  readOnly?: boolean;
+  onOpenAutomation?: () => void;
   /** For screenshots and tests: what is open at first. */
   initial?: { panel?: boolean; openStep?: string; selected?: string; now?: number };
 };
@@ -179,7 +214,7 @@ export function WorkflowEditorView(props: EditorViewProps) {
 
   // Wiring: press an output port, drag, release over another block.
   const startWire = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || tool !== "select") return;
+    if (event.button !== 0 || tool !== "select" || props.readOnly) return;
     const port = (event.target as Element).closest<HTMLElement>("[data-canvas-port]");
     const nodeId = port?.closest<HTMLElement>("[data-canvas-node]")?.dataset.canvasNode;
     const portId = port?.dataset.canvasPort;
@@ -241,7 +276,8 @@ export function WorkflowEditorView(props: EditorViewProps) {
     if (started) setOpenStep(id);
   };
 
-  const ctx = { bots: props.bots, models: props.models, now, timeZone, locale };
+  const readOnly = props.readOnly ?? false;
+  const ctx = { bots: props.bots, models: props.models, now, timeZone, locale, readOnly, engines: props.engines, routine: props.routine, routineError: props.routineError };
   const firstBot = workflow.nodes.find((n) => n.kind === "bot");
   const searchItems: CanvasSearchItem[] = [
     ...workflow.nodes.map((n) => ({ id: n.id, label: nodeSummary(n) || t(KIND_LABEL[n.kind]), rect: rects.get(n.id)!, kind: t(KIND_LABEL[n.kind]) })),
@@ -258,30 +294,35 @@ export function WorkflowEditorView(props: EditorViewProps) {
   const general = [...grouped.general.map((p) => problemText(p, locale))];
 
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-app" data-workflow-editor={workflow.id}>
-    <EditorHeader workflow={workflow} projects={props.projects} saveState={props.saveState} running={running ?? null} lastRun={runs[0] ?? null}
+    <EditorHeader readOnly={readOnly} workflow={workflow} projects={props.projects} saveState={props.saveState} running={running ?? null} lastRun={runs[0] ?? null}
       panelOpen={panelOpen} onTogglePanel={() => setPanelOpen(!panelOpen)} onBack={props.onBack} onDelete={props.onDelete} onEdit={onEdit}
       onRun={() => void run()} onStop={() => running && void props.onCancel(running.id)} />
     {props.changedElsewhere && <Strip tone="warning" onClose={props.onDismissChanged}>
       {t("workflows.changed")}
       <button type="button" onClick={props.onReload} className="ml-2 rounded-md px-2 py-0.5 font-medium text-ink hover:bg-raised">{t("workflows.reload")}</button>
     </Strip>}
-    {firstBot && <BotWarning hasApproval={hasBlockOfKind(workflow, "approval")}
+    {readOnly && <Strip tone="warning">
+      {t("workflows.readOnly")}
+      {props.onOpenAutomation && <button type="button" onClick={props.onOpenAutomation} className="ml-2 rounded-md px-2 py-0.5 font-medium text-ink hover:bg-raised">{t("workflows.readOnly.open")}</button>}
+    </Strip>}
+    {firstBot && <BotWarning hasApproval={readOnly || hasBlockOfKind(workflow, "approval")}
       onAddApproval={() => { const id = newEditorId("p"); onEdit((w) => insertApprovalBefore(w, firstBot.id, id, newEditorId("e"))); setSelected(id); }} />}
 
     <div ref={setBox} className="relative flex min-h-0 min-w-0 flex-1" onPointerDownCapture={startWire}
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && (e.target as Element).closest("[data-canvas]")) { e.preventDefault(); setSearchOpen(true); }
-        if ((e.key === "Delete" || e.key === "Backspace") && selected && (e.target as Element).matches("[data-canvas]") && rects.has(selected)) { onEdit((w) => removeNode(w, selected)); setSelected(null); }
+        if (!readOnly && (e.key === "Delete" || e.key === "Backspace") && selected && (e.target as Element).matches("[data-canvas]") && rects.has(selected)) { onEdit((w) => removeNode(w, selected)); setSelected(null); }
       }}>
-      <Canvas view={view} onViewChange={setView} tool={tool} rects={frame} minimap label={workflow.name}
+      <Canvas view={view} onViewChange={setView} tool={tool} rects={frame} minimap label={workflow.name} readOnly={readOnly}
         onBackgroundClick={() => { setSelected(null); setAddOpen(false); }}
         toolbar={<div className="relative">
           {addOpen && <AddMenu onPick={add} onClose={() => setAddOpen(false)} />}
-          <Toolbar tool={tool} onTool={setTool} search={() => setSearchOpen((open) => !open)} onAdd={() => setAddOpen((open) => !open)} />
+          <Toolbar tool={tool} onTool={setTool} tools={readOnly ? ["select", "hand"] : undefined} search={() => setSearchOpen((open) => !open)}
+            onAdd={readOnly ? undefined : () => setAddOpen((open) => !open)} />
         </div>}
-        overlay={<AnnotationLayer items={annotations} tool={tool} selectedId={selected} onSelect={setSelected} onTool={setTool}
+        overlay={<AnnotationLayer items={annotations} tool={tool} selectedId={selected} onSelect={setSelected} onTool={setTool} readOnly={readOnly}
           onChange={(items: Annotation[]) => onEdit((w) => ({ ...w, annotations: items }))} />}
-        underlay={<EdgeLayer edges={edges} onEdgeClick={(id) => { if (id !== "__wire") onEdit((w) => removeEdge(w, id)); }} />}>
+        underlay={<EdgeLayer edges={edges} onEdgeClick={readOnly ? undefined : (id) => { if (id !== "__wire") onEdit((w) => removeEdge(w, id)); }} />}>
         {workflow.nodes.map((node) => <WorkflowNodeCard key={node.id} node={node} rect={rects.get(node.id)!} selected={selected === node.id}
           step={steps[node.id]} problems={grouped.nodes[node.id] ?? []} ctx={ctx} busy={busy} nodeRef={measure}
           onSelect={select} onMove={(id, x, y) => onPreview((w) => moveNode(w, id, x, y))} onMoveEnd={(id, x, y) => onEdit((w) => moveNode(w, id, x, y))}
@@ -375,8 +416,8 @@ function AddMenu({ onPick, onClose }: { onPick: (kind: NodeKind) => void; onClos
 
 const headerButton = "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[13px] text-ink-secondary hover:bg-raised-hover hover:text-ink";
 
-function EditorHeader({ workflow, projects, saveState, running, lastRun, panelOpen, onTogglePanel, onBack, onDelete, onEdit, onRun, onStop }: {
-  workflow: Workflow; projects: readonly { id: string; name: string }[]; saveState: SaveStatus; running: WorkflowRun | null; lastRun: WorkflowRun | null;
+function EditorHeader({ readOnly, workflow, projects, saveState, running, lastRun, panelOpen, onTogglePanel, onBack, onDelete, onEdit, onRun, onStop }: {
+  readOnly: boolean; workflow: Workflow; projects: readonly { id: string; name: string }[]; saveState: SaveStatus; running: WorkflowRun | null; lastRun: WorkflowRun | null;
   panelOpen: boolean; onTogglePanel: () => void; onBack: () => void; onDelete: () => void; onEdit: (change: (w: Workflow) => Workflow) => void; onRun: () => void; onStop: () => void;
 }) {
   const [name, setName] = useState(workflow.name);
@@ -395,14 +436,14 @@ function EditorHeader({ workflow, projects, saveState, running, lastRun, panelOp
         <ArrowLeft size={15} /><span className="hidden sm:inline">{t("projects.title")}</span>
       </button>
       <ChevronRight size={13} className="shrink-0 text-ink-tertiary" />
-      <input value={name} aria-label={t("workflows.name")} maxLength={120} onChange={(e) => setName(e.target.value)} onBlur={commitName}
+      {readOnly ? <span className="min-w-0 truncate px-1.5 text-[14px] font-semibold text-ink">{workflow.name}</span> : <input value={name} aria-label={t("workflows.name")} maxLength={120} onChange={(e) => setName(e.target.value)} onBlur={commitName}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setName(workflow.name); (e.target as HTMLInputElement).blur(); } }}
-        className="h-8 min-w-[6rem] max-w-[22rem] flex-1 truncate rounded-lg bg-transparent px-1.5 text-[14px] font-semibold text-ink outline-none hover:bg-raised focus:bg-raised" />
+        className="h-8 min-w-[6rem] max-w-[22rem] flex-1 truncate rounded-lg bg-transparent px-1.5 text-[14px] font-semibold text-ink outline-none hover:bg-raised focus:bg-raised" />}
       {saveLabel && <span className={cn("hidden shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] sm:flex", saveState === "error" ? "text-danger" : "text-ink-tertiary")}>
         <span className={cn("size-[7px] rounded-full", saveState === "error" ? "bg-danger" : saveState === "saving" ? "bg-warning" : "bg-success")} />{saveLabel}
       </span>}
     </nav>
-    <div className="flex items-center gap-1">
+    {!readOnly && <div className="flex items-center gap-1">
       <span className="hidden items-center rounded-full border border-hairline/60 px-1 md:flex">
         <PillSelect value={workflow.projectId ?? ""} label={t("workflows.project")} strong={Boolean(workflow.projectId)}
           onChange={(id) => onEdit((w) => { const { projectId: _old, ...rest } = w; return id ? { ...rest, projectId: id } : rest; })}>
@@ -429,7 +470,7 @@ function EditorHeader({ workflow, projects, saveState, running, lastRun, panelOp
         : <button type="button" onClick={onRun} className="ml-1 flex h-8 items-center gap-1.5 rounded-full bg-ink px-3.5 text-[13px] font-medium text-app hover:bg-ink/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
             {t("workflows.run")}<Play size={12} />
           </button>}
-    </div>
+    </div>}
   </div>;
 }
 

@@ -150,6 +150,42 @@ describe("block settings", () => {
   });
 });
 
+describe("a trigger the app plans", () => {
+  const ctx = { bots: [], models: [], now: Date.UTC(2026, 10, 2, 9), timeZone: "Europe/Paris", locale: "fr" };
+  const daily = { id: "t", kind: "trigger" as const, x: 0, y: 0, data: { mode: "schedule" as const, schedule: { kind: "daily" as const, at: "09:00" } } };
+
+  it("shows the next run the routine planned, and why it could not be planned", () => {
+    const html = renderToStaticMarkup(createElement(NodeSettings, { onPatch: noop, node: daily,
+      ctx: { ...ctx, routine: { enabled: true, nextRunAt: Date.UTC(2026, 10, 4, 8) }, routineError: "Choose a time" } }));
+    expect(html).toMatch(/data-next-run[^>]*>mer\. 4 nov\.,? 09:00</);
+    expect(html).toContain("data-routine-error");
+    expect(html).toContain("L&#x27;appli n&#x27;a pas pu le planifier : Choose a time");
+    expect(renderToStaticMarkup(createElement(NodeSettings, { onPatch: noop, node: daily, ctx: { ...ctx, routine: { enabled: false, nextRunAt: null } } }))).toContain("En pause dans Automatisations");
+  });
+
+  it("an AI-limit trigger picks the AI to wait for", () => {
+    const html = renderToStaticMarkup(createElement(NodeSettings, { onPatch: noop, node: { ...daily, data: { mode: "ai-reset", engine: "claude" } },
+      ctx: { ...ctx, engines: [{ engine: "claude", name: "Claude", resetsAt: null }, { engine: "codex", name: "Codex", resetsAt: null }] } }));
+    expect(html).toContain('<option value="claude" selected="">Claude</option>');
+    expect(html).toContain(">Codex</option>");
+    expect(html).toContain("Quand sa limite se réinitialise");
+  });
+});
+
+describe("an existing automation", () => {
+  it("is shown read-only: no run, no add, no delete, no wire to cut, and a way to change it in Automations", () => {
+    const html = render({ readOnly: true, onOpenAutomation: noop });
+    expect(html).toContain("Automatisation existante, affichée ici en lecture seule.");
+    expect(html).toContain("La modifier dans Automatisations");
+    expect(html).not.toContain("Ajouter un bloc");
+    expect(html).not.toContain("Lancer cette étape");
+    expect(html).not.toContain("Lancer maintenant");
+    expect(html).not.toContain("data-edge-hit");
+    expect(html).not.toContain('aria-label="Nom du workflow"');
+    expect(html).not.toContain("Ajouter une approbation");
+  });
+});
+
 describe("run panel", () => {
   it("lists the history newest first, with unknown costs never shown as zero", () => {
     const done: WorkflowRun = { ...run, id: "r0", status: "failed", reason: "Limite de 1 $ atteinte", startedAt: run.startedAt - 1000,

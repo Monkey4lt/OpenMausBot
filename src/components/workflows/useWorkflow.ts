@@ -7,7 +7,8 @@ import { runRefusal, upsertRun, type RunRefusal } from "@/lib/workflows/run";
 import { api } from "@/state/api";
 import type { Workflow, WorkflowRun } from "../../../shared/workflows";
 
-type Answer = { workflow: Workflow; problems: WorkflowProblem[] };
+type RoutineState = { id: string; enabled: boolean; nextRunAt: number | null };
+type Answer = { workflow: Workflow; problems: WorkflowProblem[]; routine?: RoutineState | null; routineError?: string };
 const SAVE_DELAY_MS = 800;
 
 /** One workflow as the editor sees it: loaded, saved shortly after each change with the rev it was based on, kept in
@@ -21,6 +22,7 @@ export function useWorkflow(id: string) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [refusal, setRefusal] = useState<RunRefusal | null>(null);
+  const [routine, setRoutine] = useState<{ state: RoutineState | null; error?: string }>({ state: null });
   const latest = useRef<Workflow | null>(null);
   const unsaved = useRef(false);
   const loadRef = useRef<() => Promise<void>>(async () => {});
@@ -31,6 +33,7 @@ export function useWorkflow(id: string) {
       unsaved.current = false;
       const answer = await api<Answer>(path, { method: "PUT", body: JSON.stringify({ workflow: next, baseRev }) });
       setProblems(answer.problems);
+      if ("routine" in answer) setRoutine({ state: answer.routine ?? null, error: answer.routineError });
       return { rev: answer.workflow.rev };
     },
     reload: () => { void loadRef.current(); },
@@ -49,6 +52,7 @@ export function useWorkflow(id: string) {
       latest.current = answer.workflow;
       setWorkflow(answer.workflow);
       setProblems(answer.problems);
+      setRoutine({ state: answer.routine ?? null, error: answer.routineError });
       setRuns(history.runs.reduce<WorkflowRun[]>((list, run) => upsertRun(list, run), []));
       setLoadFailed(false);
     } catch (error) {
@@ -106,7 +110,7 @@ export function useWorkflow(id: string) {
 
   const post = (url: string, body?: unknown) => api<{ run?: WorkflowRun }>(url, { method: "POST", body: JSON.stringify(body ?? {}) });
   return {
-    workflow, problems, saveState, changedElsewhere, gone, loadFailed, runs, refusal,
+    workflow, problems, saveState, changedElsewhere, gone, loadFailed, runs, refusal, routine: routine.state, routineError: routine.error,
     edit, preview,
     reload: () => { setChangedElsewhere(false); void load(); },
     dismissChanged: () => setChangedElsewhere(false),

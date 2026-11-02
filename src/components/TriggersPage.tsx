@@ -9,6 +9,7 @@ import { isRoutineProblemRun } from "@/lib/routines";
 import { saveWebhookCredential, webhookCredentialStore } from "@/lib/webhook-credentials";
 import { useStore } from "@/state/store";
 import { useAppTriggers } from "@/lib/app-triggers";
+import { isWorkflowRoutineBot, requestOpenWorkflow, workflowOfRoutine } from "@/lib/workflows/open-request";
 import { AppEventEditor } from "./automations/AppEventEditor";
 import { useAllAutomationActions } from "./automations/app-actions";
 import { AutomationPanel } from "./automations/AutomationPanel";
@@ -39,7 +40,14 @@ export function TriggersPage({ onBack, onOpenRoom }: { onBack: () => void; onOpe
   const [editing, setEditing] = useState<{ kind: SetUpKind; id?: string; botId?: string } | null>(null);
   const routinesOnly = window.ogb?.remoteClient?.active === true;
   const visibleBots = state.bots.filter((bot) => !bot.hidden);
-  const botName = (botId: string) => state.bots.find((bot) => bot.id === botId)?.name ?? t("routines.unavailableBot");
+  const botName = (botId: string) => isWorkflowRoutineBot(botId) ? t("workflows.routine.owner") : state.bots.find((bot) => bot.id === botId)?.name ?? t("routines.unavailableBot");
+  /** A workflow's routine opens the workflow in the Atelier: its Trigger block is where its schedule is set. */
+  const openAutomation = (id: string | null) => {
+    const workflowId = workflowOfRoutine(state.routines.find((routine) => routine.id === id));
+    if (!workflowId) { setOpenId(id); return; }
+    requestOpenWorkflow(workflowId);
+    dispatch({ type: "showProjects" });
+  };
 
   useEffect(() => {
     setBotFilter(focus?.botId ?? "all");
@@ -94,7 +102,7 @@ export function TriggersPage({ onBack, onOpenRoom }: { onBack: () => void; onOpe
       </header>
 
       <div className="relative flex min-h-0 flex-1">
-        {view === "calendar" ? <AutomationsCalendar botFilter={botFilter} selectedAutomationId={openId} onOpenAutomation={setOpenId} onOpenRoom={onOpenRoom} /> : (
+        {view === "calendar" ? <AutomationsCalendar botFilter={botFilter} selectedAutomationId={openId} onOpenAutomation={openAutomation} onOpenRoom={onOpenRoom} /> : (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
               <LimitWarnings botFilter={showFilter ? botFilter : "all"} />
@@ -114,7 +122,7 @@ export function TriggersPage({ onBack, onOpenRoom }: { onBack: () => void; onOpe
                       <li key={automation.id} data-automation={automation.id} data-automation-status={status.state} className={cn("flex items-start gap-3 px-4 py-3.5", openId === automation.id && "bg-raised/60")}>
                         <StatusMark status={status} className="mt-[5px]" />
                         <div className="min-w-0 flex-1">
-                          <button type="button" onClick={() => setOpenId(automation.id)} className="block text-left text-[15px] font-medium leading-snug text-ink hover:text-accent-text">{name || sentenceOf(automation)}</button>
+                          <button type="button" onClick={() => openAutomation(automation.id)} className="block text-left text-[15px] font-medium leading-snug text-ink hover:text-accent-text">{name || sentenceOf(automation)}</button>
                           {name && <div className="mt-0.5 text-[13px] text-ink">{sentenceOf(automation)}</div>}
                           {status.state === "needs-you"
                             ? <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[13px] text-warning">{t("automations.needsYou", { reason: status.reason ?? "" })}<FixButton automation={automation} status={status} actions={actions} onEdit={() => setEditing({ kind: automation.kind, id: automation.id })} /></div>

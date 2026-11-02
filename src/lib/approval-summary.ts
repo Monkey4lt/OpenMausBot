@@ -69,13 +69,16 @@ export interface OutboundSummary {
 const OPAQUE_TOOL = "COMPOSIO_PROXY_EXECUTE";
 /** The Cartographe's batch of changes to the Projects maps: nothing leaves the app. */
 const PROJECTS_TOOL = "projects_apply_changes";
+/** A workflow the Cartographe proposes for the Atelier: made in the app only once allowed. */
+const WORKFLOW_TOOL = "workflows_propose";
 
 export function outboundSummary(card: Pick<OptionCardData, "outboundRequest" | "subtitle">): OutboundSummary | undefined {
   if (!card.outboundRequest) return undefined;
   const calls = outboundCalls(card);
   const app = outboundApp(calls);
-  if (card.outboundRequest.tool === PROJECTS_TOOL) {
+  if (card.outboundRequest.tool === PROJECTS_TOOL || card.outboundRequest.tool === WORKFLOW_TOOL) {
     const lines = card.outboundRequest.calls?.length ? card.outboundRequest.calls.map((call) => call.label) : card.subtitle.split("\n").filter(Boolean);
+    if (card.outboundRequest.tool === WORKFLOW_TOOL) return { headline: t("approval.outbound.workflow"), summary: "", lines };
     return {
       headline: lines.length === 1 ? t("approval.outbound.projectsOne") : t("approval.outbound.projectsMany", { count: lines.length }),
       summary: "",

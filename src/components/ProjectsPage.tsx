@@ -2,7 +2,7 @@
 // its full file tree, on the shared canvas. Blocks are grouped by "pôle" (group) and joined by links.
 // Shown in place of the chat, like Team map. Layout is saved on the server; the view is kept per device.
 import {
-  ChevronDown, ChevronRight, CircleHelp, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
+  ChevronDown, ChevronRight, CircleHelp, Clock, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
   Network, Pencil, Plus, RefreshCw, Search, Server, Sparkles, Trash2, Workflow as WorkflowIcon, X,
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -20,7 +20,8 @@ import { createMapSync } from "@/lib/projects-map-sync";
 import { panelDraft, panelLayout, readPanelOpen, writePanelOpen } from "@/lib/projects-panel";
 import { MAUS_COLORS } from "@/lib/mascot";
 import { modelOptions, newEditorId, newWorkflowInput } from "@/lib/workflows/editor";
-import { badgeHooks, badgeStackHeight, projectWorkflowBadges, runDot, withRun, type RunDot, type WorkflowSummary } from "@/lib/workflows/overview";
+import { automationAsWorkflow, badgeHooks, badgeStackHeight, projectWorkflowBadges, runDot, withRun, type AutomationSummary, type RunDot, type WorkflowSummary } from "@/lib/workflows/overview";
+import { onOpenWorkflowRequest, takeOpenWorkflowRequest } from "@/lib/workflows/open-request";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { api } from "@/state/api";
 import { GROUP_PALETTE as PALETTE } from "../../shared/project-groups";
@@ -245,7 +246,8 @@ export function ProjectsPage() {
   const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [mapOf, setMapOf] = useState<Project | null>(null);
   const [workflows, setWorkflows] = useState<WorkflowSummary[] | null>(null);
-  const [openWorkflow, setOpenWorkflow] = useState<string | null>(null);
+  const [openWorkflow, setOpenWorkflow] = useState<string | null>(() => takeOpenWorkflowRequest());
+  const [automations, setAutomations] = useState<AutomationSummary[]>([]);
   const [workflowMenu, setWorkflowMenu] = useState(false);
   const [mapChanged, setMapChanged] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -290,7 +292,9 @@ export function ProjectsPage() {
   useEffect(() => { void load(); }, [load]);
   const loadWorkflows = useCallback(() => {
     api<{ workflows: WorkflowSummary[] }>("/api/workflows").then((r) => setWorkflows(r.workflows), () => setWorkflows((list) => list ?? []));
+    api<{ automations: AutomationSummary[] }>("/api/workflows/automations").then((r) => setAutomations(r.automations), () => {});
   }, []);
+  useEffect(() => onOpenWorkflowRequest(() => { const id = takeOpenWorkflowRequest(); if (id) { setMapOf(null); setOpenWorkflow(id); } }), []);
   useEffect(() => { loadWorkflows(); }, [loadWorkflows]);
   useEffect(() => listenLiveFrames({
     onFrame: (frame) => {
@@ -439,6 +443,7 @@ export function ProjectsPage() {
       await ask({ title: t("workflows.new.failed", { message: (error as Error).message }), ok: t("projects.close"), input: false });
     }
   };
+  const openedAutomation = automations.find((a) => a.id === openWorkflow);
   const openFlow = (id: string) => { setWorkflowMenu(false); setMapOf(null); setOpenWorkflow(id); };
   const searchItems: CanvasSearchItem[] = [
     ...projects.map((p) => ({ id: p.id, label: p.name, rect: rects.get(p.id)! })),
@@ -484,7 +489,7 @@ export function ProjectsPage() {
               <ToolButton onClick={() => setWorkflowMenu(!workflowMenu)} label={t("workflows.section")}><WorkflowIcon size={15} /></ToolButton>
             </ToolGroup>
             {workflowMenu && <Menu onClose={() => setWorkflowMenu(false)} className="right-0 top-10 w-[min(280px,calc(100vw-2rem))]">
-              <WorkflowList workflows={workflows} activeId={openWorkflow} onOpen={openFlow} onNew={() => void newWorkflow()} />
+              <WorkflowList workflows={workflows} automations={automations} activeId={openWorkflow} onOpen={openFlow} onNew={() => void newWorkflow()} />
             </Menu>}
           </div>
           <CartographeButton bot={cartographe} onAsk={() => togglePanel(!panelOpen, mapOf?.name)} />
@@ -523,7 +528,7 @@ export function ProjectsPage() {
                 {t("workflows.section")}
                 <button className="ui-icon-button" aria-label={t("workflows.new")} title={t("workflows.new")} onClick={() => void newWorkflow()}><Plus size={15} /></button>
               </div>
-              <WorkflowList workflows={workflows} activeId={openWorkflow} onOpen={openFlow} onNew={() => void newWorkflow()} />
+              <WorkflowList workflows={workflows} automations={automations} activeId={openWorkflow} onOpen={openFlow} onNew={() => void newWorkflow()} />
             </div>
           </div>
         </aside>
@@ -534,6 +539,8 @@ export function ProjectsPage() {
           <WorkflowEditor key={openWorkflow} workflowId={openWorkflow} projects={projects.map((p) => ({ id: p.id, name: p.name }))}
             bots={appState.bots.filter((b) => !b.hidden).map((b) => ({ id: b.id, name: b.name, color: MAUS_COLORS[b.color] }))}
             models={modelOptions(appState.instances ?? [])}
+            readOnly={openedAutomation ? { workflow: automationAsWorkflow(openedAutomation), routine: { enabled: openedAutomation.enabled, nextRunAt: openedAutomation.nextRunAt },
+              onOpenAutomation: () => dispatch({ type: "showRoutines", routineId: openedAutomation.routineId }) } : undefined}
             onBack={() => setOpenWorkflow(null)} onDeleted={() => { setOpenWorkflow(null); loadWorkflows(); }}
             confirm={async (title, text) => Boolean(await ask({ title, text, ok: t("projects.delete"), danger: true, input: false }))} />
         </Suspense>}
@@ -678,7 +685,9 @@ const RUN_DOT_LABEL = {
 } as const;
 
 /** The left bar's workflows, each with the state of its last run; null while loading. */
-export function WorkflowList({ workflows, activeId, onOpen, onNew }: { workflows: readonly WorkflowSummary[] | null; activeId: string | null; onOpen: (id: string) => void; onNew: () => void }) {
+export function WorkflowList({ workflows, automations = [], activeId, onOpen, onNew }: {
+  workflows: readonly WorkflowSummary[] | null; automations?: readonly AutomationSummary[]; activeId: string | null; onOpen: (id: string) => void; onNew: () => void;
+}) {
   return (
     <ul className="flex flex-col" data-workflow-list>
       {workflows === null && <li className="px-2 py-1"><Loader2 size={13} className="animate-spin text-ink-tertiary" /></li>}
@@ -687,7 +696,8 @@ export function WorkflowList({ workflows, activeId, onOpen, onNew }: { workflows
         const dot = runDot(w.lastRun);
         return (
           <li key={w.id}>
-            <button type="button" onClick={() => onOpen(w.id)} aria-current={activeId === w.id ? "page" : undefined} title={t(RUN_DOT_LABEL[dot])}
+            <button type="button" onClick={() => onOpen(w.id)} aria-current={activeId === w.id ? "page" : undefined}
+              title={[t(RUN_DOT_LABEL[dot]), w.nextRunAt ? t("workflows.nextRun", { when: new Date(w.nextRunAt).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) }) : ""].filter(Boolean).join(" · ")}
               className={cn("flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] hover:bg-raised", activeId === w.id ? "bg-raised font-medium text-ink" : "text-ink-secondary hover:text-ink")}>
               <WorkflowIcon size={14} className="shrink-0 text-ink-tertiary" />
               <span className="min-w-0 flex-1 truncate">{w.name}</span>
@@ -696,6 +706,16 @@ export function WorkflowList({ workflows, activeId, onOpen, onNew }: { workflows
           </li>
         );
       })}
+      {automations.map((a) => (
+        <li key={a.id}>
+          <button type="button" onClick={() => onOpen(a.id)} aria-current={activeId === a.id ? "page" : undefined} data-automation={a.routineId} title={t("workflows.automation")}
+            className={cn("flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] hover:bg-raised", activeId === a.id ? "bg-raised font-medium text-ink" : "text-ink-tertiary hover:text-ink")}>
+            <Clock size={14} className="shrink-0 text-ink-tertiary" />
+            <span className="min-w-0 flex-1 truncate">{a.name}</span>
+            {!a.enabled && <span className="shrink-0 text-[11px] text-ink-tertiary">{t("workflows.trigger.pausedShort")}</span>}
+          </button>
+        </li>
+      ))}
       <li>
         <button type="button" onClick={onNew} className="mt-0.5 flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] text-ink-tertiary hover:bg-raised hover:text-ink">
           <Plus size={14} className="shrink-0" />{t("workflows.new")}

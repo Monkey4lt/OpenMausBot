@@ -113,6 +113,8 @@
 
 **Livré (écarts) :** `src/lib/workflows/{editor,run,schedule,overview}.ts` ; `RunPanel.tsx` en plus ; `createMapSync` gagne `frameRev` (trames `workflow`) ; « Prochaine exécution » calculée côté client (`schedule.ts`, fuseau du navigateur ; `croner` absent du bac à sable) ; `wouldCycle` côté client dans `editor.ts` ; sélecteur de modèle = liste native des modèles des IA configurées (`modelOptions`), pas le `ModelPicker` de l'appli (lié à un bot) ; « Ajouter une approbation » insère le bloc devant le premier bot ; tsc impossible ici (types React/zod absents).
 
+**Interface des tâches 10–12 :** « Prochaine exécution » lue de la routine (`routine.nextRunAt`, estimation avant), `routineError` en clair sur le Déclencheur, choix de l'IA pour « limite réinitialisée » (`data.engine`, limites lues par `useEngineLimits` + IA configurées) ; automatisations des bots listées dans la section Workflows et ouvertes en lecture seule ; carte `workflows_propose` = liste de lignes comme `projects_apply_changes` ; une routine de workflow ouvre le workflow dans l'Atelier depuis Automatisations (liste et calendrier, `open-request.ts`) et s'affiche « Workflow » au lieu d'un bot.
+
 ### Task 6 (fait) : Workflows dans la vue d'ensemble (B1)
 
 **Files:** Modify `src/components/ProjectsPage.tsx` — Test `src/components/ProjectsPage.test.ts`
