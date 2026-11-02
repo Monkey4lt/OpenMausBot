@@ -403,7 +403,7 @@ it("a second call with the same files does not read them again", async () => {})
 - Produces : `ArchitectureView({ project: { id: string; name: string }, onBack: () => void })` ; fonction pure exportée `levelOf(arch: Architecture, focus: { family?: Family; module?: string }): { nodes: { id: string; label: string; files: number }[]; edges: { from: string; to: string; weight: number }[] }`.
 - Clés i18n : `projects.map.open`, `projects.map.back`, `projects.map.family.<famille>` (10), `projects.map.files`, `projects.map.uses`, `projects.map.usedBy`, `projects.map.external`, `projects.map.truncated`, `projects.map.moveTo`, `projects.map.rename`, `projects.map.loading`, `projects.map.error`.
 
-- [ ] **Step 1 : Write the failing tests** (`renderToStaticMarkup`, `setLocale("fr")`)
+- [x] **Step 1 : Write the failing tests** (`renderToStaticMarkup`, `setLocale("fr")`)
 
 ```ts
 it("levelOf at the top shows families and family edges", () => {});
@@ -413,8 +413,8 @@ it("shows the truncated banner when truncated is true", () => { expect(html).toC
 it("a file panel lists uses and used by", () => {});
 ```
 
-- [ ] **Step 2 :** FAIL. **Step 3 :** implémenter ; épaisseur de flèche `1 + Math.log2(weight)`, couleurs de famille fixes ; menu « Déplacer vers… » sur un module → écrit `overrides`. **Step 4 :** PASS ; `pnpm i18n:check` PASS.
-- [ ] **Step 5 :** Commit `feat(projects): architecture map view`.
+- [x] **Step 2 :** FAIL. **Step 3 :** implémenter ; épaisseur de flèche `1 + Math.log2(weight)`, couleurs de famille fixes ; menu « Déplacer vers… » sur un module → écrit `overrides`. **Step 4 :** PASS ; `pnpm i18n:check` PASS.
+- [x] **Step 5 :** Commit `feat(projects): architecture map view`.
 
 ### Task 15: Vérification finale et revue
 

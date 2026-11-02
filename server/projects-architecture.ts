@@ -1,6 +1,8 @@
-export type Family = "tests" | "docs" | "i18n" | "data" | "config" | "scripts" | "assets" | "ui" | "server" | "other";
+import { FAMILY_ORDER, MAX_CODE_FILES } from "../shared/projects-architecture.ts";
+import type { ArchOverrides, Architecture, Family } from "../shared/projects-architecture.ts";
 
-export const FAMILY_ORDER: readonly Family[] = ["tests", "docs", "i18n", "data", "config", "scripts", "assets", "ui", "server", "other"];
+export { FAMILY_ORDER, MAX_CODE_FILES };
+export type { ArchOverrides, Architecture, Family };
 
 interface FamilyRule {
   dirs: readonly string[];
@@ -61,7 +63,6 @@ export function classify(path: string): Family {
   return "other";
 }
 
-export type ArchOverrides = { moduleFamily: Record<string, Family>; familyNames: Partial<Record<Family, string>> };
 export type ModuleInfo = { id: string; family: Family; files: string[] };
 
 export const MIN_MODULE_FILES = 3;
@@ -500,16 +501,6 @@ export function aliasesFromGoMod(text: string): Record<string, string> {
 }
 
 export type FileImports = { path: string; imports: ImportRef[] };
-export interface Architecture {
-  families: { id: Family; name: string; files: number; modules: string[] }[];
-  modules: { id: string; family: Family; files: number }[];
-  files: { path: string; module: string; uses: string[]; usedBy: string[] }[];
-  edges: { level: "family" | "module"; from: string; to: string; weight: number }[];
-  external: { name: string; count: number }[];
-  truncated: boolean;
-}
-
-export const MAX_CODE_FILES = 3000;
 
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:(?!:)/i;
 

@@ -3,14 +3,17 @@
 // Shown in place of the chat, like Team map. Layout is saved on the server.
 import {
   ChevronDown, ChevronRight, CircleHelp, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
-  Minus, Pencil, Plus, RefreshCw, Search, Server, Trash2, X,
+  Minus, Network, Pencil, Plus, RefreshCw, Search, Server, Trash2, X,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import type { ArchOverrides } from "@/lib/projects-architecture-view";
 import { arrangeByGroup, edgePoint, groupZone } from "@/lib/projects-map";
 import { api } from "@/state/api";
+
+import { ArchitectureView } from "./projects/ArchitectureView";
 
 // ---------- types (mirror server/projects.ts) ----------
 interface ProjectNode { n: string; t: "d" | "f" | "more"; c?: ProjectNode[] }
@@ -27,6 +30,7 @@ interface MapState {
   collapsed: Record<string, 1>;
   zoom: number;
   help: boolean;
+  overrides?: Record<string, ArchOverrides>;
 }
 interface ProjectsResponse { state: MapState; projects: Project[]; errors: { sourceId: string; message: string }[] }
 
@@ -204,6 +208,7 @@ export function ProjectsPage() {
   const [poleMenu, setPoleMenu] = useState<string | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({});
+  const [mapOf, setMapOf] = useState<Project | null>(null);
   const [ask, askNode] = useAsk();
   const wrapRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -423,8 +428,9 @@ export function ProjectsPage() {
           </div>
         </aside>
 
+        {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} onSaved={(overrides) => setS((s) => (s ? { ...s, overrides } : s))} />}
         {/* toile */}
-        <div ref={wrapRef} className="relative min-w-0 flex-1 overflow-auto"
+        <div ref={wrapRef} className={cn("relative min-w-0 flex-1 overflow-auto", mapOf && "hidden")}
           style={{ backgroundImage: "linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)", backgroundSize: "28px 28px" }}>
           {(data?.errors.length ?? 0) > 0 && (
             <div className="sticky left-0 top-0 z-10 flex flex-col gap-1.5 p-3">
@@ -504,13 +510,9 @@ export function ProjectsPage() {
                         {multiSource && `${sourceLabel(p.sourceId)} · `}{t("projects.counts", { dirs: p.dirs, files: p.files })}{p.truncated && "+"}
                       </div>
                     </div>
-                    <button className={cn("grid size-7 place-items-center rounded-lg", linkFrom === p.id ? "bg-accent/15 text-accent-text" : "text-ink-tertiary hover:bg-raised-hover hover:text-ink")}
-                      title={t("projects.link.button")} aria-label={t("projects.link.button")} onClick={() => void onLink(p.id)}><Link2 size={15} /></button>
-                    <button className="grid size-7 place-items-center rounded-lg text-ink-tertiary hover:bg-raised-hover hover:text-ink"
-                      title={t("projects.fold")} aria-label={t("projects.fold")}
-                      onClick={() => update((s) => { const c = { ...s.collapsed }; if (c[p.id]) delete c[p.id]; else c[p.id] = 1; return { ...s, collapsed: c }; })}>
-                      <ChevronDown size={15} className={cn("transition-transform", collapsed && "-rotate-90")} />
-                    </button>
+                    <ProjectBlockHeaderActions name={p.name} linking={linkFrom === p.id} collapsed={collapsed}
+                      onMap={() => setMapOf(p)} onLink={() => void onLink(p.id)}
+                      onFold={() => update((s) => { const c = { ...s.collapsed }; if (c[p.id]) delete c[p.id]; else c[p.id] = 1; return { ...s, collapsed: c }; })} />
                   </div>
                   <div className="relative px-3.5 pb-2.5">
                     <button onClick={() => setPoleMenu(poleMenu === p.id ? null : p.id)}
@@ -571,6 +573,24 @@ export function ProjectsPage() {
       )}
       {askNode}
     </main>
+  );
+}
+
+export function ProjectBlockHeaderActions({ name, linking, collapsed, onMap, onLink, onFold }: {
+  name: string; linking: boolean; collapsed: boolean; onMap: () => void; onLink: () => void; onFold: () => void;
+}) {
+  const icon = "grid size-7 place-items-center rounded-lg text-ink-tertiary hover:bg-raised-hover hover:text-ink";
+  return (
+    <>
+      <button type="button" className={icon} title={t("projects.map.openTitle", { name })} aria-label={t("projects.map.openTitle", { name })} onClick={onMap}>
+        <Network size={15} />
+      </button>
+      <button type="button" className={cn("grid size-7 place-items-center rounded-lg", linking ? "bg-accent/15 text-accent-text" : "text-ink-tertiary hover:bg-raised-hover hover:text-ink")}
+        title={t("projects.link.button")} aria-label={t("projects.link.button")} onClick={onLink}><Link2 size={15} /></button>
+      <button type="button" className={icon} title={t("projects.fold")} aria-label={t("projects.fold")} onClick={onFold}>
+        <ChevronDown size={15} className={cn("transition-transform", collapsed && "-rotate-90")} />
+      </button>
+    </>
   );
 }
 

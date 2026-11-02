@@ -20,7 +20,8 @@ export interface ProjectRouteDeps {
  * PUT /api/projects/state  → save the layout (sources, groups, links, positions)
  * GET /api/projects/github → the GitHub login Git keeps on this computer, if any
  * POST /api/projects/github/signin {switch?} → open Git's GitHub sign-in window on this computer
- * GET /api/projects/architecture?id=<sourceId:name> → the project's families, modules, files and import edges
+ * GET /api/projects/architecture?id=<sourceId:name> → 200 Architecture (shared/projects-architecture.ts),
+ *   404 {error} for an id no source has, 502 {error} with the source's message when it cannot be read
  */
 export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
   const architectures = new Map<string, { key: string; architecture: Architecture }>();
