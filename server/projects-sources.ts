@@ -86,13 +86,13 @@ const GO_IMPORT_ENTRY = /^\s*(?:[\w.]+\s+)?"[^"]+"\s*(?:\/\/.*)?$/;
 
 export function parseGrepOutput(out: string): FileImports[] {
   const byFile = new Map<string, Map<number, string>>();
-  for (const raw of out.split("\n")) {
+  for (const raw of out.split(/\r?\n/)) {
     const m = GREP_LINE_NUL.exec(raw) ?? GREP_LINE_COLON.exec(raw);
     if (!m) continue;
     const path = toPosix(m[1]);
     if (!isCodeFile(path)) continue;
     const lines = byFile.get(path) ?? new Map<number, string>();
-    lines.set(Number(m[2]), m[3].replace(/\r$/, ""));
+    lines.set(Number(m[2]), m[3]);
     byFile.set(path, lines);
   }
   return [...byFile].map(([path, lines]) => ({ path, imports: parseImports(path, rebuildTextAtOriginalLines(path, lines)) }));

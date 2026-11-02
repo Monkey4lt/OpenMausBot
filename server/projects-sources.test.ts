@@ -131,6 +131,13 @@ describe("SSH import reading", () => {
     ]);
   });
 
+  it("reads CRLF files as LF ones", () => {
+    expect(parseGrepOutput('./a.ts\u00001:import {\r\n./a.ts\u00003:} from "./b";\r\n./c.ts:2:import "./d";\r\n')).toEqual([
+      { path: "a.ts", imports: [{ spec: "./b", line: 1 }] },
+      { path: "c.ts", imports: [{ spec: "./d", line: 2 }] },
+    ]);
+  });
+
   it("ignores lines that are not code files or have no line number", () => {
     expect(parseGrepOutput('./README.md:1:import x from "./y";\ngrep: warning\n./a.ts:x:import "./b";\n')).toEqual([]);
   });
@@ -191,6 +198,7 @@ describe("SSH grep command on a real shell", () => {
     const { execFileSync } = await import("node:child_process");
     const root = fixture({
       "src/a.tsx": 'const x = 1;\nimport {\n  a,\n} from "./ab";\nconst r = require("./r");\n',
+      "src/crlf.ts": 'import {\r\n  a,\r\n} from "./ab";\r\n',
       "main.go": 'package main\n\nimport (\n  "fmt"\n)\n',
       "node_modules/m/i.ts": 'import "./no";',
       ".hidden/i.ts": 'import "./no";',
@@ -204,6 +212,7 @@ describe("SSH grep command on a real shell", () => {
       read: [
         { path: "main.go", imports: [{ spec: "fmt", line: 4 }] },
         { path: "src/a.tsx", imports: [{ spec: "./ab", line: 2 }, { spec: "./r", line: 5 }] },
+        { path: "src/crlf.ts", imports: [{ spec: "./ab", line: 1 }] },
       ],
       tsconfig: '{ "files": [] }',
       goMod: "module example.com/app\n",
