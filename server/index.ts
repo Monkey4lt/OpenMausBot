@@ -633,7 +633,7 @@ import { createDevsReports } from "./host/devs-reports.ts"; import { bugReportEn
 import { createCardRequester, linePersonKey } from "./host/thread-person.ts"; import { createActingPeople, HANDED_PEOPLE_FILE, HandedPeople, type HandedRun, keptPrivate, privateHandBack, withPerson } from "./host/acting-person.ts";
 import { createThreadRoutes } from "./routes/threads.ts";
 import { createWebhookRoutes } from "./routes/webhooks.ts";
-import { createProjectReaders, createProjectRoutes } from "./routes/projects.ts"; import { cartographeBotId, ensureCartographeBot, repairCartographeBot } from "./cartographe-bot.ts"; import { agentsCallTimeoutMs, createCartographeHost } from "./cartographe-host.ts";
+import { createProjectReaders, createProjectRoutes } from "./routes/projects.ts"; import { createWorkflowHost } from "./workflows/host.ts"; import { cartographeBotId, ensureCartographeBot, repairCartographeBot } from "./cartographe-bot.ts"; import { agentsCallTimeoutMs, createCartographeHost } from "./cartographe-host.ts";
 import { withScopeHint } from "./connector-scope-hint.ts";
 import { connectorRequestItems } from "./connector-request-items.ts";
 import { onThreadSeen, personAsks as personAskAt, sawThread } from "./thread-presence.ts"; import { createWarmSummaryHost, HARNESS_IDLE_FRACTION } from "./host/warm-summary-host.ts";
@@ -9663,6 +9663,9 @@ const cartographe = createCartographeHost({ dataDir: DATA_DIR, cloud: CLOUD_HOME
   architectureOf: (projectId) => projectArchitectures(projectId), inspectionOf: (projectId) => projectReaders.inspection(projectId), mcpCallTimeoutMs: (botId) => { const instanceId = store.bot(botId)?.modelSelection.instanceId; return agentsCallTimeoutMs(instanceId ? registry.get(instanceId)?.driverKind : undefined, mcpCallTimeoutMinutes(cfg) * 60_000); } });
 ROUTES.push(createProjectRoutes({ dataDir: DATA_DIR, readers: projectReaders, onChanged: cartographe.onChanged, cartographeBotId: cartographe.cartographeBotId,
   ensureCartographe: () => (CLOUD_HOME || HOSTED_WORKSPACE ? null : ensureCartographeBot(store, { dataDir: DATA_DIR })?.id ?? null) }));
+const workflowHost = createWorkflowHost({ dataDir: DATA_DIR, language: appLanguage, botExists: (id) => Boolean(store.bot(id)), broadcast, bots: () => store.bots, bot: (id) => store.bot(id), budgetAllows: () => { try { assertWithinBudget(cfg, DATA_DIR); return true; } catch { return false; } },
+  sideText: (botId, instanceId) => { const instance = instanceId ? registry.get(instanceId) : undefined; return instanceId && !instance ? null : sideJobs.text("workflow", botId, instance ? { instance } : undefined); }, createTask: (botId, title) => store.createTask(botId, title, false), interruptTurn: (botId, threadId) => interruptDirectThread(botId, threadId, "The workflow was stopped"),
+  startTurn: (botId, prompt, opts) => startTurn(botId, prompt, { threadId: opts.threadId, automationSource: "webhook", onSettled: opts.onSettled, onDispatchError: opts.onDispatchError }).then(() => {}), appendMessage: (threadId, message) => { store.appendMessage(threadId, message as Omit<Message, "id" | "at">); }, dismissCard: cartographe.dismissCard, outboundRequests, notify }); ROUTES.push(workflowHost.routes);
 ROUTES.push(createWebhookRoutes({ webhooks, ingress: webhookIngressStatus, visible: (auth) => visibleTo(viewerFor(auth)) }));
 
 const RUNTIME_KEEP_MS = 30 * 24 * 60 * 60_000;

@@ -304,6 +304,21 @@ describe("who writes a small job", () => {
     await jobs.text("memory", "pi")!.generateText("p", { signal: controller.signal });
     expect(claude.calls[0]!.options?.signal).toBe(controller.signal);
   });
+
+  it("writes a workflow step on a one-off call, with the model the block names, and tells it what the call cost", async () => {
+    const { jobs, state, claude, acp } = setup();
+    const usage: unknown[] = [];
+    const text = jobs.text("workflow", "openrouter", { instance: state.instances.get("claude")! });
+    await text!.generateText("step", { model: "claude-haiku", onUsage: (u) => usage.push(u) });
+    expect(claude.calls[0]!.options?.model).toBe("claude-haiku");
+    expect(usage).toEqual([{ model: "claude-haiku", input: 120, output: 30, costUsd: 0.002 }]);
+    expect(state.booked).toHaveLength(1);
+    expect(state.booked[0]!.row.threadId).toMatch(/^workflow-/);
+
+    expect(jobs.text("workflow", "grok")?.via).toBe("helper");
+    await jobs.text("workflow", "grok")!.generateText("step");
+    expect(acp.calls).toEqual([]);
+  });
 });
 
 describe("the small model a bot's own engine writes on", () => {

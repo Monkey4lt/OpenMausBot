@@ -34,8 +34,9 @@ export function helperSelection(cfg: HelperConfig, env: Record<string, string | 
   return HELPER_MODEL_ID.test(model) ? { instanceId, model } : null;
 }
 
-/** "representative": a person's assistant answering a teammate's question for them, which must never get tools. */
-export type SideJob = "compaction" | "memory" | "skill-review" | "setup-suggestions" | "representative";
+/** "representative": a person's assistant answering a teammate's question for them, which must never get tools.
+ * "workflow": an AI or Condition block of a workflow, which gets no tools either. */
+export type SideJob = "compaction" | "memory" | "skill-review" | "setup-suggestions" | "representative" | "workflow";
 
 export type SideJobInstance = Pick<ProviderInstance, "instanceId" | "driverKind" | "enabled" | "generateText" | "generateMemoryText" | "models" | "quickModelsUsable"> & {
   adapter: { capabilities: Pick<ProviderAdapter["capabilities"], "agentsMcp"> };
@@ -52,7 +53,8 @@ export interface SideJobBot {
 
 export interface SideJobText {
   via: "engine" | "helper";
-  generateText: (prompt: string, options?: Pick<TextGenerationOptions, "signal" | "timeoutMs">) => Promise<string>;
+  /** `model`: one of the writing instance's models. `onUsage` hears each usage report as it is booked. */
+  generateText: (prompt: string, options?: Pick<TextGenerationOptions, "signal" | "timeoutMs" | "model" | "onUsage">) => Promise<string>;
 }
 
 export interface SideJobsDeps {
@@ -78,7 +80,7 @@ type TextCall = (prompt: string, options?: TextGenerationOptions) => Promise<str
 
 /** Jobs someone is waiting on, and the representative, which must never get tools, run only on a one-off text call:
  * generateMemoryText starts a whole agent process. */
-const ONE_OFF_ONLY: ReadonlySet<SideJob> = new Set(["compaction", "setup-suggestions", "representative"]);
+const ONE_OFF_ONLY: ReadonlySet<SideJob> = new Set(["compaction", "setup-suggestions", "representative", "workflow"]);
 
 function ownCall(job: SideJob, instance: SideJobInstance): TextCall | undefined {
   const call = ONE_OFF_ONLY.has(job) ? instance.generateText : instance.generateText ?? instance.generateMemoryText;
@@ -130,19 +132,22 @@ export function createSideJobs(deps: SideJobsDeps): SideJobs {
       return call(prompt, {
         ...options,
         ...fixed(),
-        onUsage: (usage) => deps.book({
-          botId: bot.id,
-          botName: bot.name,
-          threadId,
-          instanceId: instance.instanceId,
-          driverKind: instance.driverKind,
-          model: usage.model,
-          input: usage.input ?? 0,
-          output: usage.output ?? 0,
-          ...(usage.cachedInput !== undefined ? { cachedInput: usage.cachedInput } : {}),
-          costUsd: usage.costUsd ?? null,
-          trigger,
-        }, usage.input !== undefined && usage.output !== undefined, bot.threadId),
+        onUsage: (usage) => {
+          options?.onUsage?.(usage);
+          deps.book({
+            botId: bot.id,
+            botName: bot.name,
+            threadId,
+            instanceId: instance.instanceId,
+            driverKind: instance.driverKind,
+            model: usage.model,
+            input: usage.input ?? 0,
+            output: usage.output ?? 0,
+            ...(usage.cachedInput !== undefined ? { cachedInput: usage.cachedInput } : {}),
+            costUsd: usage.costUsd ?? null,
+            trigger,
+          }, usage.input !== undefined && usage.output !== undefined, bot.threadId);
+        },
       });
     };
 

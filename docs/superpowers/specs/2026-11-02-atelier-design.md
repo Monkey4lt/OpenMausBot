@@ -29,6 +29,27 @@ inspiration: OpenBot Workflows (idées seulement — licence PolyForm Noncommerc
 - **Automatisations existantes** : chacune apparaît dans l'Atelier comme un **mini-workflow** (Déclencheur → Bot), ouvrable ; lui ajouter des blocs la transforme en vrai workflow (la routine d'origine devient la cible `workflow`, sans perte de réglages, avec retour arrière possible tant qu'aucun bloc n'a été ajouté).
 - **Échec la nuit** : une **notification** « Le workflow {nom} a échoué à l'étape {bloc} », avec un clic qui ouvre l'exécution.
 
+## Direction visuelle (validée par l'utilisateur le 2026-11-02 : « ça j'aime », sur une capture des workflows d'OpenBot — idées seulement)
+
+- Fond : petite grille de **points** (pas de lignes), presque noir neutre, points peu contrastés, qui suivent la vue.
+- Bloc : carte arrondie (~14 px) avec des champs intérieurs arrondis (~10 px), bordure fine, **ni ombre ni dégradé**. Le **type du bloc est écrit au-dessus de la carte**, dehors : petite icône + mot en casse normale, gris doux.
+- Points d'accroche : ronds de 24–28 px posés au bord de la carte, petit signe dedans ; fils fins, courbes, en pointillés gris ; couleur d'accent réservée aux liens entre pièces.
+- Bloc sélectionné : petite barre flottante (dupliquer, verrouiller, supprimer).
+- Action principale d'un bloc : bouton pleine largeur clair (presque blanc, texte sombre, casse normale, petite icône lecture).
+- Bas centre : une pilule sombre d'outils en icônes, l'outil actif dans un carré un peu plus clair, puis « + Ajouter un bloc » clair. Bas gauche : petite pilule − 100 % + | ajuster | mini-carte.
+
+### Audit de l'existant (pages Projets / carte détaillée / panneau Cartographe) — à corriger dans la passe « intégration simple »
+
+1. Étiquettes en MAJUSCULES espacées (« PÔLES », « EN BREF », « LES PIÈCES DU PROJET », « LIENS ENTRE PIÈCES », « DÉPENDANCES EXTERNES ») → casse normale, gris doux, ou supprimées quand le contenu parle seul.
+2. Police à chasse fixe pour les petits chiffres (« 9 dossiers · 27 … », « 100% », « 3 appels ») → police de l'appli, chiffres tabulaires.
+3. Chaînes « A · B · C » tronquées en plein mot (« 27 … », « 4 f… ») → une seule info qui tient (« 27 fichiers »), le reste au survol.
+4. Pastilles à deux lettres (SH, BI, DO pour Données **et** Documentation, RO) → icône propre à la famille ou à la pièce (base de données, écran, serveur…), sinon rien.
+5. Étiquette de pôle répétée dans chaque bloc alors que le bloc est déjà dans la zone du pôle → la retirer dans la zone.
+6. Barre du haut : actions en texte flottant, espacements inégaux, « Demander au Cartographe » perdu à droite → boutons groupés, le Cartographe en bouton clair principal.
+7. Vue d'ensemble : blocs petits, descriptions coupées à 20 caractères, grand vide → blocs plus larges, deux lignes de description, « ajuster » au chargement.
+8. Carte détaillée : « (root) » encore visible dans une famille, « Déplacer vers… » dans chaque bloc, boucle de flèches Serveur ↔ Données qui se chevauche, en-tête (En bref + pièces + liens + preuves) qui pousse la carte en bas → « dossier principal », action dans la barre de sélection, flèches aller/retour fusionnées en une double flèche, en-tête repliable.
+9. Grille en lignes carrées → grille de points (comme la toile).
+
 ## Expérience
 
 ### Toile commune
