@@ -15,6 +15,8 @@ export const READ_ONLY_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "list_unread_notifications",
   "projects_read_map",
   "projects_read_architecture",
+  "projects_inspect_project",
+  "projects_read_file",
 ]);
 
 export const READ_ONLY_ANNOTATIONS = Object.freeze({

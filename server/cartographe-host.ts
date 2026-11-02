@@ -6,6 +6,7 @@ import { buildNotification } from "./notify.ts";
 import type { OutboundRequestService } from "./outbound-requests.ts";
 import { createProjectsHold, projectsCardMessage, PROJECTS_HOLD_MAX_MS, type ProjectsHold } from "./projects-hold.ts";
 import { createCartographeRoutes } from "./routes/cartographe.ts";
+import type { InspectionReader } from "./routes/projects.ts";
 import type { Store } from "./store.ts";
 
 export interface CartographeHostDeps {
@@ -18,6 +19,7 @@ export interface CartographeHostDeps {
   broadcast(payload: Record<string, unknown>, options?: { adminOnly?: boolean }): void;
   active(capability: unknown): boolean;
   architectureOf(projectId: string): Promise<Architecture | null>;
+  inspectionOf?: InspectionReader;
   mcpCallTimeoutMs(botId: string): number | null;
 }
 
@@ -86,6 +88,7 @@ export function createCartographeHost(deps: CartographeHostDeps) {
     hold,
     active: deps.active,
     architectureOf: deps.architectureOf,
+    inspectionOf: deps.inspectionOf,
     onChanged,
     mcpCallTimeoutMs: deps.mcpCallTimeoutMs,
   });

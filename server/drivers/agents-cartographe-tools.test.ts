@@ -7,7 +7,7 @@ import { CARTOGRAPHE_TOOL_DEFINITIONS, CARTOGRAPHE_TOOL_NAMES } from "./agents-c
 import type { Json } from "./agents-client.ts";
 import { AGENTS_MCP_ENV } from "./agents-mcp-env.ts";
 
-const NAMES = ["projects_read_map", "projects_read_architecture", "projects_apply_changes"];
+const NAMES = ["projects_read_map", "projects_read_architecture", "projects_inspect_project", "projects_read_file", "projects_apply_changes"];
 const base = { OMB_BOT_ID: "carto", OMB_CHIEF_OF_STAFF: "0", OMB_COMPUTER_SELECTION: "1" };
 const listed = (env: Record<string, string>) => availableTools(catalogProfileFromEnv({ ...base, ...env }));
 
@@ -22,10 +22,10 @@ function context(answer: { ok: boolean; status: number; body: Json }, sent: Arra
 }
 
 describe("the Cartographe's projects tools", () => {
-  it("lists the three tools only when OMB_CARTOGRAPHE=1, last and in this order", () => {
+  it("lists the five tools only when OMB_CARTOGRAPHE=1, last and in this order", () => {
     expect(CARTOGRAPHE_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(NAMES);
     expect([...CARTOGRAPHE_TOOL_NAMES]).toEqual(NAMES);
-    expect(listed({ OMB_CARTOGRAPHE: "1" }).slice(-3).map((tool) => tool.name)).toEqual(NAMES);
+    expect(listed({ OMB_CARTOGRAPHE: "1" }).slice(-NAMES.length).map((tool) => tool.name)).toEqual(NAMES);
     for (const env of [{}, { OMB_CARTOGRAPHE: "0" }, { OMB_CARTOGRAPHE: "true" }, { OMB_MAUSBOT: "1" }] as Array<Record<string, string>>) {
       const names = listed(env).map((tool) => tool.name);
       for (const name of NAMES) expect(names.includes(name), JSON.stringify(env)).toBe(false);
@@ -33,15 +33,17 @@ describe("the Cartographe's projects tools", () => {
   });
 
   it("leaves every other tool of the same profile unchanged", () => {
-    expect(JSON.stringify(listed({ OMB_CARTOGRAPHE: "1" }).slice(0, -3))).toBe(JSON.stringify(listed({})));
+    expect(JSON.stringify(listed({ OMB_CARTOGRAPHE: "1" }).slice(0, -NAMES.length))).toBe(JSON.stringify(listed({})));
   });
 
   it("the harness passes OMB_CARTOGRAPHE to the agents MCP server", () => {
     expect((AGENTS_MCP_ENV as readonly string[]).includes("OMB_CARTOGRAPHE")).toBe(true);
   });
 
-  it("the two read tools are annotated read-only, apply is not", () => {
+  it("the four read tools are annotated read-only, apply is not", () => {
     const tools = new Map(CARTOGRAPHE_TOOL_DEFINITIONS.map((tool) => [tool.name, tool as { annotations?: unknown }]));
+    expect(tools.get("projects_inspect_project")!.annotations).toEqual(agentToolAnnotations("list_bots"));
+    expect(tools.get("projects_read_file")!.annotations).toEqual(agentToolAnnotations("list_bots"));
     expect(tools.get("projects_read_map")!.annotations).toEqual(agentToolAnnotations("list_bots"));
     expect(tools.get("projects_read_architecture")!.annotations).toEqual(agentToolAnnotations("list_bots"));
     expect(tools.get("projects_apply_changes")!.annotations).toBeUndefined();
@@ -54,7 +56,12 @@ describe("the Cartographe's projects tools", () => {
     expect(full.properties.changes).toMatchObject({ type: "array", minItems: 1, maxItems: 100 });
     expect(full.properties.changes.items.properties.op.enum).toEqual(["create_group", "rename_group", "delete_group", "assign", "link", "unlink", "rename_family", "move_module"]);
     expect(full.properties.changes.items.required).toEqual(["op"]);
-    expect(fullInputSchema("projects_read_architecture")).toMatchObject({ required: ["projectId"], properties: { projectId: { type: "string" }, includeFiles: { type: "boolean" } } });
+    expect(fullInputSchema("projects_read_architecture")).toMatchObject({
+      required: ["projectId"],
+      properties: { projectId: { type: "string" }, includeFiles: { type: "boolean" }, module: { type: "string" }, family: { type: "string" }, offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: 1000 } },
+    });
+    expect(fullInputSchema("projects_inspect_project")).toMatchObject({ required: ["projectId"] });
+    expect(fullInputSchema("projects_read_file")).toMatchObject({ required: ["projectId", "path"], properties: { maxChars: { type: "integer", minimum: 1, maximum: 20000 } } });
   });
 
   it("keeps closed schemas, short descriptions and no keyword a provider drops", () => {
@@ -73,6 +80,8 @@ describe("the Cartographe's projects tools", () => {
     ["projects_read_map", {}, "/api/internal/projects/map", {}],
     ["projects_read_architecture", { projectId: "s1:shop", includeFiles: true }, "/api/internal/projects/architecture", { projectId: "s1:shop", includeFiles: true }],
     ["projects_apply_changes", { changes: [{ op: "delete_group", groupId: "g1" }] }, "/api/internal/projects/apply", { changes: [{ op: "delete_group", groupId: "g1" }] }],
+    ["projects_inspect_project", { projectId: "s1:shop" }, "/api/internal/projects/inspect", { projectId: "s1:shop" }],
+    ["projects_read_file", { projectId: "s1:shop", path: "src/a.ts", maxChars: 100 }, "/api/internal/projects/file", { projectId: "s1:shop", path: "src/a.ts", maxChars: 100 }],
   ] as const)("%s posts to its internal route with the arguments", async (name, args, path, body) => {
     const sent: Array<{ path: string; init?: { method?: string; body?: string } }> = [];
     const result = await callTool(name, args as unknown as Json, context({ ok: true, status: 200, body: { applied: true, rev: 4 } }, sent));

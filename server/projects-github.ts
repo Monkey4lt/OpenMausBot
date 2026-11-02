@@ -168,6 +168,12 @@ export async function listGithubRepos(target: string): Promise<GithubRepo[]> {
   return repos.slice(0, MAX_REPOS);
 }
 
+/** The contents API's answer for one path at `ref`: a file entry, an array for a folder, or a symlink entry. */
+export async function githubContents(fullName: string, path: string, ref: string): Promise<unknown> {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  return gh<unknown>(`/repos/${repoPath(fullName)}/contents/${encoded}?ref=${encodeURIComponent(ref)}`, await token());
+}
+
 export async function githubRepo(fullName: string): Promise<GithubRepo> {
   return toRepo(await gh<ApiRepo>(`/repos/${repoPath(fullName)}`, await token()));
 }

@@ -1199,8 +1199,8 @@
     ]
   },
   "default+cartographe": {
-    "bytes": 59470,
-    "sha256": "3e2260980e96b532abffc6734c7cdc0921441963956ecaccc91a6616b38bb68f",
+    "bytes": 60642,
+    "sha256": "99fff098b9e11534db93a00b04fec378cad099e88df1326255fb3f8c380e1eb6",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1247,6 +1247,8 @@
       "add_mcp_server",
       "projects_read_map",
       "projects_read_architecture",
+      "projects_inspect_project",
+      "projects_read_file",
       "projects_apply_changes"
     ]
   },

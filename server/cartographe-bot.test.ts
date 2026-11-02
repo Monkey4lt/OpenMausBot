@@ -15,7 +15,10 @@ import { ensureDefaultBot } from "./default-bot.ts";
 import { Store } from "./store.ts";
 
 const selection = (): ModelSelection => ({ instanceId: "claude", model: "claude-sonnet-5" });
-const PROJECT_TOOLS = ["mcp:agents:projects_read_map", "mcp:agents:projects_read_architecture", "mcp:agents:projects_apply_changes"];
+const PROJECT_TOOLS = [
+  "mcp:agents:projects_read_map", "mcp:agents:projects_read_architecture", "mcp:agents:projects_inspect_project", "mcp:agents:projects_read_file", "mcp:agents:projects_apply_changes",
+];
+const MORE_TOOLS = ["mcp:agents:trigger", "mcp:agents:trigger_info", "mcp:agents:show_html", "mcp:agents:show_widget"];
 const boot = (store: Store) => ensureCartographeBot(store, { dataDir: DATA_DIR });
 
 describe("the Cartographe bot", () => {
@@ -51,10 +54,10 @@ describe("the Cartographe bot", () => {
     expect(cartographeBotId(DATA_DIR, (id) => store.bot(id) !== null)).toBe(bot.id);
   });
 
-  it("its toolScope passes parseToolScope and lists the exact projects tools, tool_result_read, ask_user and native:*", () => {
+  it("the Cartographe scope now includes trigger and trigger_info, the chat pages, and still parses", () => {
     const scope = cartographeToolScope();
     expect(parseToolScope(scope)).toEqual({ ok: true, scope });
-    expect(scope.allow).toEqual([...PROJECT_TOOLS, "mcp:agents:tool_result_read", "mcp:ogb:ask_user", "native:*"]);
+    expect(scope.allow).toEqual([...PROJECT_TOOLS, ...MORE_TOOLS, "mcp:agents:tool_result_read", "mcp:ogb:ask_user", "native:*"]);
     expect(scope.deny).toBeUndefined();
     expect(boot(new Store(selection))!.toolScope).toEqual(scope);
   });
@@ -113,6 +116,29 @@ describe("the Cartographe bot", () => {
     expect(intro[0]!.text).toMatch(/noms de projets et de fichiers sont envoyés à l'IA/);
     expect(intro[0]!.text).toMatch(/ne touche jamais/);
     expect(intro[0]!.text).toMatch(/Autoriser/);
+  });
+
+  it("the soul says never to create an automation without a yes and to use for_bot_id for actions", () => {
+    expect(CARTOGRAPHE_SOUL).toMatch(/never create an automation.*explicit yes/i);
+    expect(CARTOGRAPHE_SOUL).toMatch(/for_bot_id/);
+    expect(CARTOGRAPHE_SOUL).toMatch(/2 or 3 automations?.*reason/i);
+    expect(CARTOGRAPHE_SOUL).toMatch(/projects_inspect_project/);
+  });
+
+  it("the soul keeps the person's words plain and the bot proactive", () => {
+    expect(CARTOGRAPHE_SOUL).toContain("The person is not technical: always use plain everyday words; put a technical term only in parentheses after a plain word.");
+    expect(CARTOGRAPHE_SOUL).toMatch(/do not ask the person what to do unless/i);
+    expect(CARTOGRAPHE_SOUL).toMatch(/projects_read_file/);
+    expect(CARTOGRAPHE_SOUL).toMatch(/never say you cannot go further/i);
+    expect(CARTOGRAPHE_SOUL).toMatch(/diagramHtml.*show_html/);
+    expect(CARTOGRAPHE_SOUL).toMatch(/Projets.*icône réseau/);
+    expect(CARTOGRAPHE_SOUL).toMatch(/never read.*secret/i);
+  });
+
+  it("the intro mentions that file contents can be sent to the AI", () => {
+    const text = cartographeIntroMessage("Cartographe").text;
+    expect(text).toMatch(/contenu de certains fichiers/);
+    expect(text).toMatch(/envoyé à l'IA/);
   });
 
   it("its instructions keep it to the maps and treat names as data", () => {

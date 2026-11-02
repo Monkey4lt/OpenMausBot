@@ -1,6 +1,6 @@
 import { classify } from "./projects-architecture.ts";
 import type { Architecture, FileImports } from "./projects-architecture.ts";
-import { PIECE_KINDS } from "../shared/projects-pieces.ts";
+import { PIECE_KINDS, PIECE_LABELS } from "../shared/projects-pieces.ts";
 import type { Piece, PieceKind, PieceLink } from "../shared/projects-pieces.ts";
 
 export type { Piece, PieceKind, PieceLink };
@@ -495,4 +495,82 @@ export function linkPieces(pieces: Piece[], texts: { path: string; text: string 
     }
   }
   return links;
+}
+
+const DIAGRAM_COLUMNS: readonly (readonly PieceKind[])[] = [["ui", "chatbot"], ["api", "jobs"], ["database", "cache", "external"], ["tests", "deploy"]];
+const DIAGRAM_COLORS: Record<PieceKind, string> = {
+  ui: "#5b8def", api: "#38b27a", database: "#d9822b", cache: "#c95fd1", jobs: "#c9a227",
+  external: "#e0566b", chatbot: "#2bb3c0", tests: "#8a93a6", deploy: "#6f7ad9",
+};
+const MAX_DIAGRAM_BOXES = 12;
+const MAX_DIAGRAM_TECH = 40;
+const BOX_W = 200;
+const BOX_H = 56;
+const GAP_X = 70;
+const GAP_Y = 22;
+
+const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]!);
+const cut = (text: string, max: number) => ([...text].length > max ? `${[...text].slice(0, max - 1).join("")}…` : text);
+
+/** A self-contained page (inline SVG, no script, no outside link) of a project's pieces and the links between them, in plain French. */
+export function pieceDiagramHtml(inspect: { pieces: Piece[]; links: PieceLink[] }, title: string): string {
+  const heading = escapeHtml(cut(title.replace(/[\u0000-\u001f\u007f]+/g, " ").trim(), 80));
+  const boxes = new Map<PieceKind, { x: number; y: number; w: number; h: number }>();
+  const shapes: string[] = [];
+  let height = 0;
+  DIAGRAM_COLUMNS.forEach((kinds, column) => {
+    let y = 0;
+    for (const kind of kinds) {
+      const own = inspect.pieces.filter((p) => p.kind === kind).slice(0, MAX_DIAGRAM_BOXES);
+      if (!own.length) continue;
+      const techs = own.map((p) => p.tech).filter(Boolean);
+      const x = column * (BOX_W + GAP_X);
+      const lines = Math.max(1, Math.min(techs.length, 4));
+      const h = BOX_H + (lines - 1) * 16;
+      boxes.set(kind, { x, y, w: BOX_W, h });
+      const color = DIAGRAM_COLORS[kind];
+      const shown = techs.slice(0, 4).map((t, i) => `<text x="${x + 14}" y="${y + 42 + i * 16}" class="t">${escapeHtml(cut(t, MAX_DIAGRAM_TECH))}${i === 3 && techs.length > 4 ? ` +${techs.length - 4}` : ""}</text>`).join("");
+      shapes.push(`<g data-piece="${kind}"><rect x="${x}" y="${y}" width="${BOX_W}" height="${h}" rx="10" fill="${color}22" stroke="${color}" stroke-width="2"/><text x="${x + 14}" y="${y + 22}" class="k">${escapeHtml(PIECE_LABELS[kind].fr)}</text>${shown}</g>`);
+      y += h + GAP_Y;
+    }
+    height = Math.max(height, y);
+  });
+  const arrows = inspect.links.flatMap((link) => {
+    const a = boxes.get(link.from);
+    const b = boxes.get(link.to);
+    if (!a || !b) return [];
+    const forward = b.x >= a.x;
+    const x1 = forward ? a.x + a.w : a.x;
+    const x2 = forward ? b.x : b.x + b.w;
+    const y1 = a.y + a.h / 2;
+    const y2 = b.y + b.h / 2;
+    const word = link.from === "ui" && link.to === "api" ? (link.count > 1 ? "appels" : "appel") : (link.count > 1 ? "fichiers" : "fichier");
+    return [`<g data-link="${link.from}-${link.to}"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="a" marker-end="url(#h)"/><text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6}" class="c" text-anchor="middle">${link.count} ${word}</text></g>`];
+  });
+  const width = Math.max(1, ...[...boxes.values()].map((b) => b.x + b.w));
+  const body = boxes.size
+    ? `<svg viewBox="-4 -4 ${width + 8} ${Math.max(height, BOX_H) + 8}" width="100%" role="img" aria-label="Les pièces de ${heading}"><defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#9aa4b8"/></marker></defs>${arrows.join("")}${shapes.join("")}</svg>`
+    : `<p>Aucune pièce reconnue dans ce projet pour l'instant.</p>`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${heading}</title><style>body{margin:0;padding:16px;background:#14161c;color:#e8ebf2;font:14px system-ui,sans-serif}h1{font-size:16px;margin:0 0 12px}.k{fill:#f2f4f8;font-weight:600;font-size:14px}.t{fill:#b8c0d0;font-size:11px}.a{stroke:#9aa4b8;stroke-width:2;stroke-dasharray:6 4}.c{fill:#cfd5e2;font-size:11px}</style></head><body><h1>Les grandes pièces de ${heading}</h1>${body}</body></html>`;
+}
+
+const LANGUAGE_NAMES: Readonly<Record<string, string>> = {
+  ".ts": "TypeScript", ".tsx": "TypeScript", ".mts": "TypeScript", ".cts": "TypeScript",
+  ".js": "JavaScript", ".jsx": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript",
+  ".vue": "Vue", ".svelte": "Svelte", ".py": "Python", ".go": "Go", ".rs": "Rust", ".rb": "Ruby", ".php": "PHP",
+  ".java": "Java", ".kt": "Kotlin", ".swift": "Swift", ".cs": "C#", ".c": "C", ".h": "C", ".cpp": "C++", ".hpp": "C++",
+  ".html": "HTML", ".css": "CSS", ".scss": "CSS", ".sass": "CSS", ".less": "CSS", ".sql": "SQL", ".sh": "Shell", ".ps1": "PowerShell",
+};
+
+/** Files per programming language, most used first. */
+export function languagesOf(paths: string[]): Record<string, number> {
+  const counts = new Map<string, number>();
+  for (const path of paths) {
+    const name = baseName(path);
+    const dot = name.lastIndexOf(".");
+    const language = dot > 0 ? LANGUAGE_NAMES[name.slice(dot).toLowerCase()] : undefined;
+    if (language) counts.set(language, (counts.get(language) ?? 0) + 1);
+  }
+  return Object.fromEntries([...counts].sort((a, b) => b[1] - a[1] || byText(a[0], b[0])));
 }

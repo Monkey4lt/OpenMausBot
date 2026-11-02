@@ -4,9 +4,11 @@ import type { Architecture } from "../../shared/projects-architecture.ts";
 import type { json as sendJson } from "../harness/http.ts";
 import { applyChanges, describeChanges, projectChangeSchema, projectChangesSchema, type KnownProjects, type ProjectChange } from "../projects-changes.ts";
 import type { ProjectsHold } from "../projects-hold.ts";
-import { summarizeArchitecture, summarizeMap } from "../projects-summary.ts";
+import { pieceDiagramHtml } from "../projects-inspect.ts";
+import { fileRefusal, readProjectFile } from "../projects-sources.ts";
+import { summarizeArchitecture, summarizeInspection, summarizeMap, type FilePage } from "../projects-summary.ts";
 import { findProject, readProjectMapState, writeProjectMapState, type Project } from "../projects.ts";
-import { scanProjects } from "./projects.ts";
+import { projectFiles, scanProjects, type InspectionReader } from "./projects.ts";
 import { PASS } from "./table.ts";
 
 export interface CartographeContext {
@@ -30,6 +32,8 @@ export interface CartographeDeps {
   active(capability: unknown): boolean;
   /** null for an id no source has; rejects with the source's message when it cannot be read. */
   architectureOf(projectId: string): Promise<Architecture | null>;
+  /** null for an id no source has; rejects with the source's message when it cannot be read. */
+  inspectionOf?: InspectionReader;
   onChanged(rev: number): void;
   mcpCallTimeoutMs(botId: string): number | null;
 }
@@ -44,10 +48,23 @@ const MIN_CARD_MS = 5_000;
 const MAP = "/api/internal/projects/map";
 const ARCHITECTURE = "/api/internal/projects/architecture";
 const APPLY = "/api/internal/projects/apply";
-const PATHS = new Set([MAP, ARCHITECTURE, APPLY]);
+const INSPECT = "/api/internal/projects/inspect";
+const FILE = "/api/internal/projects/file";
+const PATHS = new Set([MAP, ARCHITECTURE, APPLY, INSPECT, FILE]);
 
 const record = (value: unknown): Record<string, unknown> => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {});
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+const intOrUndefined = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+
+function filePage(body: Record<string, unknown>): FilePage {
+  return {
+    ...(typeof body.module === "string" ? { module: body.module } : {}),
+    ...(typeof body.family === "string" ? { family: body.family } : {}),
+    offset: intOrUndefined(body.offset),
+    limit: intOrUndefined(body.limit),
+  };
+}
 
 function parseBatch(raw: unknown): { ok: true; changes: ProjectChange[] } | { ok: false; problems: { index: number; reason: string }[] } {
   const parsed = projectChangesSchema.safeParse(raw);
@@ -149,7 +166,41 @@ export function createCartographeRoutes(deps: CartographeDeps) {
       if (!architecture) return void ctx.json(ctx.res, 404, { error: "Unknown project" });
       const fresh = readProjectMapState(deps.dataDir);
       const overrides = Object.hasOwn(fresh.overrides, body.projectId) ? fresh.overrides[body.projectId] : undefined;
-      return void ctx.json(ctx.res, 200, summarizeArchitecture(architecture, overrides, body.includeFiles === true));
+      return void ctx.json(ctx.res, 200, summarizeArchitecture(architecture, overrides, body.includeFiles === true ? filePage(body) : false));
+    }
+    if (ctx.path === INSPECT) {
+      if (typeof body.projectId !== "string") return void ctx.json(ctx.res, 400, { error: "Send projectId." });
+      const state = readProjectMapState(deps.dataDir);
+      const found = findProject(state, body.projectId);
+      if (!found || !deps.inspectionOf) return void ctx.json(ctx.res, 404, { error: "Unknown project" });
+      let read: Awaited<ReturnType<InspectionReader>>;
+      try {
+        read = await deps.inspectionOf(body.projectId);
+      } catch (error) {
+        return void ctx.json(ctx.res, 502, { error: message(error) });
+      }
+      if (!read) return void ctx.json(ctx.res, 404, { error: "Unknown project" });
+      return void ctx.json(ctx.res, 200, summarizeInspection(read.inspection, (kept) => pieceDiagramHtml(kept, found.name)));
+    }
+    if (ctx.path === FILE) {
+      if (typeof body.projectId !== "string" || typeof body.path !== "string") return void ctx.json(ctx.res, 400, { error: "Send projectId and path." });
+      const maxChars = typeof body.maxChars === "number" && Number.isFinite(body.maxChars) ? body.maxChars : undefined;
+      const state = readProjectMapState(deps.dataDir);
+      const found = findProject(state, body.projectId);
+      if (!found) return void ctx.json(ctx.res, 404, { error: "Unknown project" });
+      try {
+        const listed = await projectFiles(found.source, found.name);
+        if (!listed) return void ctx.json(ctx.res, 404, { error: "Unknown project" });
+        if (!listed.includes(body.path)) {
+          const refused = fileRefusal(body.path);
+          return void ctx.json(ctx.res, 400, { error: refused ?? "That path is not a file of the project." });
+        }
+        const read = await readProjectFile(found.source, found.name, body.path, maxChars);
+        if ("error" in read) return void ctx.json(ctx.res, 400, { error: read.error });
+        return void ctx.json(ctx.res, 200, { path: body.path, ...read });
+      } catch (error) {
+        return void ctx.json(ctx.res, 502, { error: message(error) });
+      }
     }
     let closed = false;
     ctx.res.once?.("close", () => { if (!ctx.res.writableEnded) closed = true; });

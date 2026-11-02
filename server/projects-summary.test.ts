@@ -104,16 +104,42 @@ describe("summarizeArchitecture", () => {
     expect(summarizeArchitecture({ ...arch, truncated: true }, undefined, false).truncated).toBe(true);
   });
 
-  it("cuts files first, then module edges, under the limit", () => {
-    const files = Array.from({ length: 3000 }, (_, i) => ({ path: `src/components/F${i}.tsx`, module: "src/components", uses: [], usedBy: [] }));
+  it("gives files a page at a time, 300 unless asked, with nextOffset while more remain", () => {
+    const files = Array.from({ length: 3000 }, (_, i) => ({ path: `F${String(i).padStart(4, "0")}.ts`, module: "src/components", uses: [], usedBy: [] }));
     const big = { ...arch, files };
     const out = summarizeArchitecture(big, undefined, true);
+    expect(out.files).toHaveLength(300);
+    expect(out.nextOffset).toBe(300);
+    expect(out.truncated).toBe(false);
+    const next = summarizeArchitecture(big, undefined, { offset: 300, limit: 1000 });
+    expect(next.files![0]).toBe("F0300.ts");
+    expect(next.files).toHaveLength(1000);
+    expect(next.nextOffset).toBe(1300);
+    const last = summarizeArchitecture(big, undefined, { offset: 2900, limit: 5000 });
+    expect(last.files).toHaveLength(100);
+    expect(last.nextOffset).toBeUndefined();
+    expect(summarizeArchitecture(big, undefined, { offset: 9999 }).files).toEqual([]);
+  });
+
+  it("narrows files to one module or one family, the other family included", () => {
+    const withOther = { ...arch, families: [...arch.families, { id: "other" as const, name: "other", files: 1, modules: ["(root)/other"] }], modules: [...arch.modules, { id: "(root)/other", family: "other" as const, files: 1 }], files: [...arch.files, { path: "notes.txt", module: "(root)/other", uses: [], usedBy: [] }] };
+    expect(summarizeArchitecture(withOther, undefined, { module: "src/server" }).files).toEqual(["src/server/x.ts"]);
+    expect(summarizeArchitecture(withOther, undefined, { family: "ui" }).files).toEqual(["src/components/A.tsx", "src/components/B.tsx"]);
+    expect(summarizeArchitecture(withOther, undefined, { family: "other" }).files).toEqual(["notes.txt"]);
+    expect(summarizeArchitecture(withOther, undefined, { module: "nope" }).files).toEqual([]);
+  });
+
+  it("cuts a page of files to stay under the limit, and nextOffset says where to go on", () => {
+    const files = Array.from({ length: 3000 }, (_, i) => ({ path: `src/components/${"deep/".repeat(10)}F${i}.tsx`, module: "src/components", uses: [], usedBy: [] }));
+    const out = summarizeArchitecture({ ...arch, files }, undefined, { limit: 1000 });
     expect(JSON.stringify(out).length).toBeLessThanOrEqual(20_000);
-    expect(out.truncated).toBe(true);
-    expect(out.modules).toEqual(arch.modules);
-    expect(out.edges).toEqual(arch.edges);
     expect(out.files!.length).toBeGreaterThan(100);
-    expect(out.files!.length).toBeLessThan(3000);
+    expect(out.files!.length).toBeLessThan(1000);
+    expect(out.nextOffset).toBe(out.files!.length);
+    expect(out.modules).toEqual(arch.modules);
+  });
+
+  it("cuts module edges under the limit", () => {
 
     const edges = Array.from({ length: 2000 }, (_, i) => ({ level: "module" as const, from: `m${i}`, to: `n${i}`, weight: 1 }));
     const wide = summarizeArchitecture({ ...arch, edges: [...arch.edges, ...edges] }, undefined, false);

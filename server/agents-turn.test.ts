@@ -52,7 +52,7 @@ describe("one conversation's agents tools", () => {
     expect(env({ ...CHAT, cartographeBotId: null }).OMB_CARTOGRAPHE).toBe("0");
     expect(env(CHAT).OMB_CARTOGRAPHE).toBe("0");
     const names = JSON.parse(await toolsList(env({ ...CHAT, cartographeBotId: "bot-1" }))).tools.map((tool: { name: string }) => tool.name);
-    expect(names.slice(-3)).toEqual(["projects_read_map", "projects_read_architecture", "projects_apply_changes"]);
+    expect(names.slice(-5)).toEqual(["projects_read_map", "projects_read_architecture", "projects_inspect_project", "projects_read_file", "projects_apply_changes"]);
   });
 
   for (const [name, conversation] of [["a direct chat", CHAT], ["a room", ROOM]] as const) {

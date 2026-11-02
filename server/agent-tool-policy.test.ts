@@ -18,6 +18,8 @@ describe("built-in agent tool read policy", () => {
       "list_unread_notifications",
       "projects_read_map",
       "projects_read_architecture",
+      "projects_inspect_project",
+      "projects_read_file",
     ]);
     for (const name of READ_ONLY_AGENT_TOOL_NAMES) {
       expect(isReadOnlyAgentTool(name)).toBe(true);

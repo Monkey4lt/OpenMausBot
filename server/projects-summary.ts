@@ -1,4 +1,5 @@
 import type { ArchOverrides, Architecture } from "../shared/projects-architecture.ts";
+import { PIECE_LABELS, type Piece, type PieceKind, type PieceLink } from "../shared/projects-pieces.ts";
 import { cleanLabel } from "./projects-changes.ts";
 import type { Project, ProjectMapState, ProjectNode } from "./projects.ts";
 
@@ -22,9 +23,17 @@ export interface ArchitectureSummary {
   external: Architecture["external"];
   overrides: ArchOverrides;
   files?: string[];
+  /** The offset of the next page of files, when more remain. */
+  nextOffset?: number;
   /** True when the server read only part of the project, or something was left out to stay under the size limit. */
   truncated: boolean;
 }
+
+/** Which files to list: one module's or one family's, a page at a time. */
+export interface FilePage { module?: string; family?: string; offset?: number; limit?: number }
+
+export const DEFAULT_FILE_PAGE = 300;
+export const MAX_FILE_PAGE = 1000;
 
 const size = (value: unknown) => JSON.stringify(value).length;
 const fits = (value: unknown, limit: number) => size(value) <= limit;
@@ -96,8 +105,10 @@ export function summarizeMap(
   ]);
 }
 
-/** One project's architecture for the Cartographe; file paths only when asked for, at most `limit` characters of JSON. */
-export function summarizeArchitecture(arch: Architecture, overrides: ArchOverrides | undefined, includeFiles: boolean, limit = SUMMARY_LIMIT): ArchitectureSummary {
+/** One project's architecture for the Cartographe; file paths only when asked for, a page at a time, at most `limit` characters of JSON. */
+export function summarizeArchitecture(arch: Architecture, overrides: ArchOverrides | undefined, page: boolean | FilePage, limit = SUMMARY_LIMIT): ArchitectureSummary {
+  const includeFiles = page !== false;
+  const { module, family, offset: rawOffset, limit: rawLimit } = typeof page === "object" ? page : {};
   const moduleIds = new Set(arch.modules.map((m) => m.id));
   const kept: ArchOverrides = {
     moduleFamily: Object.fromEntries(Object.entries(overrides?.moduleFamily ?? {}).filter(([id]) => moduleIds.has(id))),
@@ -106,7 +117,12 @@ export function summarizeArchitecture(arch: Architecture, overrides: ArchOverrid
   const families = arch.families.map((f) => ({ id: f.id, name: cleanLabel(f.name), files: f.files }));
   const familyEdges = arch.edges.filter((e) => e.level === "family");
   const moduleEdges = arch.edges.filter((e) => e.level === "module");
-  const files = arch.files.map((f) => f.path);
+  const familyOf = new Map(arch.modules.map((m) => [m.id, m.family]));
+  const chosen = arch.files.filter((f) => (module === undefined || f.module === module) && (family === undefined || familyOf.get(f.module) === family)).map((f) => f.path);
+  const offset = Math.max(0, Math.floor(rawOffset ?? 0));
+  const size = Math.min(MAX_FILE_PAGE, Math.max(1, Math.floor(rawLimit ?? DEFAULT_FILE_PAGE)));
+  const files = chosen.slice(offset, offset + size);
+  const pageOf = (n: number) => ({ files: files.slice(0, n), ...(offset + n < chosen.length ? { nextOffset: offset + n } : {}) });
   const noFiles = includeFiles ? { files: [] as string[] } : {};
   const base = { families, modules: arch.modules, external: arch.external, overrides: kept };
   const cut = (part: Partial<ArchitectureSummary>): ArchitectureSummary => ({ ...base, edges: arch.edges, ...noFiles, ...part, truncated: true });
@@ -114,12 +130,46 @@ export function summarizeArchitecture(arch: Architecture, overrides: ArchOverrid
   const withOverrides = (n: number): ArchOverrides => ({ moduleFamily: Object.fromEntries(overrideEntries.slice(0, n)), familyNames: kept.familyNames });
 
   return firstFitting<ArchitectureSummary>(limit, [
-    () => ({ ...base, edges: arch.edges, ...(includeFiles ? { files } : {}), truncated: arch.truncated }),
-    ...(includeFiles ? [() => largestFitting(files.length, limit, (n) => cut({ files: files.slice(0, n) }))] : []),
+    () => ({ ...base, edges: arch.edges, ...(includeFiles ? pageOf(files.length) : {}), truncated: arch.truncated }),
+    ...(includeFiles ? [() => largestFitting(files.length, limit, (n) => ({ ...base, edges: arch.edges, ...pageOf(n), truncated: arch.truncated }))] : []),
     () => largestFitting(moduleEdges.length, limit, (n) => cut({ edges: [...familyEdges, ...moduleEdges.slice(0, n)] })),
     () => largestFitting(arch.external.length, limit, (n) => cut({ edges: familyEdges, external: arch.external.slice(0, n) })),
     () => largestFitting(overrideEntries.length, limit, (n) => cut({ edges: familyEdges, external: [], overrides: withOverrides(n) })),
     () => largestFitting(arch.modules.length, limit, (n) => cut({ edges: familyEdges, external: [], overrides: withOverrides(0), modules: arch.modules.slice(0, n) })),
     () => largestFitting(families.length, limit, (n) => cut({ edges: [], external: [], overrides: { moduleFamily: {}, familyNames: {} }, modules: [], families: families.slice(0, n) })),
+  ]);
+}
+
+export interface InspectionSummary {
+  /** `label` is the plain French word for the piece, to use when talking to the person. */
+  pieces: (Piece & { label: string })[];
+  links: PieceLink[];
+  languages: Record<string, number>;
+  /** A ready page of the pieces and their links, to pass as is to show_html. */
+  diagramHtml: string;
+  /** True when the server read only part of the project, or something was left out to stay under the size limit. */
+  truncated: boolean;
+}
+
+/** One project's pieces for the Cartographe, at most `limit` characters of JSON; the diagram is drawn from what is kept. */
+export function summarizeInspection(
+  inspection: { pieces: Piece[]; links: PieceLink[]; languages: Record<string, number>; truncated: boolean },
+  diagram: (kept: { pieces: Piece[]; links: PieceLink[] }) => string,
+  limit = SUMMARY_LIMIT,
+): InspectionSummary {
+  const labelled = (pieces: Piece[]) => pieces.map((p) => ({ ...p, tech: cleanLabel(p.tech), label: PIECE_LABELS[p.kind as PieceKind].fr }));
+  const make = (pieces: Piece[], links: PieceLink[], languages: Record<string, number>, truncated: boolean, withDiagram = true): InspectionSummary => ({
+    pieces: labelled(pieces), links, languages, diagramHtml: withDiagram ? diagram({ pieces, links }) : "", truncated,
+  });
+  const { pieces, links, languages } = inspection;
+  const lean = pieces.map((p) => ({ ...p, evidence: p.evidence.slice(0, 1), modules: p.modules.slice(0, 5) }));
+  const leanLinks = links.map((l) => ({ ...l, examples: l.examples.slice(0, 1) }));
+  const fewLanguages = Object.fromEntries(Object.entries(languages).slice(0, 10));
+  return firstFitting<InspectionSummary>(limit, [
+    () => make(pieces, links, languages, inspection.truncated),
+    () => make(lean, leanLinks, fewLanguages, true),
+    () => largestFitting(lean.length, limit, (n) => make(lean.slice(0, n), leanLinks, fewLanguages, true)),
+    () => largestFitting(lean.length, limit, (n) => make(lean.slice(0, n), leanLinks, fewLanguages, true, false)),
+    () => make([], [], {}, true, false),
   ]);
 }

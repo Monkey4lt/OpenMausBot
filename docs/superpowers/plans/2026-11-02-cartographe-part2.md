@@ -88,7 +88,7 @@ it("a project with ui and api but no matching call has no ui → api link", () =
 **Interfaces:**
 - Produces: `POST /api/internal/projects/inspect { projectId }` → `{ pieces, links, languages: Record<string, number>, truncated }` ; `POST /api/internal/projects/file { projectId, path, maxChars? }` → `{ path, text, truncated }` ou `400 { error }` ; `readProjectFile(source, projectPath, path, maxChars)` dans `projects-sources.ts`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it.each(["../../etc/passwd", "config/.env.production", ".git/config", "node_modules/x/index.js", "keys/server.pem", "id_rsa"])("read_file refuses %s", async (p) => {});
@@ -100,8 +100,8 @@ it("the soul says never to create an automation without a yes and to use for_bot
 it("the intro mentions that file contents can be sent to the AI", () => {});
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS.
-- [ ] **Step 5:** Commit `feat(cartographe): inspect a project and read one of its files`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS.
+- [x] **Step 5:** Commit `feat(cartographe): inspect a project and read one of its files`.
 
 ### Task 12: Fiche « En bref » et descriptions
 

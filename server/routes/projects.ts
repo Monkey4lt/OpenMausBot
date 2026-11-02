@@ -5,7 +5,10 @@ import { join } from "node:path";
 
 import { buildArchitecture, aliasesFromGoMod, aliasesFromTsconfig, type Architecture } from "../projects-architecture.ts";
 import { githubLogin, githubRepo, githubRepoLines, githubSignIn } from "../projects-github.ts";
-import { isCodeFile, readGithubImports, readLocalImports, readSshImports, type ImportSet } from "../projects-sources.ts";
+import { detectPieces, isManifestPath, languagesOf, linkPieces, type Piece, type PieceLink } from "../projects-inspect.ts";
+import {
+  isCodeFile, readGithubImports, readGithubInspect, readLocalImports, readLocalInspect, readSshImports, readSshInspect, type ImportSet, type InspectSet,
+} from "../projects-sources.ts";
 import { PromiseLru } from "../promise-lru.ts";
 import {
   existingFolder, findProject, githubTarget, localRoot, readProjectMapState, scanLocalLines, scanSshLines, scanSource, withoutStamp,
@@ -100,31 +103,77 @@ export async function scanProjects(state: ProjectMapState): Promise<{ projects: 
 /** null for an id no source has; a source that cannot be read rejects with its message. */
 export type ArchitectureReader = (projectId: string, options?: { refresh?: boolean }) => Promise<Architecture | null>;
 
+/** What projects_inspect_project and the project map show: pieces, the links between them, files per language. */
+export interface ProjectInspection { pieces: Piece[]; links: PieceLink[]; languages: Record<string, number>; truncated: boolean }
+
+/** null for an id no source has; a source that cannot be read rejects with its message. */
+export type InspectionReader = (projectId: string, options?: { refresh?: boolean }) => Promise<{ architecture: Architecture; inspection: ProjectInspection } | null>;
+
+export interface ProjectReaders { architecture: ArchitectureReader; inspection: InspectionReader }
+
 /** Reads a project's architecture with the saved overrides, cached until its code files, overrides or source change. */
 export function createArchitectureReader(deps: { dataDir: string; onArchitectureRead?: (projectId: string) => void }): ArchitectureReader {
-  const cache = new PromiseLru<Architecture>(ARCHITECTURE_CACHE_SIZE);
-  return async (projectId, options = {}) => {
+  return createProjectReaders(deps).architecture;
+}
+
+/** The architecture and the inspection of a project, sharing one read of its files and cached until they, the overrides or the source change. */
+export function createProjectReaders(deps: { dataDir: string; onArchitectureRead?: (projectId: string) => void }): ProjectReaders {
+  const architectures = new PromiseLru<{ architecture: Architecture; read: ImportSet["read"] }>(ARCHITECTURE_CACHE_SIZE);
+  const inspections = new PromiseLru<ProjectInspection>(ARCHITECTURE_CACHE_SIZE);
+
+  async function open(projectId: string, refresh: boolean) {
     const state = readProjectMapState(deps.dataDir);
     const found = findProject(state, projectId);
     if (!found) return null;
-    if (options.refresh) cache.delete(`${found.source.id}:${found.name}`);
-    return projectArchitecture(state, found.source, found.name, cache, deps.onArchitectureRead);
+    const id = `${found.source.id}:${found.name}`;
+    if (refresh) { architectures.delete(id); inspections.delete(id); }
+    const reader = await projectReader(found.source, found.name);
+    if (!reader) return null;
+    const overrides = Object.hasOwn(state.overrides, id) ? state.overrides[id] : undefined;
+    const version = createHash("sha256").update(JSON.stringify([[...reader.paths].sort(), reader.version, overrides ?? null, found.source])).digest("hex");
+    const built = await architectures.get(id, version, async () => {
+      deps.onArchitectureRead?.(id);
+      const set = await reader.imports(reader.paths);
+      const aliases = { ...(set.tsconfig ? aliasesFromTsconfig(set.tsconfig) : {}), ...(set.goMod ? aliasesFromGoMod(set.goMod) : {}) };
+      return { architecture: buildArchitecture(reader.paths, set.read, aliases, overrides), read: set.read };
+    });
+    return { id, version, reader, built };
+  }
+
+  return {
+    architecture: async (projectId, options = {}) => (await open(projectId, options.refresh === true))?.built.architecture ?? null,
+    inspection: async (projectId, options = {}) => {
+      const opened = await open(projectId, options.refresh === true);
+      if (!opened) return null;
+      const { reader, built } = opened;
+      const inspection = await inspections.get(opened.id, opened.version, async () => {
+        const material = await reader.inspect(reader.paths);
+        const pieces = detectPieces({ paths: reader.paths, manifests: material.manifests, read: built.read, arch: built.architecture });
+        return { pieces, links: linkPieces(pieces, material.texts, built.read), languages: languagesOf(reader.paths), truncated: material.truncated || built.architecture.truncated };
+      });
+      return { architecture: built.architecture, inspection };
+    },
   };
 }
 
 /** `version` changes whenever a code file is added, removed or edited. */
-type Reader = { paths: string[]; version: string; imports: (paths: string[]) => Promise<ImportSet> };
+type Reader = { paths: string[]; version: string; imports: (paths: string[]) => Promise<ImportSet>; inspect: (paths: string[]) => Promise<InspectSet> };
 
 function projectPaths(lines: string[], prefix: string): string[] {
   return lines.filter((line) => line.startsWith(`f ${prefix}/`)).map((line) => line.slice(prefix.length + 3));
 }
 
 async function localCodeVersion(root: string, paths: string[]): Promise<string> {
-  const stamps = await Promise.all(paths.filter(isCodeFile).map(async (path) => {
+  const stamps = await Promise.all(paths.filter((path) => isCodeFile(path) || isManifestPath(path)).map(async (path) => {
     const info = await lstat(join(root, ...path.split("/"))).catch(() => null);
     return info ? `${path}\t${info.mtimeMs}\t${info.size}` : path;
   }));
   return stamps.join("\n");
+}
+
+/** The listed files of a project, or null when the source has no such project. */
+export async function projectFiles(source: ProjectSource, name: string): Promise<string[] | null> {
+  return (await projectReader(source, name))?.paths ?? null;
 }
 
 async function projectReader(source: ProjectSource, name: string): Promise<Reader | null> {
@@ -132,37 +181,23 @@ async function projectReader(source: ProjectSource, name: string): Promise<Reade
     const root = join(existingFolder(localRoot(source.path)), name);
     if (!statSync(root, { throwIfNoEntry: false })?.isDirectory()) return null;
     const paths = scanLocalLines(root).filter((line) => line.startsWith("f ")).map((line) => line.slice(2));
-    return { paths, version: await localCodeVersion(root, paths), imports: (list) => readLocalImports(root, list) };
+    return { paths, version: await localCodeVersion(root, paths), imports: (list) => readLocalImports(root, list), inspect: (list) => readLocalInspect(root, list) };
   }
   if (source.kind === "ssh") {
     const lines = await scanSshLines(source.host!, source.path, { stamps: true });
     if (!lines.includes(`d ${name}`)) return null;
     const base = source.path.replace(/\/+$/, "");
     const own = lines.filter((line) => line.startsWith(`f ${name}/`));
+    const paths = projectPaths(own.map(withoutStamp), name);
     return {
-      paths: projectPaths(own.map(withoutStamp), name),
-      version: own.filter((line) => isCodeFile(withoutStamp(line))).join("\n"),
+      paths,
+      version: own.filter((line) => { const path = withoutStamp(line); return isCodeFile(path) || isManifestPath(path); }).join("\n"),
       imports: () => readSshImports(source.host!, `${base || ""}/${name}`),
+      inspect: (list) => readSshInspect(source.host!, `${base || ""}/${name}`, list.filter(isManifestPath)),
     };
   }
   const [owner, single] = githubTarget(source.path).split("/");
   const repo = await githubRepo(`${owner}/${single ?? name}`);
   const paths = projectPaths(await githubRepoLines(repo), repo.name);
-  return { paths, version: repo.pushedAt, imports: () => readGithubImports(repo) };
-}
-
-async function projectArchitecture(
-  state: ProjectMapState, source: ProjectSource, name: string, cache: PromiseLru<Architecture>, onRead?: (projectId: string) => void,
-): Promise<Architecture | null> {
-  const id = `${source.id}:${name}`;
-  const reader = await projectReader(source, name);
-  if (!reader) return null;
-  const overrides = Object.hasOwn(state.overrides, id) ? state.overrides[id] : undefined;
-  const version = createHash("sha256").update(JSON.stringify([[...reader.paths].sort(), reader.version, overrides ?? null, source])).digest("hex");
-  return cache.get(id, version, async () => {
-    onRead?.(id);
-    const set = await reader.imports(reader.paths);
-    const aliases = { ...(set.tsconfig ? aliasesFromTsconfig(set.tsconfig) : {}), ...(set.goMod ? aliasesFromGoMod(set.goMod) : {}) };
-    return buildArchitecture(reader.paths, set.read, aliases, overrides);
-  });
+  return { paths, version: repo.pushedAt, imports: () => readGithubImports(repo), inspect: () => readGithubInspect(repo) };
 }

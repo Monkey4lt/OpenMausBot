@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildArchitecture, parseImports } from "./projects-architecture.ts";
-import { detectPieces, findCalls, findRoutes, isManifestPath, linkPieces, routeMatches } from "./projects-inspect.ts";
+import { detectPieces, findCalls, findRoutes, isManifestPath, languagesOf, linkPieces, pieceDiagramHtml, routeMatches } from "./projects-inspect.ts";
 import type { Piece } from "../shared/projects-pieces.ts";
 
 function project(files: Record<string, string>) {
@@ -227,5 +227,38 @@ describe("linkPieces", () => {
 
   it("no pieces gives no links", () => {
     expect(linkPieces([], [{ path: "a.ts", text: 'fetch("/x"); app.get("/x", h);' }], [])).toEqual([]);
+  });
+});
+
+describe("pieceDiagramHtml", () => {
+  const piece = (kind: Piece["kind"], tech: string): Piece => ({ kind, tech, evidence: [], modules: [] });
+
+  it("draws one box per piece with the plain word and the tech, and an arrow per link with its count", () => {
+    const html = pieceDiagramHtml({ pieces: [piece("ui", "React"), piece("api", "Express"), piece("database", "PostgreSQL")], links: [{ from: "ui", to: "api", count: 12, examples: [] }, { from: "api", to: "database", count: 3, examples: [] }] }, "shop");
+    expect(html).toMatch(/^<!doctype html>/i);
+    for (const text of ["Site / interface", "React", "Serveur / API", "Express", "Base de données", "PostgreSQL", "12 appels", "3 fichiers", "shop"]) expect(html).toContain(text);
+    expect(html.match(/data-piece=/g)).toHaveLength(3);
+    expect(html.match(/data-link=/g)).toHaveLength(2);
+    expect(html).not.toMatch(/<script|https?:\/\//i);
+  });
+
+  it("escapes every label and the title", () => {
+    const html = pieceDiagramHtml({ pieces: [piece("external", '<img src=x onerror="alert(1)">&')], links: [] }, "</title><script>x</script>");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<script");
+    expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;");
+  });
+
+  it("says plainly when nothing was found, and stays under 30 KB even when crowded", () => {
+    expect(pieceDiagramHtml({ pieces: [], links: [] }, "vide")).toContain("Aucune pièce");
+    const many = Array.from({ length: 60 }, (_, i) => piece((["ui", "api", "database", "external", "deploy"] as const)[i % 5], `Tech number ${i} ${"x".repeat(80)}`));
+    const html = pieceDiagramHtml({ pieces: many, links: [{ from: "ui", to: "api", count: 1, examples: [] }] }, "t".repeat(500));
+    expect(new TextEncoder().encode(html).length).toBeLessThanOrEqual(30 * 1024);
+  });
+});
+
+describe("languagesOf", () => {
+  it("counts files per language, most used first", () => {
+    expect(languagesOf(["a.ts", "b.tsx", "c.py", "README.md", "d.TS", "x", "e.go", "f.py"])).toEqual({ TypeScript: 3, Python: 2, Go: 1 });
   });
 });

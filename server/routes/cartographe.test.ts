@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import { json } from "../harness/http.ts";
 import type { ProjectsHold } from "../projects-hold.ts";
 import { projectMapStateSchema, readProjectMapState, writeProjectMapState } from "../projects.ts";
 import { CARTOGRAPHE_CARD_MARGIN_MS, createCartographeRoutes, type CartographeDeps } from "./cartographe.ts";
+import { createProjectReaders } from "./projects.ts";
 import { createInternalToolRoutes } from "./internal-tools.ts";
 import { PASS } from "./table.ts";
 
@@ -67,6 +68,7 @@ function setup(options: { cloud?: boolean; answer?: Answer | (() => Answer); act
     external: [],
     truncated: false,
   });
+  const readers = createProjectReaders({ dataDir });
   const deps: CartographeDeps = {
     dataDir,
     isCartographe: (botId) => botId === "carto",
@@ -74,6 +76,7 @@ function setup(options: { cloud?: boolean; answer?: Answer | (() => Answer); act
     hold,
     active: (capability) => capability === CAPABILITY && (options.active ?? true),
     architectureOf: async (projectId) => { reads.push(projectId); return architecture(options.modules ?? ["src/state", "src"]); },
+    inspectionOf: (projectId) => readers.inspection(projectId),
     onChanged: (rev) => changed.push(rev),
     mcpCallTimeoutMs: () => options.mcpTimeout ?? null,
   };
@@ -90,13 +93,15 @@ function setup(options: { cloud?: boolean; answer?: Answer | (() => Answer); act
 const MAP = "/api/internal/projects/map";
 const ARCH = "/api/internal/projects/architecture";
 const APPLY = "/api/internal/projects/apply";
+const INSPECT = "/api/internal/projects/inspect";
+const FILE = "/api/internal/projects/file";
 const goodBatch = { changes: [{ op: "create_group", name: "Clients", ref: "c" }, { op: "assign", projectId: "s1:shop", groupId: "ref:c" }] };
 
 describe("cartographe internal routes", () => {
   it("another bot gets 403 on every route", async () => {
     const { call, asks, state } = setup();
-    for (const path of [MAP, ARCH, APPLY]) {
-      expect(await call(path, path === APPLY ? goodBatch : { projectId: "s1:shop" }, "other")).toEqual({ status: 403, body: { error: expect.stringContaining("Cartographe") } });
+    for (const path of [MAP, ARCH, APPLY, INSPECT, FILE]) {
+      expect(await call(path, path === APPLY ? goodBatch : { projectId: "s1:shop", path: "src/a.ts" }, "other")).toEqual({ status: 403, body: { error: expect.stringContaining("Cartographe") } });
     }
     expect(asks).toEqual([]);
     expect(state().rev).toBe(1);
@@ -104,7 +109,7 @@ describe("cartographe internal routes", () => {
 
   it("refuses in cloud mode", async () => {
     const { call, asks } = setup({ cloud: true });
-    for (const path of [MAP, ARCH, APPLY]) expect((await call(path, goodBatch)).status).toBe(403);
+    for (const path of [MAP, ARCH, APPLY, INSPECT, FILE]) expect((await call(path, { ...goodBatch, projectId: "s1:shop", path: "src/a.ts" })).status).toBe(403);
     expect(asks).toEqual([]);
   });
 
@@ -149,6 +154,13 @@ describe("cartographe internal routes", () => {
     expect(await call(ARCH, { projectId: "s1:../etc" })).toEqual({ status: 404, body: { error: "Unknown project" } });
     expect((await call(ARCH, {})).status).toBe(400);
     expect(reads).toEqual(["s1:shop", "s1:shop"]);
+  });
+
+  it("architecture pages and narrows its files when asked", async () => {
+    const { call } = setup();
+    expect((await call(ARCH, { projectId: "s1:shop", includeFiles: true, module: "nope" })).body).toMatchObject({ files: [] });
+    expect((await call(ARCH, { projectId: "s1:shop", includeFiles: true, family: "server", limit: 1 })).body).toMatchObject({ files: ["src/a.ts"] });
+    expect((await call(ARCH, { projectId: "s1:shop", includeFiles: true, offset: 1 })).body).toMatchObject({ files: [] });
   });
 
   it("an architecture that cannot be read answers 502 with its message", async () => {
@@ -309,3 +321,89 @@ describe("internal tool routes", () => {
     expect(sent().status).toBe(403);
   });
 });
+
+describe("inspect and read_file routes", () => {
+  function project() {
+    const env = setup();
+    const files: Record<string, string> = {
+      "shop/package.json": JSON.stringify({ dependencies: { react: "18", express: "4", pg: "8" } }),
+      "shop/web/Orders.tsx": 'export const load = (id: string) => fetch(`/api/orders/${id}`);\n',
+      "shop/server/orders.ts": 'import { Pool } from "pg";\nrouter.get("/api/orders/:id", h);\n',
+      "shop/config/.env.production": "SECRET=1",
+      "shop/keys/server.pem": "KEY",
+      "shop/id_rsa": "KEY",
+      "shop/node_modules/x/index.js": "x",
+      "shop/big.ts": "x".repeat(300 * 1024),
+      "shop/long.ts": "abcdefghij".repeat(3000),
+      "outside.txt": "outside",
+    };
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(env.root, ...path.split("/").slice(0, -1)), { recursive: true });
+      writeFileSync(join(env.root, ...path.split("/")), text);
+    }
+    symlinkSync(join(env.root, "outside.txt"), join(env.root, "shop", "link.ts"));
+    return env;
+  }
+
+  it.each(["../../etc/passwd", "config/.env.production", ".git/config", "node_modules/x/index.js", "keys/server.pem", "id_rsa"])("read_file refuses %s", async (path) => {
+    const { call } = project();
+    const got = await call(FILE, { projectId: "s1:shop", path });
+    expect(got.status).toBe(400);
+    expect(got.body).toEqual({ error: expect.any(String) });
+    expect(JSON.stringify(got.body)).not.toMatch(/SECRET|KEY/);
+  });
+
+  it("read_file refuses a symlink and a file over 256 KB", async () => {
+    const { call } = project();
+    expect(await call(FILE, { projectId: "s1:shop", path: "link.ts" })).toEqual({ status: 400, body: { error: expect.stringMatching(/link/i) } });
+    expect(await call(FILE, { projectId: "s1:shop", path: "big.ts" })).toEqual({ status: 400, body: { error: expect.stringMatching(/256 KB/) } });
+  });
+
+  it("read_file reads only paths in the project's listed tree", async () => {
+    const { call } = project();
+    expect(await call(FILE, { projectId: "s1:shop", path: "missing.ts" })).toEqual({ status: 400, body: { error: expect.stringMatching(/not a file of the project/) } });
+    expect((await call(FILE, { projectId: "s1:nope", path: "a.ts" })).status).toBe(404);
+    expect((await call(FILE, { projectId: "s1:shop" })).status).toBe(400);
+  });
+
+  it("read_file caps at maxChars (default 8000, max 20000)", async () => {
+    const { call } = project();
+    expect(await call(FILE, { projectId: "s1:shop", path: "server/orders.ts" })).toEqual({ status: 200, body: { path: "server/orders.ts", text: 'import { Pool } from "pg";\nrouter.get("/api/orders/:id", h);\n', truncated: false } });
+    const read = async (maxChars?: unknown) => (await call(FILE, { projectId: "s1:shop", path: "long.ts", ...(maxChars === undefined ? {} : { maxChars }) })).body as { text: string; truncated: boolean };
+    expect((await read()).text).toHaveLength(8000);
+    expect((await read(100)).text).toHaveLength(100);
+    expect(await read(50_000)).toMatchObject({ truncated: true });
+    expect((await read(50_000)).text).toHaveLength(20_000);
+  });
+
+  it("inspect returns pieces with plain labels, links, languages and a diagram, under 20 000 chars", async () => {
+    const { call } = project();
+    const got = await call(INSPECT, { projectId: "s1:shop" });
+    expect(got.status).toBe(200);
+    const body = got.body as { pieces: { kind: string; label: string; tech: string }[]; links: { from: string; to: string; count: number }[]; languages: Record<string, number>; truncated: boolean; diagramHtml: string };
+    expect(body.pieces.map((p) => `${p.kind}:${p.tech}:${p.label}`)).toEqual(["ui:React:Site / interface", "api:Express:Serveur / API", "database:PostgreSQL:Base de données"]);
+    expect(body.links).toEqual([
+      { from: "ui", to: "api", count: 1, examples: [{ from: "web/Orders.tsx", to: "server/orders.ts" }] },
+      { from: "api", to: "database", count: 1, examples: [{ from: "server/orders.ts", to: "pg" }] },
+    ]);
+    expect(body.languages.TypeScript).toBeGreaterThan(0);
+    expect(body.diagramHtml).toContain("Base de données");
+    expect(JSON.stringify(body).length).toBeLessThanOrEqual(20_000);
+    expect(JSON.stringify(body)).not.toMatch(/SECRET/);
+    expect((await call(INSPECT, { projectId: "s1:nope" })).status).toBe(404);
+  });
+
+  it("inspect stays under 20 000 chars and says truncated on a large project", async () => {
+    const { call, root } = project();
+    const deps = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [i % 2 ? "react" : "pg", "1"]));
+    for (let i = 0; i < 300; i++) {
+      mkdirSync(join(root, "shop", `svc${i}`), { recursive: true });
+      writeFileSync(join(root, "shop", `svc${i}`, "Dockerfile"), "FROM x");
+      writeFileSync(join(root, "shop", `svc${i}`, "package.json"), JSON.stringify({ dependencies: deps }));
+      writeFileSync(join(root, "shop", `svc${i}`, `f${i}.ts`), `fetch("/api/orders/${i}");`);
+    }
+    const body = (await call(INSPECT, { projectId: "s1:shop" })).body;
+    expect(JSON.stringify(body).length).toBeLessThanOrEqual(20_000);
+  });
+});
+

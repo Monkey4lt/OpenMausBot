@@ -8,7 +8,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { CODE_EXTENSIONS } from "./projects-architecture.ts";
 import { setGithubTransport } from "./projects-github.ts";
 import {
-  isCodeFile, MAX_FILE_BYTES, parseGrepOutput, parseSshImportOutput, readGithubImports, readLocalImports, readSshImports, sshImportCommand, toPosix, unpackGithubTarball,
+  fileRefusal, isCodeFile, MAX_FILE_BYTES, parseGrepOutput, parseSshFileOutput, parseSshImportOutput, parseSshInspectOutput, readGithubFile, readGithubImports, readGithubInspect,
+  readLocalFile, readLocalImports, readLocalInspect, readSshImports, sshFileCommand, sshImportCommand, sshInspectCommand, toPosix, unpackGithubTarball,
 } from "./projects-sources.ts";
 import { tar } from "./testing/tar-builder.ts";
 
@@ -334,5 +335,159 @@ describe("GitHub import reading", () => {
   it("a download that is not gzip is a clear error", async () => {
     serve(() => new TextEncoder().encode("<html>nope</html>"));
     await expect(readGithubImports(repo)).rejects.toThrow("GitHub archive of o/r could not be read");
+  });
+});
+
+describe("inspect reading", () => {
+  it("keeps the manifests and only the call and route lines of code files", async () => {
+    const root = fixture({
+      "package.json": '{"dependencies":{"react":"18"}}',
+      "web/src/api.ts": 'import x from "y";\nconst a = 1;\nfetch("/api/orders");\n',
+      "server/app.ts": 'app.get("/api/orders", h);\nfastify.route({\n  method: "GET",\n  url: "/api/cart",\n});\n',
+      "notes.ts": "const nothing = 1;\n",
+      "docker-compose.yml": "services: {}\n",
+    });
+    const set = await readLocalInspect(root, ["package.json", "web/src/api.ts", "server/app.ts", "notes.ts", "docker-compose.yml", "../x/package.json"]);
+    expect(set.manifests).toEqual({ "docker-compose.yml": "services: {}\n", "package.json": '{"dependencies":{"react":"18"}}' });
+    expect(set.texts).toEqual([
+      { path: "web/src/api.ts", text: 'fetch("/api/orders");' },
+      { path: "server/app.ts", text: 'app.get("/api/orders", h);\nfastify.route({\n  url: "/api/cart",' },
+    ]);
+    expect(set.truncated).toBe(false);
+  });
+
+  it("drops what is past the text cap and says truncated", async () => {
+    const root = fixture({ "a.ts": 'fetch("/a");\n'.repeat(100), "b.ts": 'fetch("/b");\n'.repeat(50) });
+    const set = await readLocalInspect(root, ["a.ts", "b.ts"], { maxChars: 1500 });
+    expect(set.texts.map((t) => t.path)).toEqual(["a.ts"]);
+    expect(set.truncated).toBe(true);
+  });
+
+  it("never follows a symlink for a manifest", async () => {
+    const outer = fixture({ "package.json": '{"dependencies":{"stripe":"1"}}' });
+    const root = join(outer, "inner");
+    mkdirSync(root);
+    symlinkSync(join(outer, "package.json"), join(root, "package.json"));
+    expect((await readLocalInspect(root, ["package.json"])).manifests).toEqual({});
+  });
+
+  it("SSH: one command greps call and route lines and prints each manifest, never through a link", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const outer = fixture({ "leak/package.json": '{"dependencies":{"stripe":"1"}}' });
+    const root = join(outer, "p");
+    for (const [path, text] of Object.entries({
+      "package.json": '{"dependencies":{"pg":"8"}}',
+      "api/requirements.txt": "flask\n",
+      "web/a.ts": 'const x = 1;\nfetch("/api/orders");\n',
+      "node_modules/m/a.ts": 'fetch("/no");\n',
+      "srv/b.py": '@app.get("/api/orders")\ndef f(): pass\n',
+    })) {
+      mkdirSync(join(root, ...path.split("/").slice(0, -1)), { recursive: true });
+      writeFileSync(join(root, ...path.split("/")), text);
+    }
+    symlinkSync(join(outer, "leak", "package.json"), join(root, "linked.json"));
+    mkdirSync(join(root, "odd 'dir'"));
+    writeFileSync(join(root, "odd 'dir'", "go.mod"), "module x\n");
+    const command = sshInspectCommand(root, ["package.json", "api/requirements.txt", "odd 'dir'/go.mod", "linked.json"]);
+    const set = parseSshInspectOutput(execFileSync("sh", ["-c", command], { encoding: "utf8" }));
+    set.texts.sort((a, b) => (a.path < b.path ? -1 : 1));
+    expect(set).toEqual({
+      manifests: { "package.json": '{"dependencies":{"pg":"8"}}', "api/requirements.txt": "flask\n", "odd 'dir'/go.mod": "module x\n" },
+      texts: [{ path: "srv/b.py", text: '@app.get("/api/orders")' }, { path: "web/a.ts", text: 'fetch("/api/orders");' }],
+      truncated: false,
+    });
+  });
+
+  it("GitHub: the same archive gives imports and inspect material, downloaded once per push", async () => {
+    const top = "o-r-0123abc";
+    const calls: string[] = [];
+    setGithubTransport({
+      credential: async () => null,
+      fetch: (async (input: string | URL | Request) => {
+        calls.push(new URL(String(input)).pathname);
+        return new Response(new Uint8Array(gzipSync(tar([
+          { name: `${top}/package.json`, data: '{"dependencies":{"express":"4"}}' },
+          { name: `${top}/src/a.ts`, data: 'import b from "./b";\napp.get("/x", h);\n' },
+        ]))), { status: 200 });
+      }) as typeof globalThis.fetch,
+    });
+    try {
+      const repo = { name: "r", fullName: "o/r", defaultBranch: "main", pushedAt: "2026-03-01T00:00:00Z" };
+      expect((await readGithubImports(repo)).read).toEqual([{ path: "src/a.ts", imports: [{ spec: "./b", line: 1 }] }]);
+      expect(await readGithubInspect(repo)).toEqual({ manifests: { "package.json": '{"dependencies":{"express":"4"}}' }, texts: [{ path: "src/a.ts", text: 'app.get("/x", h);' }], truncated: false });
+      expect(calls).toHaveLength(1);
+    } finally {
+      setGithubTransport(null);
+    }
+  });
+});
+
+describe("reading one project file", () => {
+  it.each(["../../etc/passwd", "config/.env.production", ".git/config", "node_modules/x/index.js", "keys/server.pem", "id_rsa", "id_ed25519.pub", "certs/a.p12", "b.pfx", "server.key", "config/secrets.yml", "my-secret/a.ts", "/etc/passwd", "a//b.ts", "a\\b.ts", "a/./b.ts", "", "venv/lib/x.py", "..foo.ts", "a\nb.ts"])("refuses %s", (path) => {
+    expect(fileRefusal(path)).toEqual(expect.any(String));
+  });
+
+  it.each(["src/app.ts", "README.md", "keyboard.ts", "docs/env.md", "src/environment.ts"])("allows %s", (path) => {
+    expect(fileRefusal(path)).toBeNull();
+  });
+
+  it("local: reads a regular file, refuses a link, a folder, a binary and a file over 256 KB", async () => {
+    const outer = fixture({ "outside.ts": "secret" });
+    const root = join(outer, "p");
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "a.ts"), "héllo");
+    writeFileSync(join(root, "big.ts"), "x".repeat(MAX_FILE_BYTES + 1));
+    writeFileSync(join(root, "bin.ts"), "a\u0000b");
+    symlinkSync(join(outer, "outside.ts"), join(root, "link.ts"));
+    symlinkSync(outer, join(root, "dir"));
+    expect(await readLocalFile(root, "src/a.ts")).toEqual({ text: "héllo" });
+    for (const path of ["link.ts", "dir/outside.ts"]) expect(await readLocalFile(root, path)).toEqual({ error: expect.stringMatching(/link/i) });
+    expect(await readLocalFile(root, "src")).toEqual({ error: expect.stringMatching(/not a file/i) });
+    expect(await readLocalFile(root, "big.ts")).toEqual({ error: expect.stringMatching(/256 KB/) });
+    expect(await readLocalFile(root, "bin.ts")).toEqual({ error: expect.stringMatching(/text/i) });
+    expect(await readLocalFile(root, "gone.ts")).toEqual({ error: expect.stringMatching(/not a file/i) });
+  });
+
+  it("SSH: one quoted command reads the file and refuses links, folders and big files", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const outer = fixture({ "outside.ts": "secret" });
+    const root = join(outer, "p");
+    mkdirSync(join(root, "it's"), { recursive: true });
+    writeFileSync(join(root, "it's", "a.ts"), "hi $(whoami)");
+    writeFileSync(join(root, "big.ts"), "x".repeat(MAX_FILE_BYTES + 1));
+    symlinkSync(join(outer, "outside.ts"), join(root, "link.ts"));
+    symlinkSync(outer, join(root, "dir"));
+    const run = (path: string) => parseSshFileOutput(execFileSync("sh", ["-c", sshFileCommand(root, path)], { encoding: "utf8" }));
+    expect(run("it's/a.ts")).toEqual({ text: "hi $(whoami)" });
+    expect(run("link.ts")).toEqual({ error: expect.stringMatching(/link/i) });
+    expect(run("dir/outside.ts")).toEqual({ error: expect.stringMatching(/link|not a file/i) });
+    expect(run("it's")).toEqual({ error: expect.stringMatching(/not a file/i) });
+    expect(run("big.ts")).toEqual({ error: expect.stringMatching(/256 KB/) });
+    expect(sshFileCommand("/srv/x", "a'; rm -rf /; '")).toContain(`p='a'\\''; rm -rf /; '\\'''`);
+  });
+
+  it("GitHub: reads through the contents API with encoded segments and refuses a link", async () => {
+    const asked: string[] = [];
+    setGithubTransport({
+      credential: async () => null,
+      fetch: (async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        asked.push(url.pathname + url.search);
+        if (url.pathname.endsWith("/link")) return new Response(JSON.stringify({ type: "symlink", size: 3, target: "../x" }));
+        if (url.pathname.endsWith("/big.ts")) return new Response(JSON.stringify({ type: "file", size: MAX_FILE_BYTES + 1, encoding: "base64", content: "" }));
+        if (url.pathname.endsWith("/dir")) return new Response(JSON.stringify([{ type: "file" }]));
+        return new Response(JSON.stringify({ type: "file", size: 5, encoding: "base64", content: Buffer.from("hello").toString("base64") }));
+      }) as typeof globalThis.fetch,
+    });
+    try {
+      const repo = { name: "r", fullName: "o/r", defaultBranch: "dev/x", pushedAt: "t" };
+      expect(await readGithubFile(repo, "src/a b#.ts")).toEqual({ text: "hello" });
+      expect(asked[0]).toBe("/repos/o/r/contents/src/a%20b%23.ts?ref=dev%2Fx");
+      expect(await readGithubFile(repo, "link")).toEqual({ error: expect.stringMatching(/link/i) });
+      expect(await readGithubFile(repo, "dir")).toEqual({ error: expect.stringMatching(/not a file/i) });
+      expect(await readGithubFile(repo, "big.ts")).toEqual({ error: expect.stringMatching(/256 KB/) });
+    } finally {
+      setGithubTransport(null);
+    }
   });
 });
