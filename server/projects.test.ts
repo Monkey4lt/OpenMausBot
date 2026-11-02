@@ -65,7 +65,7 @@ describe("projects map", () => {
     const state = projectMapStateSchema.parse({ sources: [
       { id: "s1", label: "VPS", kind: "ssh", host: "me@vps", path: "~/projets" },
       { id: "g1", label: "GitHub", kind: "github", path: "octo" },
-      { id: "g2", label: "One", kind: "github", path: "https://github.com/octo/web.git" },
+      { id: "g2", label: "One", kind: "github", path: "octo/web" },
     ] });
     expect(findProject(state, "s1:api")).toEqual({ source: state.sources[0], name: "api" });
     expect(findProject(state, "g1:web")?.source.id).toBe("g1");
