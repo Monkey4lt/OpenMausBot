@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  DEFAULT_VIEW, MAX_SCALE, MIN_SCALE, bezierPath, boundsOf, centerOn, clampScale, edgeLabelPoint, fitRects, portPoint, screenToWorld,
+  DEFAULT_VIEW, MAX_SCALE, MIN_SCALE, bezierPath, boundsOf, centerOn, clampScale, edgeLabelPoint, facingAnchors, fitRects, portPoint, screenToWorld,
   simplifyStroke, worldToScreen, zoomAt,
 } from "./geometry";
 
@@ -104,5 +104,14 @@ describe("canvas geometry", () => {
     expect(out[0]).toEqual(wave[0]);
     expect(out[out.length - 1]).toEqual(wave[wave.length - 1]);
     expect(out.length).toBeLessThan(wave.length);
+  });
+
+  it("facingAnchors joins the sides that face each other, and goes round a block in between", () => {
+    const a = { x: 0, y: 0, w: 100, h: 50 };
+    expect(facingAnchors(a, { x: 300, y: 0, w: 100, h: 50 })).toEqual([{ x: 100, y: 25, side: "right" }, { x: 300, y: 25, side: "left" }]);
+    expect(facingAnchors({ x: 300, y: 0, w: 100, h: 50 }, a)).toEqual([{ x: 300, y: 25, side: "left" }, { x: 100, y: 25, side: "right" }]);
+    expect(facingAnchors(a, { x: 0, y: 120, w: 100, h: 50 })).toEqual([{ x: 50, y: 50, side: "bottom" }, { x: 50, y: 120, side: "top" }]);
+    expect(facingAnchors({ x: 0, y: 120, w: 100, h: 50 }, a)).toEqual([{ x: 50, y: 120, side: "top" }, { x: 50, y: 50, side: "bottom" }]);
+    expect(facingAnchors(a, { x: 0, y: 300, w: 100, h: 50 })).toEqual([{ x: 100, y: 25, side: "right" }, { x: 100, y: 325, side: "right" }]);
   });
 });

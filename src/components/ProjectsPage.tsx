@@ -1,18 +1,20 @@
-// Projects map: each project folder (local or on an SSH host) is a block with
-// its full file tree. Blocks are grouped by "pôle" (group) and joined by links.
-// Shown in place of the chat, like Team map. Layout is saved on the server.
+// The Atelier: each project folder (local, on an SSH host or on GitHub) is a block with
+// its full file tree, on the shared canvas. Blocks are grouped by "pôle" (group) and joined by links.
+// Shown in place of the chat, like Team map. Layout is saved on the server; the view is kept per device.
 import {
   ChevronDown, ChevronRight, CircleHelp, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
-  Maximize, Minus, Network, Pencil, Plus, RefreshCw, Search, Server, Sparkles, Trash2, X,
+  Network, Pencil, Plus, RefreshCw, Search, Server, Sparkles, Trash2, X,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 import { leadComposerDraft } from "@/lib/drafts";
 import { t } from "@/lib/i18n";
 import { listenLiveFrames } from "@/lib/live-events";
 import { summaryPreview, type ArchOverrides } from "@/lib/projects-architecture-view";
-import { DOT_GRID_STYLE, arrangeByGroup, boundsOf, edgePoint, fitZoom, groupZone } from "@/lib/projects-map";
+import { centerOn, clampScale, DEFAULT_VIEW } from "@/lib/canvas/geometry";
+import type { Tool } from "@/lib/canvas/gestures";
+import { BLOCK_W, arrangeByGroup, blockRect, groupZone, linkEdges, openingView, placeBlock } from "@/lib/projects-map";
 import { createMapSync } from "@/lib/projects-map-sync";
 import { panelDraft, panelLayout, readPanelOpen, writePanelOpen } from "@/lib/projects-panel";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -20,6 +22,11 @@ import { api } from "@/state/api";
 import { GROUP_PALETTE as PALETTE } from "../../shared/project-groups";
 import { openBot, useStore } from "@/state/store";
 
+import { Canvas } from "./canvas/Canvas";
+import { EdgeLayer } from "./canvas/EdgeLayer";
+import { NodeFrame } from "./canvas/NodeFrame";
+import { Toolbar } from "./canvas/Toolbar";
+import { readStoredView, useCanvasView } from "./canvas/useCanvasView";
 import { ArchitectureView } from "./projects/ArchitectureView";
 import { ChatView } from "./ChatView";
 
@@ -43,7 +50,6 @@ interface MapState {
 }
 interface ProjectsResponse { state: MapState; projects: Project[]; errors: { sourceId: string; message: string }[]; cartographeBotId?: string | null }
 
-const BLOCK_W = 320;
 const newId = (prefix: string) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 const contains = (nodes: ProjectNode[], q: string): boolean => nodes.some((n) => n.n.toLowerCase().includes(q) || (n.c ? contains(n.c, q) : false));
 
@@ -206,6 +212,17 @@ function TreeItem({ node, q, depth }: { node: ProjectNode; q: string; depth: num
 }
 
 // ---------- page ----------
+const VIEW_KEY = "atelier.view";
+
+export function AtelierTitle() {
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <FolderTree size={16} className="text-ink-secondary" />
+      <h1 className="text-[14px] font-semibold text-ink">{t("projects.title")}</h1>
+    </div>
+  );
+}
+
 export function ProjectsPage() {
   const [data, setData] = useState<ProjectsResponse | null>(null);
   const [S, setS] = useState<MapState | null>(null);
@@ -218,12 +235,18 @@ export function ProjectsPage() {
   const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [mapOf, setMapOf] = useState<Project | null>(null);
   const [mapChanged, setMapChanged] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [tool, setTool] = useState<Tool>("select");
+  const [view, setView] = useCanvasView(DEFAULT_VIEW, VIEW_KEY);
+  const [stored] = useState(() => readStoredView(VIEW_KEY));
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const viewport = useElementSize(box);
   const [ask, askNode] = useAsk();
   const { state: appState, dispatch } = useStore();
   const showThreads = useShowThreads();
-  const wrapRef = useRef<HTMLDivElement>(null);
   const observer = useRef<ResizeObserver | null>(null);
   const loadRef = useRef<() => Promise<void>>(async () => {});
+  const opened = useRef(false);
 
   const [sync] = useState(() => createMapSync<MapState>({
     put: (body) => api<{ rev: number }>("/api/projects/state", { method: "PUT", body: JSON.stringify(body) }),
@@ -241,13 +264,14 @@ export function ProjectsPage() {
       const res = await api<ProjectsResponse>("/api/projects");
       sync.loaded(res.state);
       setData(res); setS(res.state);
+      if (!opened.current && !stored) setView({ x: 0, y: 0, scale: clampScale(res.state.zoom) });
       if (!res.state.sources.length) setSourcesOpen(true);
     } catch {
       setSaveState("error");
     } finally {
       setLoading(false);
     }
-  }, [sync]);
+  }, [sync, stored, setView]);
   loadRef.current = load;
   useEffect(() => { void load(); }, [load]);
   useEffect(() => listenLiveFrames({ onFrame: (frame) => sync.frame(frame), onMissedFrames: () => { void loadRef.current(); } }), [sync]);
@@ -285,17 +309,14 @@ export function ProjectsPage() {
   const multiSource = (S?.sources.length ?? 0) > 1;
   const q = query.trim().toLowerCase();
 
-  // Projects without a saved position get a spot in a grid.
-  const pos = useCallback((p: Project, i: number) => S?.pos[p.id] ?? { x: 50 + (i % 4) * 380, y: 50 + Math.floor(i / 4) * 400 }, [S?.pos]);
-
-  // Block sizes, for drawing group zones and links.
+  // Block sizes, for drawing group zones and links. Layout sizes, so the canvas scale does not change them.
   useLayoutEffect(() => {
     observer.current = new ResizeObserver((entries) => {
       setSizes((prev) => {
         const next = { ...prev };
         for (const entry of entries) {
-          const id = (entry.target as HTMLElement).dataset.id!;
-          next[id] = { w: (entry.target as HTMLElement).offsetWidth, h: (entry.target as HTMLElement).offsetHeight };
+          const el = entry.target as HTMLElement;
+          next[el.dataset.canvasNode!] = { w: el.offsetWidth, h: el.offsetHeight };
         }
         return next;
       });
@@ -304,31 +325,19 @@ export function ProjectsPage() {
   }, []);
   const measure = useCallback((el: HTMLDivElement | null) => { if (el) observer.current?.observe(el); }, []);
 
-  // Ctrl + wheel zooms the map; React's wheel listener is passive, so this one is added by hand.
-  const zoomRef = useRef(1);
-  zoomRef.current = S?.zoom || 1;
-  const ready = Boolean(S);
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return;
-      e.preventDefault();
-      const z = Math.min(1.6, Math.max(0.3, +(zoomRef.current - Math.sign(e.deltaY) * 0.05).toFixed(2)));
-      update((s) => ({ ...s, zoom: z }));
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [ready, update]);
+  const rects = useMemo(() => new Map(projects.map((p, i) => [p.id, blockRect(S?.pos ?? {}, p.id, i, sizes[p.id])])), [projects, S?.pos, sizes]);
+  const zones = useMemo(() => (S?.groups ?? []).flatMap((g) => {
+    const zone = groupZone(projects.filter((p) => S?.member[p.id] === g.id).map((p) => rects.get(p.id)!));
+    return zone ? [{ group: g, zone }] : [];
+  }), [S?.groups, S?.member, projects, rects]);
+  const frame = useMemo(() => [...rects.values(), ...zones.map((z) => z.zone)], [rects, zones]);
 
-  const fitRef = useRef<((save: boolean) => void) | null>(null);
-  const fitted = useRef(false);
   const measured = projects.length > 0 && projects.every((p) => sizes[p.id]);
   useEffect(() => {
-    if (!measured || fitted.current || !fitRef.current) return;
-    fitted.current = true;
-    fitRef.current(false);
-  }, [measured]);
+    if (!S || opened.current || !measured || !(viewport.w > 0)) return;
+    opened.current = true;
+    setView(openingView(stored, S.zoom, frame, viewport));
+  }, [S, measured, viewport, frame, stored, setView]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setLinkFrom(null); setPoleMenu(null); } };
@@ -344,10 +353,7 @@ export function ProjectsPage() {
     );
   }
 
-  const zoom = S.zoom || 1;
   const groupOf = (id: string) => S.groups.find((g) => g.id === S.member[id]);
-  const rect = (p: Project, i: number) => ({ ...pos(p, i), w: sizes[p.id]?.w ?? BLOCK_W, h: sizes[p.id]?.h ?? 120 });
-  const rects = new Map(projects.map((p, i) => [p.id, rect(p, i)]));
 
   // ----- actions -----
   const newPole = async () => {
@@ -380,7 +386,8 @@ export function ProjectsPage() {
     if (label === null) return;
     update((s) => ({ ...s, links: [...s.links, { a: from, b: id, label: label.slice(0, 60) }] }));
   };
-  const deleteLink = async (l: Link) => {
+  const deleteLink = async (l: Link | undefined) => {
+    if (!l) return;
     if (await ask({ title: t("projects.link.deleteTitle"), ok: t("projects.delete"), danger: true, input: false })) update((s) => ({ ...s, links: s.links.filter((o) => o !== l) }));
   };
   const arrange = () => {
@@ -388,41 +395,11 @@ export function ProjectsPage() {
     const next: MapState["pos"] = { ...S.pos, ...arrangeByGroup(buckets.map((list) => list.map((p) => ({ id: p.id, h: sizes[p.id]?.h ?? 200 })))) };
     update((s) => ({ ...s, pos: next }));
   };
-  const setZoom = (z: number) => update((s) => ({ ...s, zoom: Math.min(1.6, Math.max(0.3, +z.toFixed(2))) }));
-  const fit = (save: boolean) => {
-    const el = wrapRef.current;
-    const zones = S.groups.map((g) => groupZone(projects.filter((p) => S.member[p.id] === g.id).map((p) => rects.get(p.id)!))).flatMap((z) => (z ? [z] : []));
-    const content = boundsOf([...rects.values(), ...zones]);
-    if (!el || !content) return;
-    const z = fitZoom(content, { w: el.clientWidth, h: el.clientHeight });
-    if (save) update((s) => ({ ...s, zoom: z })); else setS((s) => (s ? { ...s, zoom: z } : s));
-    requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, content.x * z - 48), top: Math.max(0, content.y * z - 48) }));
-  };
-  fitRef.current = fit;
   const focus = (id: string) => {
     const r = rects.get(id); if (!r) return;
-    wrapRef.current?.scrollTo({ left: r.x * zoom - 120, top: r.y * zoom - 100, behavior: "smooth" });
+    setSelected(id);
+    setView(centerOn(view, { x: r.x + r.w / 2, y: r.y + Math.min(r.h, 300) / 2 }, viewport));
   };
-  const startDrag = (e: ReactPointerEvent, p: Project, i: number) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
-    e.preventDefault();
-    const el = e.currentTarget as HTMLElement;
-    el.setPointerCapture(e.pointerId);
-    const start = pos(p, i), sx = e.clientX, sy = e.clientY;
-    const move = (ev: PointerEvent) => {
-      const x = Math.max(0, Math.round(start.x + (ev.clientX - sx) / zoom)), y = Math.max(0, Math.round(start.y + (ev.clientY - sy) / zoom));
-      setS((s) => (s ? { ...s, pos: { ...s.pos, [p.id]: { x, y } } } : s));
-    };
-    const up = () => {
-      el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up);
-      update((s) => s); // save the final position
-    };
-    el.addEventListener("pointermove", move); el.addEventListener("pointerup", up);
-  };
-
-  const all = [...rects.values()];
-  const boardW = Math.max(...all.map((r) => r.x + r.w), 0) + 600;
-  const boardH = Math.max(...all.map((r) => r.y + r.h), 0) + 500;
 
   const sidebarGroups: { group: Group | null; list: Project[] }[] = [
     ...S.groups.map((g) => ({ group: g, list: projects.filter((p) => S.member[p.id] === g.id) })),
@@ -432,31 +409,21 @@ export function ProjectsPage() {
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-app" aria-label={t("projects.title")}>
-      {/* barre du haut */}
       <header className="flex items-center gap-3 border-b border-hairline/40 px-4 py-2.5">
-        <div className="flex shrink-0 items-center gap-2">
-          <FolderTree size={16} className="text-ink-secondary" />
-          <h1 className="text-[14px] font-semibold text-ink">{t("projects.title")}</h1>
-        </div>
-        <label className="flex h-8 max-w-[320px] flex-1 items-center gap-2 rounded-full bg-control px-3 text-ink-tertiary focus-within:ring-1 focus-within:ring-accent-border">
-          <Search size={14} />
+        <AtelierTitle />
+        <label className="flex h-8 min-w-0 max-w-[320px] flex-1 items-center gap-2 rounded-full bg-control px-3 text-ink-tertiary focus-within:ring-1 focus-within:ring-accent-border">
+          <Search size={14} className="shrink-0" />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("projects.search")} className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-tertiary" />
         </label>
         <div className="ml-auto flex items-center gap-2">
-          <span className={cn("flex items-center gap-1.5 whitespace-nowrap text-[12px]", saveState === "error" ? "text-danger" : "text-ink-tertiary")}>
+          <span className={cn("hidden items-center gap-1.5 whitespace-nowrap text-[12px] sm:flex", saveState === "error" ? "text-danger" : "text-ink-tertiary")}>
             {saveLabel && <span className={cn("size-[7px] rounded-full", saveState === "error" ? "bg-danger" : saveState === "saving" ? "bg-warning" : "bg-success")} />}{saveLabel}
           </span>
           <ToolGroup>
             <ToolButton onClick={() => setSourcesOpen(true)} label={t("projects.sources.button")}><Server size={15} /><span className="hidden lg:inline">{t("projects.sources.button")}</span></ToolButton>
             <ToolButton onClick={arrange} label={t("projects.arrange")}><LayoutGrid size={15} /><span className="hidden lg:inline">{t("projects.arrange")}</span></ToolButton>
           </ToolGroup>
-          <ToolGroup>
-            <ToolButton onClick={() => setZoom(zoom - 0.1)} label={t("projects.zoomOut")}><Minus size={15} /></ToolButton>
-            <span className="w-11 text-center text-[12.5px] tabular-nums text-ink-secondary">{Math.round(zoom * 100)}%</span>
-            <ToolButton onClick={() => setZoom(zoom + 0.1)} label={t("projects.zoomIn")}><Plus size={15} /></ToolButton>
-            {!mapOf && <ToolButton onClick={() => fit(true)} label={t("projects.fit")}><Maximize size={15} /></ToolButton>}
-          </ToolGroup>
-          <ToolGroup>
+          <ToolGroup className="hidden sm:flex">
             <ToolButton onClick={() => void load()} label={t("projects.refresh")}><RefreshCw size={15} className={cn(loading && "animate-spin")} /></ToolButton>
             <ToolButton onClick={() => update((s) => ({ ...s, help: !s.help }))} label={t("projects.help.button")}><CircleHelp size={15} /></ToolButton>
           </ToolGroup>
@@ -466,8 +433,7 @@ export function ProjectsPage() {
       {mapChanged && <MapChangedNotice onClose={() => setMapChanged(false)} />}
 
       <div className="relative flex min-h-0 flex-1">
-        {/* pôles */}
-        <aside className="flex w-56 shrink-0 flex-col border-r border-hairline/40 bg-panel">
+        <aside className="hidden w-56 shrink-0 flex-col border-r border-hairline/40 bg-panel md:flex">
           <div className="flex items-center justify-between pb-2 pl-4 pr-2 pt-3 text-[13px] font-medium text-ink-tertiary">
             {t("projects.poles")}
             <button className="ui-icon-button" aria-label={t("projects.pole.newTitle")} title={t("projects.pole.newTitle")} onClick={() => void newPole()}><Plus size={15} /></button>
@@ -497,77 +463,25 @@ export function ProjectsPage() {
 
         {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow}
           onAskCartographe={cartographe ? () => togglePanel(true, mapOf.name) : undefined} />}
-        {/* toile */}
-        <div ref={wrapRef} className={cn("relative min-w-0 flex-1 overflow-auto", mapOf && "hidden")} style={DOT_GRID_STYLE}>
-          {(data?.errors.length ?? 0) > 0 && (
-            <div className="sticky left-0 top-0 z-10 flex flex-col gap-1.5 p-3">
-              {data!.errors.map((e) => (
-                <button key={e.sourceId} onClick={() => setSourcesOpen(true)}
-                  className="flex max-w-[640px] items-start gap-2 rounded-xl border border-danger/30 bg-card px-3 py-2 text-left text-[13px] text-danger shadow-lg shadow-black/30 hover:border-danger/60">
-                  <span className="font-medium">{t("projects.sourceError", { name: sourceLabel(e.sourceId) })}</span>
-                  <span className="min-w-0 flex-1 text-ink-secondary">{e.message}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {!projects.length && !loading && (
-            <div className="absolute left-1/2 top-32 w-[340px] -translate-x-1/2 rounded-2xl border border-hairline/50 bg-card p-6 text-center">
-              <FolderTree size={22} className="mx-auto text-ink-secondary" />
-              <p className="mt-3 text-[14px] font-medium text-ink">{t("projects.empty.title")}</p>
-              <p className="mt-1 text-[13px] text-ink-secondary">{t("projects.empty.text")}</p>
-              <button onClick={() => setSourcesOpen(true)} className="mt-4 rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:brightness-110">{t("projects.sources.add")}</button>
-            </div>
-          )}
-          <div className="relative" style={{ width: boardW, height: boardH, zoom }}>
-            <svg className="pointer-events-none absolute inset-0 overflow-visible" width={boardW} height={boardH}>
-              <defs>
-                <marker id="pm-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" style={{ fill: "var(--color-ink-tertiary)" }} /></marker>
-              </defs>
-              {S.groups.map((g) => {
-                const zone = groupZone(projects.filter((p) => S.member[p.id] === g.id).map((p) => rects.get(p.id)!));
-                if (!zone) return null;
-                const { x, y } = zone;
-                return (
-                  <g key={g.id}>
-                    <rect x={x} y={y} width={zone.w} height={zone.h} rx={22} fill={g.color} fillOpacity={0.05} stroke={g.color} strokeOpacity={0.35} strokeWidth={1.2} />
-                    <rect x={x + 14} y={y + 14} width={g.name.length * 7.6 + 30} height={24} rx={12} fill={g.color} fillOpacity={0.16} />
-                    <circle cx={x + 27} cy={y + 26} r={3.5} fill={g.color} />
-                    <text x={x + 37} y={y + 30.5} fill={g.color} className="text-[13px] font-semibold">{g.name}</text>
-                  </g>
-                );
-              })}
-              {S.links.map((l, i) => {
-                const A = rects.get(l.a), B = rects.get(l.b);
-                if (!A || !B) return null;
-                const [x1, y1] = edgePoint(A, B), [x2, y2] = edgePoint(B, A), mx = (x1 + x2) / 2, my = (y1 + y2) / 2, w = l.label.length * 6.6 + 20;
-                return (
-                  <g key={`${l.a}-${l.b}-${i}`}>
-                    <line x1={x1} y1={y1} x2={x2} y2={y2} style={{ stroke: "var(--color-ink-tertiary)" }} strokeOpacity={0.6} strokeWidth={1.4} strokeDasharray="6 4" markerEnd="url(#pm-arrow)" className="animate-link-flow" />
-                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={16} className="cursor-pointer" style={{ pointerEvents: "stroke" }} onClick={() => void deleteLink(l)}>
-                      <title>{t("projects.link.hover")}</title>
-                    </line>
-                    {l.label && <>
-                      <rect x={mx - w / 2} y={my - 11} width={w} height={22} rx={11} fill="var(--color-card)" stroke="var(--color-hairline)" />
-                      <text x={mx} y={my + 4} textAnchor="middle" className="fill-ink-secondary text-[11.5px] font-medium">{l.label}</text>
-                    </>}
-                  </g>
-                );
-              })}
-            </svg>
-
-            {projects.map((p, i) => {
+        <div ref={setBox} className={cn("relative flex min-w-0 flex-1", mapOf && "hidden")}>
+          <Canvas view={view} onViewChange={setView} tool={tool} rects={frame} minimap onBackgroundClick={() => setSelected(null)}
+            toolbar={<Toolbar tool={tool} onTool={setTool} tools={["select", "hand"]} />}
+            underlay={<>
+              <PoleZones zones={zones} />
+              <EdgeLayer edges={linkEdges(S.links, rects)} onEdgeClick={(id) => void deleteLink(S.links[Number(id)])} />
+            </>}>
+            {projects.map((p) => {
               const r = rects.get(p.id)!;
               const g = groupOf(p.id);
               const collapsed = Boolean(S.collapsed[p.id]);
               const hit = !q || p.name.toLowerCase().includes(q) || contains(p.tree, q);
               const summary = S.overrides && Object.hasOwn(S.overrides, p.id) ? S.overrides[p.id]!.summary : undefined;
               return (
-                <div key={p.id} ref={measure} data-id={p.id}
-                  className={cn("absolute rounded-[14px] border bg-card transition-[opacity,box-shadow]",
-                    linkFrom === p.id ? "border-accent-border ring-[3px] ring-accent/25" : "border-hairline", !hit && "opacity-25")}
-                  style={{ left: r.x, top: r.y, width: BLOCK_W }}>
-                  <div className="relative flex cursor-grab touch-none select-none items-start gap-3 px-3.5 pb-2 pt-3 active:cursor-grabbing"
-                    onPointerDown={(e) => startDrag(e, p, i)}>
+                <NodeFrame key={p.id} id={p.id} nodeRef={measure} rect={{ ...r, w: BLOCK_W }} autoHeight selected={selected === p.id} locked={false}
+                  onSelect={setSelected} onMove={(id, x, y) => setS((s) => (s ? placeBlock(s, id, x, y) : s))} onMoveEnd={(id, x, y) => update((s) => placeBlock(s, id, x, y))}
+                  className={cn("transition-opacity", !hit && "opacity-25")}
+                  cardClassName={cn("block overflow-visible p-0", linkFrom === p.id && "border-accent-border ring-[3px] ring-accent/25")}>
+                  <div className="relative flex items-start gap-3 px-3.5 pb-2 pt-3">
                     <span className="grid size-[30px] shrink-0 place-items-center rounded-[9px] bg-control text-ink-secondary"
                       style={g ? { background: `${g.color}22`, color: g.color } : undefined}>
                       <SourceIcon kind={S.sources.find((o) => o.id === p.sourceId)?.kind ?? "local"} size={15} tinted={false} />
@@ -601,41 +515,59 @@ export function ProjectsPage() {
                     )}
                   </div>
                   {!collapsed && (
-                    <div className="max-h-[330px] overflow-auto rounded-b-[13px] border-t border-hairline/50 bg-inset px-2 py-1.5 font-mono text-[12.5px]">
+                    <div data-canvas-scroll className="max-h-[330px] overflow-auto rounded-b-[13px] border-t border-hairline/50 bg-inset px-2 py-1.5 font-mono text-[12.5px]">
                       {p.tree.length ? <TreeList nodes={p.tree} q={q} /> : <div className={cn(rowCls, "italic text-ink-tertiary")}>{t("projects.emptyFolder")}</div>}
                     </div>
                   )}
-                </div>
+                </NodeFrame>
               );
             })}
-          </div>
+          </Canvas>
+
+          {((data?.errors.length ?? 0) > 0 || linkFrom) && (
+            <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-col items-center gap-1.5">
+              {data!.errors.map((e) => (
+                <button key={e.sourceId} onClick={() => setSourcesOpen(true)}
+                  className="pointer-events-auto flex w-full max-w-[640px] items-start gap-2 rounded-xl border border-danger/30 bg-card px-3 py-2 text-left text-[13px] text-danger hover:border-danger/60">
+                  <span className="font-medium">{t("projects.sourceError", { name: sourceLabel(e.sourceId) })}</span>
+                  <span className="min-w-0 flex-1 text-ink-secondary">{e.message}</span>
+                </button>
+              ))}
+              {linkFrom && (
+                <div className="animate-pop-in pointer-events-auto flex items-center gap-3 rounded-full bg-ink py-2 pl-4 pr-2 text-[13px] font-medium text-app">
+                  {t("projects.link.pick", { name: projects.find((p) => p.id === linkFrom)?.name ?? "" })}
+                  <button onClick={() => setLinkFrom(null)} className="rounded-full bg-black/10 px-2.5 py-1 text-[12px]">{t("projects.cancel")}</button>
+                </div>
+              )}
+            </div>
+          )}
+          {!projects.length && !loading && (
+            <div className="absolute left-1/2 top-32 w-[min(340px,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-hairline/50 bg-card p-6 text-center">
+              <FolderTree size={22} className="mx-auto text-ink-secondary" />
+              <p className="mt-3 text-[14px] font-medium text-ink">{t("projects.empty.title")}</p>
+              <p className="mt-1 text-[13px] text-ink-secondary">{t("projects.empty.text")}</p>
+              <button onClick={() => setSourcesOpen(true)} className="mt-4 rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:brightness-110">{t("projects.sources.add")}</button>
+            </div>
+          )}
+          {S.help && projects.length > 0 && (
+            <div className="animate-pop-in absolute right-4 top-4 z-20 w-[min(300px,calc(100%-2rem))] rounded-2xl border border-hairline bg-card p-4">
+              <button className="ui-icon-button absolute right-2 top-2" aria-label={t("projects.close")} onClick={() => update((s) => ({ ...s, help: false }))}><X size={15} /></button>
+              <h3 className="mb-3 text-[14px] font-semibold text-ink">{t("projects.help.title")}</h3>
+              <ol className="flex flex-col gap-2.5">
+                {(["projects.help.step1", "projects.help.step2", "projects.help.step3", "projects.help.step4"] as const).map((key, i) => (
+                  <li key={key} className="flex gap-2.5 text-[13px] leading-snug text-ink-secondary">
+                    <span className="grid size-[22px] shrink-0 place-items-center rounded-[7px] bg-control text-[12px] tabular-nums text-ink">{i + 1}</span>{t(key)}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
         {panelOpen && (
           <CartographePanel botId={data?.cartographeBotId ?? null} bot={cartographe} width={width}
             chat={cartographe ? <ChatView bot={cartographe} /> : null} onClose={() => togglePanel(false)} onOpenInChat={openInChat} />
         )}
       </div>
-
-      {linkFrom && (
-        <div className="animate-pop-in fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full bg-ink py-2 pl-4 pr-2 text-[13px] font-medium text-app shadow-xl">
-          {t("projects.link.pick", { name: projects.find((p) => p.id === linkFrom)?.name ?? "" })}
-          <button onClick={() => setLinkFrom(null)} className="rounded-full bg-black/10 px-2.5 py-1 text-[12px]">{t("projects.cancel")}</button>
-        </div>
-      )}
-
-      {S.help && projects.length > 0 && (
-        <div className="animate-pop-in fixed bottom-5 right-5 z-30 w-[300px] rounded-2xl border border-hairline bg-card p-4 shadow-xl shadow-black/40">
-          <button className="ui-icon-button absolute right-2 top-2" aria-label={t("projects.close")} onClick={() => update((s) => ({ ...s, help: false }))}><X size={15} /></button>
-          <h3 className="mb-3 text-[14px] font-semibold text-ink">{t("projects.help.title")}</h3>
-          <ol className="flex flex-col gap-2.5">
-            {(["projects.help.step1", "projects.help.step2", "projects.help.step3", "projects.help.step4"] as const).map((key, i) => (
-              <li key={key} className="flex gap-2.5 text-[13px] leading-snug text-ink-secondary">
-                <span className="grid size-[22px] shrink-0 place-items-center rounded-[7px] bg-control text-[12px] tabular-nums text-ink">{i + 1}</span>{t(key)}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
 
       {sourcesOpen && (
         <SourcesDialog sources={S.sources} errors={data?.errors ?? []} onClose={() => setSourcesOpen(false)}
@@ -649,6 +581,35 @@ export function ProjectsPage() {
       {askNode}
     </main>
   );
+}
+
+/** The pôles' zones behind their blocks, each with its name in a pill. */
+function PoleZones({ zones }: { zones: { group: Group; zone: { x: number; y: number; w: number; h: number } }[] }) {
+  return (
+    <svg aria-hidden className="pointer-events-none absolute left-0 top-0 overflow-visible" width={1} height={1}>
+      {zones.map(({ group: g, zone }) => (
+        <g key={g.id}>
+          <rect x={zone.x} y={zone.y} width={zone.w} height={zone.h} rx={22} fill={g.color} fillOpacity={0.05} stroke={g.color} strokeOpacity={0.35} strokeWidth={1.2} />
+          <rect x={zone.x + 14} y={zone.y + 14} width={g.name.length * 7.6 + 30} height={24} rx={12} fill={g.color} fillOpacity={0.16} />
+          <circle cx={zone.x + 27} cy={zone.y + 26} r={3.5} fill={g.color} />
+          <text x={zone.x + 37} y={zone.y + 30.5} fill={g.color} className="text-[13px] font-semibold">{g.name}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function useElementSize(element: HTMLElement | null): { w: number; h: number } {
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!element) return;
+    const read = () => setSize((prev) => (prev.w === element.clientWidth && prev.h === element.clientHeight ? prev : { w: element.clientWidth, h: element.clientHeight }));
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element]);
+  return size;
 }
 
 type CartographeBot = { id: string; threadId: string; mainThreadId?: string; tasks?: { threadId: string }[] };
@@ -795,8 +756,8 @@ function SourceIcon({ kind, size, tinted = true }: { kind: Source["kind"]; size:
   return <Icon size={size} className={cn("shrink-0", tinted && "text-ink-secondary")} />;
 }
 
-function ToolGroup({ children }: { children: ReactNode }) {
-  return <div className="flex items-center gap-0.5 rounded-full border border-hairline/60 p-0.5">{children}</div>;
+function ToolGroup({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn("flex items-center gap-0.5 rounded-full border border-hairline/60 p-0.5", className)}>{children}</div>;
 }
 
 function ToolButton({ onClick, label, children }: { onClick: () => void; label: string; children: ReactNode }) {

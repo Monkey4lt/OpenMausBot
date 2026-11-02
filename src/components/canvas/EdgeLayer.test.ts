@@ -34,4 +34,18 @@ describe("EdgeLayer", () => {
     const html = renderToStaticMarkup(createElement(EdgeLayer, { edges: [{ id: "e1", from: a, to: b }] }));
     expect(html).not.toContain("data-edge-hit");
   });
+
+  it("draws an arrow head at the end, or at both ends, in the edge's colour, and a custom width", () => {
+    const html = renderToStaticMarkup(createElement(EdgeLayer, { edges: [
+      { id: "e1", from: a, to: b, arrow: "end", width: 3 },
+      { id: "e2", from: b, to: a, arrow: "both", tone: "accent" },
+    ] }));
+    expect(html).toMatch(/<marker[^>]*id="[^"]*-default"/);
+    expect(html).toMatch(/<marker[^>]*id="[^"]*-accent"/);
+    expect((html.match(/marker-end="url\(#/g) ?? []).length).toBe(2);
+    expect((html.match(/marker-start="url\(#/g) ?? []).length).toBe(1);
+    expect(html).toContain('stroke-width="3"');
+    expect(renderToStaticMarkup(createElement(EdgeLayer, { edges: [{ id: "e1", from: a, to: b }] }))).not.toContain("<marker");
+  });
 });
+

@@ -1,4 +1,10 @@
+import { clampScale, facingAnchors, fitRects, type View } from "./canvas/geometry";
+import type { CanvasEdge } from "../components/canvas/EdgeLayer";
+
 export type Rect = { x: number; y: number; w: number; h: number };
+
+export const BLOCK_W = 320;
+const DEFAULT_BLOCK_H = 120;
 
 /** A dot grid in the theme's hairline color; `local` makes it scroll with the map. */
 export const DOT_GRID_STYLE = {
@@ -27,13 +33,6 @@ export function boundsOf(rects: readonly Rect[]): Rect | null {
   return { x, y, w: Math.max(...rects.map((r) => r.x + r.w)) - x, h: Math.max(...rects.map((r) => r.y + r.h)) - y };
 }
 
-/** The zoom that shows all of `content` inside `view` with `pad` around it, never enlarging past `max`. */
-export function fitZoom(content: Rect | null, view: { w: number; h: number }, opts = { pad: 48, min: 0.3, max: 1 }): number {
-  if (!content || content.w <= 0 || content.h <= 0 || view.w <= 0 || view.h <= 0) return opts.max;
-  const z = Math.min((view.w - 2 * opts.pad) / content.w, (view.h - 2 * opts.pad) / content.h);
-  return +Math.min(opts.max, Math.max(opts.min, z)).toFixed(2);
-}
-
 export function arrangeByGroup(
   buckets: { id: string; h: number }[][],
   opts = { perRow: 4, step: 380, rowGap: 36, groupGap: 150, x0: 60, y0: 90 },
@@ -52,3 +51,34 @@ export function arrangeByGroup(
   }
   return out;
 }
+
+/** Where block `index` sits: its saved position, or a spot in a grid; its size once measured. */
+export function blockRect(pos: Record<string, { x: number; y: number }>, id: string, index: number, size: { w: number; h: number } | undefined): Rect {
+  const at = Object.hasOwn(pos, id) ? pos[id]! : { x: 50 + (index % 4) * 380, y: 50 + Math.floor(index / 4) * 400 };
+  return { x: at.x, y: at.y, w: size?.w ?? BLOCK_W, h: size?.h ?? DEFAULT_BLOCK_H };
+}
+
+/** The first view of the map: the one this device remembers, else the saved zoom from the top-left corner,
+ * as the map used to open; fitted instead when some block would be off screen that way. */
+export function openingView(stored: View | null, zoom: number, rects: Rect[], viewport: { w: number; h: number }): View {
+  if (stored) return stored;
+  const view = { x: 0, y: 0, scale: clampScale(zoom) };
+  const seen = (r: Rect) => r.x * view.scale >= 0 && r.y * view.scale >= 0 && (r.x + r.w) * view.scale <= viewport.w && (r.y + r.h) * view.scale <= viewport.h;
+  if (!rects.length || !(viewport.w > 0) || rects.every(seen)) return view;
+  return fitRects(rects, viewport);
+}
+
+export function placeBlock<S extends { pos: Record<string, { x: number; y: number }> }>(state: S, id: string, x: number, y: number): S {
+  return { ...state, pos: { ...state.pos, [id]: { x: Math.round(x), y: Math.round(y) } } };
+}
+
+/** The map's links as canvas edges, keyed by their index in `links`; a link to a block that is gone is left out. */
+export function linkEdges(links: readonly { a: string; b: string; label: string }[], rects: ReadonlyMap<string, Rect>): CanvasEdge[] {
+  return links.flatMap((link, index) => {
+    const a = rects.get(link.a), b = rects.get(link.b);
+    if (!a || !b) return [];
+    const [from, to] = facingAnchors(a, b);
+    return [{ id: String(index), from, to, label: link.label || undefined, arrow: "end" as const }];
+  });
+}
+

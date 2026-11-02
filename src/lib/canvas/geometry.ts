@@ -61,6 +61,18 @@ export function portPoint(rect: Rect, side: Side, index = 0, count = 1): Point {
   }
 }
 
+/** The anchors of a link between two blocks without ports: the middles of the sides that face each other.
+ * Blocks in one column with a block's room between them are joined on their right sides, so the curve goes round. */
+export function facingAnchors(a: Rect, b: Rect): [PortAnchor, PortAnchor] {
+  const at = (rect: Rect, side: Side): PortAnchor => ({ ...portPoint(rect, side), side });
+  const overlapX = a.x < b.x + b.w && b.x < a.x + a.w;
+  if (!overlapX) return b.x >= a.x ? [at(a, "right"), at(b, "left")] : [at(a, "left"), at(b, "right")];
+  const below = b.y + b.h / 2 >= a.y + a.h / 2;
+  const gap = below ? b.y - (a.y + a.h) : a.y - (b.y + b.h);
+  if (gap > 2 * Math.max(a.h, b.h)) return [at(a, "right"), at(b, "right")];
+  return below ? [at(a, "bottom"), at(b, "top")] : [at(a, "top"), at(b, "bottom")];
+}
+
 const OUTWARD: Record<Side, Point> = { left: { x: -1, y: 0 }, right: { x: 1, y: 0 }, top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 } };
 
 function controlPoints(from: PortAnchor, to: PortAnchor): [Point, Point] {

@@ -1,4 +1,4 @@
-import { Fragment, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Fragment, useRef, type ButtonHTMLAttributes, type Ref, type HTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Check, Copy, Lock, LockKeyhole, Play, Trash2, Type, X, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -38,11 +38,11 @@ const PORT_GLYPH: Record<NonNullable<NodePort["kind"]>, { icon: LucideIcon; labe
 };
 
 /** Presses here belong to the control, never to a block drag. */
-const OWN_PRESS = "button, input, textarea, select, a, [contenteditable], [data-canvas-port], [data-node-actions]";
+const OWN_PRESS = "button, input, textarea, select, a, [contenteditable], [data-canvas-port], [data-node-actions], [data-canvas-scroll]";
 
 type Drag = { id: number; start: Point; origin: Point; scale: number; moved: boolean; last: Point };
 
-export function NodeFrame({ id, rect, selected, locked, ports = [], onMove, onMoveEnd, onSelect, actions, label, children, className }: {
+export function NodeFrame({ id, rect, selected, locked, ports = [], onMove, onMoveEnd, onSelect, actions, label, children, className, cardClassName, autoHeight = false, nodeRef }: {
   id: string;
   rect: Rect;
   selected: boolean;
@@ -57,6 +57,10 @@ export function NodeFrame({ id, rect, selected, locked, ports = [], onMove, onMo
   label?: { icon?: LucideIcon; text: string };
   children?: ReactNode;
   className?: string;
+  cardClassName?: string;
+  /** The card is as tall as its content (rect.h is then only used for links and fitting). */
+  autoHeight?: boolean;
+  nodeRef?: Ref<HTMLDivElement>;
 }) {
   const canvas = useCanvas();
   const drag = useRef<Drag | null>(null);
@@ -99,16 +103,16 @@ export function NodeFrame({ id, rect, selected, locked, ports = [], onMove, onMo
     actions.onDelete && <button key="del" type="button" aria-label={t("atelier.canvas.delete")} title={t("atelier.canvas.delete")} className={cn(barButton, "hover:text-danger")} onClick={actions.onDelete}><Trash2 size={14} /></button>,
   ].filter(Boolean) : [];
 
-  return <div data-canvas-node={id} data-selected={selected ? "true" : undefined} data-locked={locked ? "true" : undefined}
+  return <div ref={nodeRef} data-canvas-node={id} data-selected={selected ? "true" : undefined} data-locked={locked ? "true" : undefined}
     className={cn("absolute", !locked && !canvas.readOnly && canvas.tool === "select" && "cursor-grab active:cursor-grabbing", className)}
-    style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
+    style={{ left: rect.x, top: rect.y, width: rect.w, height: autoHeight ? undefined : rect.h }}
     onPointerDown={down} onPointerMove={move} onPointerUp={(event) => up(event)} onPointerCancel={(event) => up(event, true)}>
     {label && <div className="pointer-events-none absolute bottom-full left-1 mb-1.5 flex max-w-full items-center gap-1 truncate text-[12px] font-medium text-ink-secondary">
       {LabelIcon && <LabelIcon size={12} strokeWidth={1.75} className="shrink-0" />}
       <span className="truncate">{label.text}</span>
     </div>}
     <div className={cn("flex h-full flex-col gap-1.5 overflow-hidden rounded-[14px] border bg-card p-1.5 text-[13px] text-ink",
-      selected ? "border-ink/45" : "border-hairline/80")}>
+      selected ? "border-ink/45" : "border-hairline/80", cardClassName)}>
       {children}
     </div>
     {ports.map((port) => {

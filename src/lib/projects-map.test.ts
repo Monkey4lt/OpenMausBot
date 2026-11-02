@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { arrangeByGroup, boundsOf, edgePoint, fitZoom, groupZone, type Rect } from "./projects-map";
+import { createMapSync } from "./projects-map-sync";
+import { arrangeByGroup, blockRect, boundsOf, edgePoint, groupZone, linkEdges, openingView, placeBlock, type Rect } from "./projects-map";
 
 const r: Rect = { x: 0, y: 0, w: 100, h: 50 };
 
@@ -46,10 +47,56 @@ describe("projects map geometry", () => {
     expect(boundsOf([])).toBeNull();
   });
 
-  it("fitZoom shrinks a map that does not fit and never enlarges a small one", () => {
-    expect(fitZoom({ x: 0, y: 0, w: 2096, h: 400 }, { w: 1096, h: 800 })).toBe(0.48);
-    expect(fitZoom({ x: 0, y: 0, w: 300, h: 200 }, { w: 1200, h: 800 })).toBe(1);
-    expect(fitZoom({ x: 0, y: 0, w: 90000, h: 200 }, { w: 1200, h: 800 })).toBe(0.3);
-    expect(fitZoom(null, { w: 1200, h: 800 })).toBe(1);
+});
+
+describe("the projects map on the canvas", () => {
+  const old = { zoom: 0.8, pos: { "s1:shop": { x: 40, y: 60 }, "s1:api": { x: 420, y: 60 } } };
+  const sizes = { "s1:shop": { w: 320, h: 180 }, "s1:api": { w: 320, h: 240 } };
+  const viewport = { w: 1200, h: 800 };
+
+  it("an old saved map (no annotations, zoom 0.8) opens at scale 0.8 with every block at its saved position", () => {
+    const rects = ["s1:shop", "s1:api"].map((id, i) => blockRect(old.pos, id, i, sizes[id as keyof typeof sizes]));
+    expect(rects).toEqual([{ x: 40, y: 60, w: 320, h: 180 }, { x: 420, y: 60, w: 320, h: 240 }]);
+    expect(openingView(null, old.zoom, rects, viewport)).toEqual({ x: 0, y: 0, scale: 0.8 });
+  });
+
+  it("a view remembered on this device wins; a map that does not fit at its zoom is fitted", () => {
+    const stored = { x: -30, y: 12, scale: 1.4 };
+    expect(openingView(stored, 0.8, [], viewport)).toEqual(stored);
+    const far = [{ x: 40, y: 60, w: 320, h: 180 }, { x: 3000, y: 60, w: 320, h: 180 }];
+    const view = openingView(null, 1, far, viewport);
+    expect(view.scale).toBeLessThan(1);
+    expect(view.x + 40 * view.scale).toBeGreaterThanOrEqual(0);
+    expect(view.x + 3320 * view.scale).toBeLessThanOrEqual(viewport.w);
+    expect(openingView(null, 0.8, [], viewport)).toEqual({ x: 0, y: 0, scale: 0.8 });
+    expect(openingView(null, Number.NaN, [], viewport)).toEqual({ x: 0, y: 0, scale: 1 });
+  });
+
+  it("a block without a saved position gets a spot in a grid", () => {
+    expect(blockRect({}, "x", 5, undefined)).toEqual({ x: 50 + 380, y: 450, w: 320, h: 120 });
+  });
+
+  it("dragging a block saves its world position through the existing save path with baseRev", async () => {
+    const puts: unknown[] = [];
+    const sync = createMapSync<typeof old & { rev: number }>({
+      put: (body) => { puts.push(body); return Promise.resolve({ rev: body.baseRev + 1 }); },
+      reload: () => {}, changedElsewhere: () => {}, status: () => {}, setTimer: (fn) => { fn(); return 1; }, clearTimer: () => {}, delayMs: 400,
+    });
+    const state = { ...old, rev: 7 };
+    sync.loaded(state);
+    const moved = placeBlock(state, "s1:api", -120.4, 333.6);
+    expect(moved.pos["s1:api"]).toEqual({ x: -120, y: 334 });
+    expect(moved.pos["s1:shop"]).toEqual(old.pos["s1:shop"]);
+    sync.later(moved);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(puts).toEqual([{ ...moved, baseRev: 7 }]);
+  });
+
+  it("links become curved edges between the facing sides of their blocks, with an arrow and the label", () => {
+    const rects = new Map([["a", { x: 0, y: 0, w: 320, h: 100 }], ["b", { x: 600, y: 0, w: 320, h: 100 }]]);
+    const edges = linkEdges([{ a: "a", b: "b", label: "appelle" }, { a: "a", b: "gone", label: "" }], rects);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({ id: "0", label: "appelle", arrow: "end", from: { x: 320, y: 50, side: "right" }, to: { x: 600, y: 50, side: "left" } });
   });
 });
+

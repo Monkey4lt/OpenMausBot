@@ -2,8 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { loadLocale, setLocale } from "@/lib/i18n";
-import { CartographeButton, CartographePanel, MapChangedNotice, ProjectBlockHeaderActions, ProjectBlockMeta, ProjectBlockPole, ProjectBlockSummary } from "./ProjectsPage";
+import { loadLocale, setLocale, t } from "@/lib/i18n";
+import { AtelierTitle, CartographeButton, CartographePanel, MapChangedNotice, ProjectBlockHeaderActions, ProjectBlockMeta, ProjectBlockPole, ProjectBlockSummary } from "./ProjectsPage";
 
 beforeEach(async () => { await loadLocale("fr"); });
 afterEach(() => { setLocale("en"); });
@@ -107,3 +107,18 @@ describe("the map-changed notice", () => {
     expect(html.match(/<button/g)).toHaveLength(1);
   });
 });
+
+describe("the Atelier", () => {
+  it("the page title and the nav say Atelier in French", () => {
+    expect(t("sidebar.nav.projects")).toBe("Atelier");
+    const html = renderToStaticMarkup(createElement(AtelierTitle));
+    expect(html).toContain(">Atelier</h1>");
+  });
+
+  it("says Workshop in English", async () => {
+    await loadLocale("en");
+    expect(t("sidebar.nav.projects")).toBe("Workshop");
+    expect(renderToStaticMarkup(createElement(AtelierTitle))).toContain(">Workshop</h1>");
+  });
+});
+
