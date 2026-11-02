@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classify, FAMILY_ORDER, modulesOf, parseImports } from "./projects-architecture.ts";
+import { aliasesFromGoMod, aliasesFromTsconfig, classify, FAMILY_ORDER, modulesOf, parseImports, resolveImport } from "./projects-architecture.ts";
 
 describe("classify", () => {
   it.each([
@@ -109,5 +109,52 @@ describe("parseImports", () => {
 
   it("a file in a language it does not read gives nothing", () => {
     expect(parseImports("notes.txt", 'import x from "./y"')).toEqual([]);
+  });
+});
+
+describe("resolveImport", () => {
+  const files = new Set(["src/a.ts", "src/b.tsx", "src/lib/index.ts", "src/theme.css", "app/models.py", "app/db/__init__.py", "src/api/routes.rs", "src/db/mod.rs", "db/store.go"]);
+  const aliases = { "@/": "src/", "example.com/app/": "" };
+
+  it.each([
+    ["src/a.ts", "./b", "src/b.tsx"], ["src/a.ts", "./lib", "src/lib/index.ts"], ["src/a.ts", "./theme.css", "src/theme.css"],
+    ["src/a.ts", "@/lib", "src/lib/index.ts"], ["src/a.ts", "react", null],
+    ["app/x.py", ".models", "app/models.py"], ["app/x.py", "app.db", "app/db/__init__.py"], ["app/x.py", "os", null],
+    ["src/main.rs", "crate::api::routes", "src/api/routes.rs"], ["src/main.rs", "self::db", "src/db/mod.rs"],
+    ["cmd/main.go", "example.com/app/db", "db/store.go"], ["cmd/main.go", "fmt", null],
+  ])("%s imports %s", (from, spec, to) => expect(resolveImport(from, spec, files, aliases)).toBe(to));
+
+  const more = new Set([
+    "src/lib/util.ts", "src/lib/deep/x.ts", "src/a.ts", "app/pkg/__init__.py", "app/pkg/sub.py", "app/top.py",
+    "src/api.rs", "src/api/auth.rs", "web/main.scss", "web/_vars.scss", "pkg/db/store_test.go", "pkg/db/store.go", "pkg/db/a_test.go",
+  ]);
+  it.each([
+    ["an ESM .js specifier finds the .ts file", "src/lib/deep/x.ts", "../util.js", "src/lib/util.ts"],
+    ["a parent folder import", "src/lib/deep/x.ts", "../../a", "src/a.ts"],
+    ["an import that leaves the project is external", "src/a.ts", "../../outside", null],
+    ["a missing relative file is external", "src/a.ts", "./missing", null],
+    ["Python .. reaches the parent package", "app/pkg/sub.py", "..top", "app/top.py"],
+    ["Python . alone is the package itself", "app/pkg/sub.py", ".", "app/pkg/__init__.py"],
+    ["Rust use of an item inside a module file", "src/main.rs", "crate::api::Router", "src/api.rs"],
+    ["Rust mod from a non-root file looks in its own folder", "src/api.rs", "self::auth", "src/api/auth.rs"],
+    ["Rust external crate", "src/main.rs", "serde::Serialize", null],
+    ["Go prefers a non-test file of the package", "cmd/main.go", "example.com/app/pkg/db", "pkg/db/store.go"],
+    ["SCSS partial with underscore", "web/main.scss", "./vars", "web/_vars.scss"],
+  ])("%s", (_name, from, spec, to) => expect(resolveImport(from, spec, more, aliases)).toBe(to));
+
+  it("reads paths aliases from a tsconfig with comments", () => {
+    expect(aliasesFromTsconfig('{ // c\n "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }')).toEqual({ "@/": "src/" });
+  });
+
+  it("reads baseUrl, block comments and trailing commas, and survives a broken file", () => {
+    expect(aliasesFromTsconfig('{ /* c */ "compilerOptions": { "baseUrl": "./app", "paths": { "~/*": ["lib/*",], "#cfg": ["./config.ts"], }, }, }')).toEqual({ "~/": "app/lib/", "#cfg": "app/config.ts" });
+    expect(aliasesFromTsconfig('{ "compilerOptions": { "paths": { "//x/*": ["lib/*"] } } }')).toEqual({ "//x/": "lib/" });
+    expect(aliasesFromTsconfig("{ nope")).toEqual({});
+    expect(aliasesFromTsconfig("{}")).toEqual({});
+  });
+
+  it("reads the module path of a go.mod", () => {
+    expect(aliasesFromGoMod("// x\nmodule example.com/app\n\ngo 1.22\n")).toEqual({ "example.com/app/": "" });
+    expect(aliasesFromGoMod("go 1.22")).toEqual({});
   });
 });

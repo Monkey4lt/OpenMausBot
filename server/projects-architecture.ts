@@ -226,3 +226,143 @@ export function parseImports(path: string, text: string): ImportRef[] {
     .sort((a, b) => a.at - b.at)
     .map((found) => ({ spec: found.spec, line: lineOf(found.at) }));
 }
+
+const JS_TRIES = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".css", ".scss", "/index.ts", "/index.tsx", "/index.js"];
+const ESM_TS_TWINS: Record<string, readonly string[]> = { ".js": [".ts", ".tsx"], ".jsx": [".tsx"], ".mjs": [".mts"], ".cjs": [".cts"] };
+
+function normalizeWithinRoot(path: string): string | null {
+  const out: string[] = [];
+  for (const part of path.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") { if (!out.length) return null; out.pop(); } else out.push(part);
+  }
+  return out.join("/");
+}
+
+const dirnameOf = (path: string) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+const joinPath = (dir: string, rest: string) => normalizeWithinRoot(dir ? `${dir}/${rest}` : rest);
+const firstExisting = (candidates: string[], files: ReadonlySet<string>) => candidates.find((c) => files.has(c)) ?? null;
+
+function applyAlias(spec: string, aliases: Record<string, string>): string | null {
+  const keys = Object.keys(aliases).sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    if (key.endsWith("/") ? spec.startsWith(key) || spec === key.slice(0, -1) : spec === key) {
+      return aliases[key] + spec.slice(key.length).replace(/^\//, "");
+    }
+  }
+  return null;
+}
+
+function resolveScript(from: string, spec: string, files: ReadonlySet<string>, aliases: Record<string, string>): string | null {
+  const target = spec.startsWith("./") || spec.startsWith("../") ? joinPath(dirnameOf(from), spec)
+    : spec.startsWith("/") ? normalizeWithinRoot(spec)
+    : applyAlias(spec, aliases);
+  if (target === null) return null;
+  const base = normalizeWithinRoot(target);
+  if (base === null) return null;
+  const direct = firstExisting(JS_TRIES.map((ext) => base + ext), files);
+  if (direct) return direct;
+  const ext = extensionOf(base);
+  const twin = firstExisting((ESM_TS_TWINS[ext] ?? []).map((t) => base.slice(0, -ext.length) + t), files);
+  if (twin) return twin;
+  const slash = base.lastIndexOf("/");
+  const partial = `${base.slice(0, slash + 1)}_${base.slice(slash + 1)}`;
+  return firstExisting([".scss", ".sass", ""].map((e) => partial + e), files);
+}
+
+function resolvePython(from: string, spec: string, files: ReadonlySet<string>): string | null {
+  const dots = /^\.*/.exec(spec)![0].length;
+  let base = "";
+  if (dots) {
+    base = dirnameOf(from);
+    for (let i = 1; i < dots; i++) {
+      if (!base) return null;
+      base = dirnameOf(base);
+    }
+  }
+  const rest = spec.slice(dots).split(".").filter(Boolean).join("/");
+  const target = rest ? (base ? `${base}/${rest}` : rest) : base;
+  const candidates = rest ? [`${target}.py`, `${target}/__init__.py`] : [`${target ? `${target}/` : ""}__init__.py`];
+  return firstExisting(candidates, files);
+}
+
+function rustModuleDir(from: string): string {
+  const dir = dirnameOf(from);
+  const name = from.slice(from.lastIndexOf("/") + 1);
+  return ["main.rs", "lib.rs", "mod.rs"].includes(name) ? dir : (dir ? `${dir}/` : "") + name.replace(/\.rs$/, "");
+}
+
+function rustCrateRoot(from: string): string {
+  const parts = from.split("/");
+  const src = parts.lastIndexOf("src", parts.length - 2);
+  return src >= 0 ? parts.slice(0, src + 1).join("/") : dirnameOf(from);
+}
+
+function resolveRust(from: string, spec: string, files: ReadonlySet<string>): string | null {
+  const [head, ...segments] = spec.split("::").filter(Boolean);
+  let base: string | null;
+  if (head === "crate") base = rustCrateRoot(from);
+  else if (head === "self") base = rustModuleDir(from);
+  else if (head === "super") base = dirnameOf(rustModuleDir(from));
+  else return null;
+  for (let n = segments.length; n > 0; n--) {
+    const target = joinPath(base, segments.slice(0, n).join("/"));
+    if (target === null) return null;
+    const found = firstExisting([`${target}.rs`, `${target}/mod.rs`], files);
+    if (found) return found;
+  }
+  return null;
+}
+
+function resolveGo(spec: string, files: ReadonlySet<string>, aliases: Record<string, string>): string | null {
+  const target = applyAlias(spec, aliases);
+  if (target === null) return null;
+  const dir = normalizeWithinRoot(target);
+  if (dir === null) return null;
+  const inDir = [...files].filter((f) => f.endsWith(".go") && dirnameOf(f) === dir).sort();
+  return inDir.find((f) => !f.endsWith("_test.go")) ?? inDir[0] ?? null;
+}
+
+export function resolveImport(from: string, spec: string, files: ReadonlySet<string>, aliases: Record<string, string>): string | null {
+  switch (extensionOf(from)) {
+    case ".py": return resolvePython(from, spec, files);
+    case ".rs": return resolveRust(from, spec, files);
+    case ".go": return resolveGo(spec, files, aliases);
+    default: return resolveScript(from, spec, files, aliases);
+  }
+}
+
+function parseJsonWithCommentsAndTrailingCommas(text: string): unknown {
+  const { code, strings } = blankCommentsKeepingOffsets(text.replace(/^﻿/, ""), C_LIKE);
+  let out = "";
+  let last = 0;
+  for (const [from, to] of strings) {
+    out += code.slice(last, from).replace(/,(\s*[}\]])/g, "$1") + code.slice(from, to + 1);
+    last = to + 1;
+  }
+  out += code.slice(last).replace(/,(\s*[}\]])/g, "$1");
+  try { return JSON.parse(out); } catch { return null; }
+}
+
+export function aliasesFromTsconfig(text: string): Record<string, string> {
+  const options = (parseJsonWithCommentsAndTrailingCommas(text) as { compilerOptions?: { baseUrl?: unknown; paths?: unknown } } | null)?.compilerOptions;
+  const paths = options?.paths;
+  if (!paths || typeof paths !== "object") return {};
+  const baseUrl = typeof options.baseUrl === "string" ? options.baseUrl : ".";
+  const out: Record<string, string> = {};
+  for (const [key, targets] of Object.entries(paths as Record<string, unknown>)) {
+    const first = Array.isArray(targets) ? targets.find((t): t is string => typeof t === "string") : undefined;
+    if (!first) continue;
+    const wildcard = key.endsWith("/*") && first.endsWith("/*");
+    const target = normalizeWithinRoot(`${baseUrl}/${wildcard ? first.slice(0, -2) : first}`);
+    if (target === null) continue;
+    if (wildcard) out[key.slice(0, -1)] = target ? `${target}/` : "";
+    else if (!key.includes("*")) out[key] = target;
+  }
+  return out;
+}
+
+export function aliasesFromGoMod(text: string): Record<string, string> {
+  const name = /^\s*module\s+"?([^\s"]+)"?/m.exec(text)?.[1];
+  return name ? { [`${name}/`]: "" } : {};
+}

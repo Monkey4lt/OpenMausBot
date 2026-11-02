@@ -243,7 +243,7 @@ it("CRLF and a BOM give the same result as LF", () => {
 - Consumes : `ImportRef`.
 - Produces : `aliasesFromTsconfig(text: string): Record<string, string>` (ex. `{ "@/": "src/" }`, JSON avec commentaires toléré) ; `aliasesFromGoMod(text: string): Record<string, string>` (ex. `{ "example.com/app/": "" }`) ; `resolveImport(from: string, spec: string, files: ReadonlySet<string>, aliases: Record<string, string>): string | null` (`null` = externe).
 
-- [ ] **Step 1 : Write the failing tests**
+- [x] **Step 1 : Write the failing tests**
 
 ```ts
 const files = new Set(["src/a.ts", "src/b.tsx", "src/lib/index.ts", "src/theme.css", "app/models.py", "app/db/__init__.py", "src/api/routes.rs", "src/db/mod.rs", "db/store.go"]);
@@ -259,8 +259,8 @@ it("reads paths aliases from a tsconfig with comments", () => {
 });
 ```
 
-- [ ] **Step 2 :** FAIL. **Step 3 :** extensions essayées dans l'ordre `["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".css", ".scss", "/index.ts", "/index.tsx", "/index.js"]` ; Python : points → `/`, `.py` puis `/__init__.py` ; Rust : `crate::`/`self::` → `src/` (fichier du `from`), `.rs` puis `/mod.rs` ; Go : alias du module puis le premier `.go` du dossier. **Step 4 :** PASS.
-- [ ] **Step 5 :** Commit `feat(projects): resolve imports to project files`.
+- [x] **Step 2 :** FAIL. **Step 3 :** extensions essayées dans l'ordre `["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".css", ".scss", "/index.ts", "/index.tsx", "/index.js"]` ; Python : points → `/`, `.py` puis `/__init__.py` ; Rust : `crate::`/`self::` → `src/` (fichier du `from`), `.rs` puis `/mod.rs` ; Go : alias du module puis le premier `.go` du dossier. **Step 4 :** PASS.
+- [x] **Step 5 :** Commit `feat(projects): resolve imports to project files`.
 
 ### Task 9: Construire l'architecture
 
