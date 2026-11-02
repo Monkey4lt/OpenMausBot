@@ -4,50 +4,75 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadLocale, setLocale, t } from "@/lib/i18n";
 import { projectWorkflowBadges } from "@/lib/workflows/overview";
-import { AtelierTitle, CartographeFab, CartographePanel, MapChangedNotice, ProjectBlockHeaderActions, ProjectBlockMeta, ProjectBlockPole, ProjectBlockSummary, WorkflowBadge, WorkflowList } from "./ProjectsPage";
+import { AtelierTitle, CartographeFab, CartographePanel, MapChangedNotice, ProjectBlockPole, ProjectCard, WorkflowBadge, WorkflowList } from "./ProjectsPage";
 
 beforeEach(async () => { await loadLocale("fr"); });
 afterEach(() => { setLocale("en"); });
 
-describe("project block header", () => {
-  it("offers the architecture map of the project next to linking and folding", () => {
-    const html = renderToStaticMarkup(createElement(ProjectBlockHeaderActions, {
-      name: "api", linking: false, collapsed: false, onMap: () => {}, onLink: () => {}, onFold: () => {},
-    }));
-    expect(html).toContain('aria-label="Ouvrir la carte de api"');
-    expect(html).toContain('data-icon="Network"');
-    expect(html).toContain('aria-label="Relier à un autre projet"');
-    expect(html).toContain('aria-label="Plier / déplier"');
-    expect(html.match(/<button/g)).toHaveLength(3);
-  });
-});
+describe("the project card", () => {
+  const base = {
+    name: "shop", title: "9 dossiers, 2825 fichiers", group: null, summary: undefined, kinds: undefined, files: 2825, truncated: false, filesOpen: false, linking: false,
+    onOpen: () => {}, onDescribe: () => {}, onToggleFiles: () => {}, onLink: () => {}, onPole: () => {},
+  };
+  const card = (props: Partial<Parameters<typeof ProjectCard>[0]> = {}) => renderToStaticMarkup(createElement(ProjectCard, { ...base, ...props }));
 
-describe("project block summary", () => {
-  it("shows the first line of the En bref card under the project's name, and nothing without one", () => {
-    const html = renderToStaticMarkup(createElement(ProjectBlockSummary, { summary: "Une boutique en ligne.\nAvec un site." }));
-    expect(html).toContain(">Une boutique en ligne.</p>");
-    expect(html).toContain("line-clamp-2");
-    expect(html).toContain('title="Une boutique en ligne.');
-    expect(renderToStaticMarkup(createElement(ProjectBlockSummary, { summary: undefined }))).toBe("");
-  });
-});
-
-describe("project block meta", () => {
-  it("shows one count that fits whole, never a line cut mid-word, with the rest in its tooltip", () => {
-    const html = renderToStaticMarkup(createElement(ProjectBlockMeta, { dirs: 9, files: 27, truncated: false }));
-    expect(html).toContain(">27 fichiers</div>");
-    expect(html).toContain('title="9 dossiers, 27 fichiers"');
-    expect(html).toContain("whitespace-nowrap");
-    expect(html).not.toContain("truncate");
+  it("shows no file tree by default, only a quiet button with the count", () => {
+    const html = card({ tree: createElement("div", { "data-tree": "1" }) });
+    expect(html).not.toContain("data-tree");
+    expect(html).toMatch(/Voir les fichiers \(2\s825\)/);
     expect(html).not.toContain("font-mono");
-    expect(html).not.toContain("·");
+    expect(html).not.toContain('data-icon="Server"');
+    expect(html).not.toContain('data-icon="Network"');
+    expect(html).not.toContain('data-icon="ChevronDown"');
+    expect(html).not.toContain("uppercase");
   });
 
-  it("says one file in the singular, a cut list with a plus, and the source in the tooltip", () => {
-    expect(renderToStaticMarkup(createElement(ProjectBlockMeta, { dirs: 1, files: 1, truncated: false }))).toContain(">1 fichier</div>");
-    const cut = renderToStaticMarkup(createElement(ProjectBlockMeta, { dirs: 40, files: 500, truncated: true, source: "Mon serveur" }));
-    expect(cut).toContain(">500+ fichiers</div>");
-    expect(cut).toContain('title="40 dossiers, 500+ fichiers, dans « Mon serveur »"');
+  it("shows the tree once the files are opened, with a button to hide them", () => {
+    const html = card({ filesOpen: true, tree: createElement("div", { "data-tree": "1" }) });
+    expect(html).toContain('data-tree="1"');
+    expect(html).toContain("Masquer les fichiers");
+    expect(card({ truncated: true, files: 500 })).toContain("Voir les fichiers (500+)");
+  });
+
+  it("without a summary says so and offers to ask the Cartographe", () => {
+    const html = card();
+    expect(html).toContain("Pas encore décrit.");
+    expect(html).toContain("Demander au Cartographe de le décrire");
+    expect(html).toContain('data-icon="Sparkles"');
+  });
+
+  it("with a summary shows its first line, and no ask button", () => {
+    const html = card({ summary: "Une boutique en ligne pour les clients.\nAvec un site." });
+    expect(html).toContain(">Une boutique en ligne pour les clients.</p>");
+    expect(html).toContain("line-clamp-2");
+    expect(html).not.toContain("Pas encore décrit");
+    expect(html).not.toContain("Demander au Cartographe");
+  });
+
+  it("shows at most three piece chips with icons, then a count, and never tests or deploy", () => {
+    const html = card({ kinds: ["ui", "api", "database", "external", "tests", "deploy", "jobs"] });
+    expect(html.match(/data-card-piece=/g)).toHaveLength(3);
+    expect(html).toContain('data-card-piece="ui"');
+    expect(html).toContain('data-icon="Monitor"');
+    expect(html).toContain(">Serveur<");
+    expect(html).toContain(">+2<");
+    expect(html).not.toContain('data-card-piece="tests"');
+    expect(card({ kinds: undefined })).not.toContain("data-card-piece");
+  });
+
+  it("opens the project from its name and from « Comment ça marche », and keeps the link icon", () => {
+    const html = card();
+    expect(html).toContain('aria-label="Comment marche shop"');
+    expect(html).toContain(">Comment ça marche<");
+    expect(html).toContain('aria-label="Relier à un autre projet"');
+    expect(html).toContain('title="9 dossiers, 2825 fichiers"');
+  });
+
+  it("shows the pole as a color dot, or a button to choose one", () => {
+    const html = card({ group: { name: "Boutique", color: "#1084fe" } });
+    expect(html).toContain("background:#1084fe");
+    expect(html).toContain('aria-label="Changer de pôle (actuellement « Boutique »)"');
+    expect(card()).toContain("Choisir un pôle");
   });
 });
 

@@ -5,8 +5,8 @@ export type Rect = { x: number; y: number; w: number; h: number };
 
 export const BLOCK_W = 320;
 const DEFAULT_BLOCK_H = 120;
-/** A block not measured yet is taken to be as tall as one with a full file tree, so nothing overlaps on the first frame. */
-export const UNMEASURED_BLOCK_H = 480;
+/** A card not measured yet is taken to be as tall as a closed card, so the first frame is close to the measured one. */
+export const UNMEASURED_BLOCK_H = 200;
 
 export function edgePoint(from: Rect, to: Rect, gap = 8): [number, number] {
   const ax = from.x + from.w / 2, ay = from.y + from.h / 2, dx = to.x + to.w / 2 - ax, dy = to.y + to.h / 2 - ay;

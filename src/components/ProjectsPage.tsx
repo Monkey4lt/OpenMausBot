@@ -1,17 +1,17 @@
-// The Atelier: each project folder (local, on an SSH host or on GitHub) is a block with
-// its full file tree, on the shared canvas. Blocks are grouped by "pôle" (group) and joined by links.
+// The Atelier: each project folder (local, on an SSH host or on GitHub) is a card on the shared canvas, saying what it does
+// and its big pieces; its file tree only on request. Cards are grouped by "pôle" (group) and joined by links.
 // Shown in place of the chat, like Team map. Layout is saved on the server; the view is kept per device.
 import {
-  Bot as BotIcon, ChevronDown, ChevronRight, CircleHelp, Clock, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
-  Network, Pencil, Plus, RefreshCw, Search, Server, Trash2, Workflow as WorkflowIcon, X,
+  Bot as BotIcon, ChevronRight, CircleHelp, Clock, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
+  Pencil, Plus, RefreshCw, Search, Server, Sparkles, Trash2, Workflow as WorkflowIcon, X,
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 import { leadComposerDraft } from "@/lib/drafts";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 import { listenLiveFrames } from "@/lib/live-events";
-import { summaryPreview, type ArchOverrides } from "@/lib/projects-architecture-view";
+import { cardPieces, PIECE_COLORS, summaryPreview, type ArchOverrides, type PieceKind } from "@/lib/projects-architecture-view";
 import { centerOn, clampScale, DEFAULT_VIEW } from "@/lib/canvas/geometry";
 import type { Tool } from "@/lib/canvas/gestures";
 import { annotationBounds, annotationText, type Annotation } from "@/lib/canvas/model";
@@ -23,6 +23,7 @@ import { modelOptions, newEditorId, newWorkflowInput } from "@/lib/workflows/edi
 import { automationAsWorkflow, badgeHooks, badgeStackHeight, projectWorkflowBadges, runDot, withRun, type AutomationSummary, type RunDot, type WorkflowSummary } from "@/lib/workflows/overview";
 import { onOpenWorkflowRequest, takeOpenWorkflowRequest } from "@/lib/workflows/open-request";
 import { useShowThreads } from "@/lib/thread-preferences";
+import type { LocaleKey } from "@/locales";
 import { api } from "@/state/api";
 import { GROUP_PALETTE as PALETTE } from "../../shared/project-groups";
 import { openBot, useStore } from "@/state/store";
@@ -34,7 +35,7 @@ import { EdgeLayer } from "./canvas/EdgeLayer";
 import { NodeFrame } from "./canvas/NodeFrame";
 import { Toolbar } from "./canvas/Toolbar";
 import { readStoredView, useCanvasView } from "./canvas/useCanvasView";
-import { ArchitectureView } from "./projects/ArchitectureView";
+import { ArchitectureView, PIECE_ICONS } from "./projects/ArchitectureView";
 import { BotAvatar, type BotAvatarProps } from "./Avatar";
 import { ChatView } from "./ChatView";
 import type { WorkflowRun } from "../../shared/workflows";
@@ -60,7 +61,7 @@ interface MapState {
   annotations?: Annotation[];
   rev?: number;
 }
-interface ProjectsResponse { state: MapState; projects: Project[]; errors: { sourceId: string; message: string }[]; cartographeBotId?: string | null }
+interface ProjectsResponse { state: MapState; projects: Project[]; errors: { sourceId: string; message: string }[]; cartographeBotId?: string | null; pieceKinds?: Record<string, PieceKind[]> }
 
 const newId = (prefix: string) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 const contains = (nodes: ProjectNode[], q: string): boolean => nodes.some((n) => n.n.toLowerCase().includes(q) || (n.c ? contains(n.c, q) : false));
@@ -246,6 +247,7 @@ export function ProjectsPage() {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [mapOf, setMapOf] = useState<Project | null>(null);
+  const [filesOpen, setFilesOpen] = useState<ReadonlySet<string>>(() => new Set());
   const [workflows, setWorkflows] = useState<WorkflowSummary[] | null>(null);
   const [openWorkflow, setOpenWorkflow] = useState<string | null>(() => takeOpenWorkflowRequest());
   const [automations, setAutomations] = useState<AutomationSummary[]>([]);
@@ -591,52 +593,34 @@ export function ProjectsPage() {
             {projects.map((p) => {
               const r = rects.get(p.id)!;
               const g = groupOf(p.id);
-              const collapsed = Boolean(S.collapsed[p.id]);
-              const hit = !q || p.name.toLowerCase().includes(q) || contains(p.tree, q);
               const summary = S.overrides && Object.hasOwn(S.overrides, p.id) ? S.overrides[p.id]!.summary : undefined;
+              const hit = !q || p.name.toLowerCase().includes(q) || (summary ?? "").toLowerCase().includes(q);
+              const filesShown = filesOpen.has(p.id);
+              const counts = { dirs: p.dirs, files: `${p.files}${p.truncated ? "+" : ""}` };
               return (
                 <NodeFrame key={p.id} id={p.id} nodeRef={measure} rect={{ ...r, w: BLOCK_W }} autoHeight selected={selected === p.id} locked={false}
                   onSelect={setSelected} onMove={(id, x, y) => setS((s) => (s ? placeBlock(s, id, x, y) : s))} onMoveEnd={(id, x, y) => update((s) => placeBlock(s, id, x, y))}
                   className={cn("transition-opacity", !hit && "opacity-25")}
                   cardClassName={cn("block overflow-visible p-0", linkFrom === p.id && "border-accent-border ring-[3px] ring-accent/25")}>
-                  <div className="relative flex items-start gap-3 px-3.5 pb-2 pt-3">
-                    <span className="grid size-[30px] shrink-0 place-items-center rounded-[9px] bg-control text-ink-secondary"
-                      style={g ? { background: `${g.color}22`, color: g.color } : undefined}>
-                      <SourceIcon kind={S.sources.find((o) => o.id === p.sourceId)?.kind ?? "local"} size={15} tinted={false} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[14.5px] font-semibold leading-[20px] text-ink" title={p.name}><Highlight text={p.name} q={q} /></div>
-                      <ProjectBlockMeta dirs={p.dirs} files={p.files} truncated={p.truncated} source={multiSource ? sourceLabel(p.sourceId) : undefined} />
-                    </div>
-                    <div className="-mr-1.5 -mt-0.5 flex shrink-0 items-center">
-                      {g && <ProjectBlockPole group={g} onClick={() => setPoleMenu(poleMenu === p.id ? null : p.id)} />}
-                      <ProjectBlockHeaderActions name={p.name} linking={linkFrom === p.id} collapsed={collapsed}
-                        onMap={() => setMapOf(p)} onLink={() => void onLink(p.id)}
-                        onFold={() => update((s) => { const c = { ...s.collapsed }; if (c[p.id]) delete c[p.id]; else c[p.id] = 1; return { ...s, collapsed: c }; })} />
-                    </div>
-                  </div>
-                  <div className={cn("relative pl-[56px] pr-3.5", (!g || summary) && "pb-3")}>
-                    <ProjectBlockSummary summary={summary} />
-                    {!g && (
-                      <button onClick={() => setPoleMenu(poleMenu === p.id ? null : p.id)}
-                        className="mt-2 inline-flex h-6 items-center gap-1.5 rounded-full border border-dashed border-hairline px-2.5 text-[12px] text-ink-tertiary hover:text-ink">
-                        <Plus size={12} />{t("projects.pole.choose")}
-                      </button>
-                    )}
-                    {poleMenu === p.id && (
-                      <Menu onClose={() => setPoleMenu(null)} className={g ? "right-3 top-0" : undefined}>
+                  <ProjectCard name={p.name} q={q} group={g} summary={summary} kinds={data?.pieceKinds?.[p.id]} files={p.files} truncated={p.truncated}
+                    title={multiSource ? t("projects.countsIn", { ...counts, source: sourceLabel(p.sourceId) }) : t("projects.counts", counts)}
+                    filesOpen={filesShown} linking={linkFrom === p.id}
+                    onOpen={() => setMapOf(p)} onDescribe={() => void askCartographe(p.name)} onLink={() => void onLink(p.id)}
+                    onToggleFiles={() => setFilesOpen((open) => { const next = new Set(open); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; })}
+                    onPole={() => setPoleMenu(poleMenu === p.id ? null : p.id)}
+                    poleMenu={poleMenu === p.id && (
+                      <Menu onClose={() => setPoleMenu(null)} className="left-3 top-11">
                         {S.groups.map((o) => <MenuRow key={o.id} onClick={() => { setPole(p.id, o.id); setPoleMenu(null); }}><span className="size-2 rounded-full" style={{ background: o.color }} />{o.name}</MenuRow>)}
                         {S.groups.length > 0 && <hr className="mx-1 my-1 border-hairline/40" />}
                         <MenuRow onClick={async () => { setPoleMenu(null); const ng = await newPole(); if (ng) setPole(p.id, ng.id); }}><Plus size={14} />{t("projects.pole.new")}</MenuRow>
                         {g && <MenuRow muted onClick={() => { setPole(p.id, null); setPoleMenu(null); }}><X size={14} />{t("projects.pole.remove")}</MenuRow>}
                       </Menu>
                     )}
-                  </div>
-                  {!collapsed && (
-                    <div data-canvas-scroll className="max-h-[330px] overflow-auto rounded-b-[13px] border-t border-hairline/50 bg-inset px-2 py-1.5 font-mono text-[12.5px]">
-                      {p.tree.length ? <TreeList nodes={p.tree} q={q} /> : <div className={cn(rowCls, "italic text-ink-tertiary")}>{t("projects.emptyFolder")}</div>}
-                    </div>
-                  )}
+                    tree={
+                      <div data-canvas-scroll className="max-h-[330px] overflow-auto rounded-b-[13px] border-t border-hairline/50 bg-inset px-2 py-1.5 font-mono text-[12.5px]">
+                        {p.tree.length ? <TreeList nodes={p.tree} q={q} /> : <div className={cn(rowCls, "italic text-ink-tertiary")}>{t("projects.emptyFolder")}</div>}
+                      </div>
+                    } />
                 </NodeFrame>
               );
             })}
@@ -880,45 +864,99 @@ export function MapChangedNotice({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** The first line of the project's En bref card, under its name in the overview. */
-export function ProjectBlockSummary({ summary }: { summary: string | undefined }) {
-  const line = summaryPreview(summary);
-  if (!line) return null;
-  return <p className="line-clamp-2 text-[12.5px] leading-[18px] text-ink-secondary" title={summary}>{line}</p>;
-}
-
-/** One count that always fits; the folders and the source are in its tooltip. */
-export function ProjectBlockMeta({ dirs, files, truncated, source }: { dirs: number; files: number; truncated: boolean; source?: string }) {
-  const shown = truncated ? `${files}+` : files;
-  const title = source ? t("projects.countsIn", { dirs, files: shown, source }) : t("projects.counts", { dirs, files: shown });
-  return <div className="whitespace-nowrap text-[12px] leading-[18px] tabular-nums text-ink-tertiary" title={title}>{t(shown === 1 ? "projects.files.one" : "projects.files", { files: shown })}</div>;
-}
-
 /** The block's pole, shown as its color only: the pole's name is already on the zone around the block. */
 export function ProjectBlockPole({ group, onClick }: { group: { name: string; color: string }; onClick: () => void }) {
   const label = t("projects.pole.change", { name: group.name });
   return (
-    <button type="button" onClick={onClick} title={label} aria-label={label} className="grid size-7 place-items-center rounded-lg hover:bg-raised-hover">
+    <button type="button" onClick={onClick} title={label} aria-label={label} className="grid size-6 shrink-0 place-items-center rounded-lg hover:bg-raised-hover">
       <span className="size-2.5 rounded-full" style={{ background: group.color }} />
     </button>
   );
 }
 
-export function ProjectBlockHeaderActions({ name, linking, collapsed, onMap, onLink, onFold }: {
-  name: string; linking: boolean; collapsed: boolean; onMap: () => void; onLink: () => void; onFold: () => void;
+const fileCount = (files: number, truncated: boolean) => `${files.toLocaleString(activeLocale())}${truncated ? "+" : ""}`;
+
+/**
+ * One project on the overview, the same size for every project: its name, one sentence, its big pieces and a way in.
+ * The file tree only shows once asked for. The name and « Comment ça marche » are buttons, so pressing them never drags the card.
+ */
+export function ProjectCard({ name, title, q = "", group, summary, kinds, files, truncated, filesOpen, linking, tree, poleMenu, onOpen, onDescribe, onToggleFiles, onLink, onPole }: {
+  name: string;
+  /** The folder and file counts and the source, on the name's tooltip. */
+  title: string;
+  q?: string;
+  group: { name: string; color: string } | null | undefined;
+  summary: string | undefined;
+  kinds: readonly PieceKind[] | undefined;
+  files: number;
+  truncated: boolean;
+  filesOpen: boolean;
+  linking: boolean;
+  tree?: ReactNode;
+  poleMenu?: ReactNode;
+  onOpen: () => void;
+  onDescribe: () => void;
+  onToggleFiles: () => void;
+  onLink: () => void;
+  onPole: () => void;
 }) {
-  const icon = "grid size-7 place-items-center rounded-lg text-ink-tertiary hover:bg-raised-hover hover:text-ink";
+  const line = summaryPreview(summary);
+  const { shown, more } = cardPieces(kinds);
+  const openLabel = t("projects.map.openTitle", { name });
   return (
-    <>
-      <button type="button" className={icon} title={t("projects.map.openTitle", { name })} aria-label={t("projects.map.openTitle", { name })} onClick={onMap}>
-        <Network size={15} />
-      </button>
-      <button type="button" className={cn("grid size-7 place-items-center rounded-lg", linking ? "bg-accent/15 text-accent-text" : "text-ink-tertiary hover:bg-raised-hover hover:text-ink")}
-        title={t("projects.link.button")} aria-label={t("projects.link.button")} onClick={onLink}><Link2 size={15} /></button>
-      <button type="button" className={icon} title={t("projects.fold")} aria-label={t("projects.fold")} onClick={onFold}>
-        <ChevronDown size={15} className={cn("transition-transform", collapsed && "-rotate-90")} />
-      </button>
-    </>
+    <div className="flex flex-col">
+      <div className="relative flex min-h-[176px] flex-col px-3.5 pb-2.5 pt-3">
+        <div className="flex items-center gap-1.5">
+          {group && <ProjectBlockPole group={group} onClick={onPole} />}
+          <button type="button" onClick={onOpen} title={title} aria-label={openLabel}
+            className="min-w-0 flex-1 truncate rounded-md text-left text-[15px] font-semibold leading-[22px] text-ink hover:text-accent-text">
+            <Highlight text={name} q={q} />
+          </button>
+          {!group && (
+            <button type="button" onClick={onPole}
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-dashed border-hairline px-2 text-[11.5px] text-ink-tertiary hover:text-ink">
+              <Plus size={11} />{t("projects.pole.choose")}
+            </button>
+          )}
+          <button type="button" className={cn("-mr-1 grid size-7 shrink-0 place-items-center rounded-lg", linking ? "bg-accent/15 text-accent-text" : "text-ink-tertiary hover:bg-raised-hover hover:text-ink")}
+            title={t("projects.link.button")} aria-label={t("projects.link.button")} onClick={onLink}><Link2 size={15} /></button>
+        </div>
+        {poleMenu}
+        <div className="mt-1.5 min-h-[40px]">
+          {line
+            ? <p className="line-clamp-2 text-[13px] leading-[20px] text-ink-secondary" title={summary}>{line}</p>
+            : (
+              <div className="flex flex-col items-start gap-1">
+                <span className="text-[12.5px] leading-[18px] text-ink-tertiary">{t("projects.card.notDescribed")}</span>
+                <button type="button" onClick={onDescribe} className="inline-flex h-6 items-center gap-1.5 rounded-full text-[12.5px] text-accent-text hover:underline">
+                  <Sparkles size={13} className="shrink-0" />{t("projects.card.describe")}
+                </button>
+              </div>
+            )}
+        </div>
+        <div className="mt-2 flex min-h-[26px] flex-wrap items-center gap-1.5">
+          {shown.map((kind) => {
+            const Icon = PIECE_ICONS[kind];
+            return (
+              <span key={kind} data-card-piece={kind} className="inline-flex h-6 items-center gap-1.5 rounded-full border border-hairline/70 bg-inset px-2 text-[12px] text-ink-secondary">
+                <Icon size={13} className="shrink-0" style={{ color: PIECE_COLORS[kind] }} />{t(`projects.card.kind.${kind}` as LocaleKey)}
+              </span>
+            );
+          })}
+          {more > 0 && <span className="text-[12px] tabular-nums text-ink-tertiary">{t("projects.card.more", { count: more })}</span>}
+        </div>
+        <div className="mt-auto flex items-center gap-2 pt-2.5">
+          <button type="button" onClick={onOpen} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent/12 px-3 text-[13px] font-medium text-accent-text hover:bg-accent/20">
+            {t("projects.card.how")}<ChevronRight size={14} className="shrink-0" />
+          </button>
+          <button type="button" onClick={onToggleFiles} aria-expanded={filesOpen}
+            className="ml-auto inline-flex h-7 items-center rounded-md px-1.5 text-[12px] text-ink-tertiary hover:bg-raised-hover hover:text-ink">
+            {filesOpen ? t("projects.files.hide") : t("projects.files.show", { files: fileCount(files, truncated) })}
+          </button>
+        </div>
+      </div>
+      {filesOpen && tree}
+    </div>
   );
 }
 

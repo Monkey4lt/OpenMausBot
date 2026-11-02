@@ -11163,7 +11163,21 @@
       "botAccess.overview.setForEveryone": "9977ff8af92976c59eb12909a06cae271b86b427455d8ba82c493d7924c76ea4",
       "botAccess.overview.cell": "50a24934d9aa69b9dc2cedc67b7c0836f8725fafebb75dd644611e5b7e0a9c88",
       "botAccess.overview.toastEveryone": "72b06613c29e9b22c085b558319bca77a11c7c284d9a7b43f404332ebb16228c",
-      "botAccess.overview.toastPerson": "dff637324c0c60c5c24ef975849268f154d80ec82b56592a2125b272087c9763"
+      "botAccess.overview.toastPerson": "dff637324c0c60c5c24ef975849268f154d80ec82b56592a2125b272087c9763",
+      "projects.card.notDescribed": "29a7c65e7f3b75f1662b48853c8f788a33932e6e31fed5f061cf83360fd3522a",
+      "projects.card.describe": "5d6bde572526857c6bd3e865a1f5f49c6a760ae27c057241a72d17bfdad75f31",
+      "projects.card.how": "9c870aa6e5e93270170d5a81277ad3e623afe8d4efd186d3e28f3d2b646d52e6",
+      "projects.card.more": "ecadd87ff0e5d0aae37c13a232e27fcaa9de4d802037d54636e4a536097a8db9",
+      "projects.card.kind.ui": "fa7955814e32aed3a240ee46fcd053dd48f320d4e6e18d2b2774e491c5f75834",
+      "projects.card.kind.chatbot": "41e35ba1a1fd8b4cdc7f899b3b8f9442a7542f445170e8782e219732cc25c10f",
+      "projects.card.kind.api": "aef7de28d52977f1b5cd0fecfdc151717610adf41e0aa33b4d9f7522a43337ef",
+      "projects.card.kind.jobs": "b3a60e61a5233d0506ac737405a2a45280349683cac68722f18d0b73eb495ef4",
+      "projects.card.kind.database": "cec3a9b89b2e391393d0f68e4bc12a9fa6cf358b3cdf79496dc442d52b8dd528",
+      "projects.card.kind.cache": "c3963aedaac6c83c04cf8fb997b479c61e66b3caeecfadd2f2d4bd5b0aef1778",
+      "projects.card.kind.external": "604dce445e326d952308addc99bd3d0e3ffb0ed9a455e4aa0190641fc5facccc",
+      "projects.files.show": "45f4ba83fdfbfe2a6604f8d284290648b9a725feb1ccf62fed9dfb3b48044165",
+      "projects.files.hide": "ced24eae35b1574cae6cb32552311dc1313c8c31f53155d9e1de467655d30e02",
+      "projects.map.openTitle": "867f26b3efa13e69adb419c136292440c91f502f235b9fc8ca9a0a5ad32a89d9"
     },
     "hi": {
       "highlevel.unavailable": "87b8ac7f7610e6dd69f520bc59058fd92f307b9f4bcf804075f25d08bcaa7533",

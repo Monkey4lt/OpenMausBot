@@ -30,7 +30,7 @@ const FAMILY_ICONS: Readonly<Record<Family, LucideIcon>> = {
   config: SlidersHorizontal, scripts: Terminal, assets: ImageIcon, i18n: Globe, other: Folder,
 };
 
-const PIECE_ICONS: Readonly<Record<PieceKind, LucideIcon>> = {
+export const PIECE_ICONS: Readonly<Record<PieceKind, LucideIcon>> = {
   ui: Monitor, api: Server, database: Database, cache: Zap, jobs: Timer, external: Plug, chatbot: MessageSquare, tests: FlaskConical, deploy: Rocket,
 };
 

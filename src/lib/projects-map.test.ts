@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createMapSync } from "./projects-map-sync";
-import { arrangeByGroup, blockRect, blockRects, boundsOf, edgePoint, groupZone, linkEdges, openingView, placeBlock, type Rect } from "./projects-map";
+import { arrangeByGroup, blockRect, blockRects, boundsOf, edgePoint, groupZone, linkEdges, openingView, placeBlock, UNMEASURED_BLOCK_H, type Rect } from "./projects-map";
 
 const r: Rect = { x: 0, y: 0, w: 100, h: 50 };
 
@@ -86,8 +86,8 @@ describe("the projects map on the canvas", () => {
     };
     check(blockRects({}, ids, tall));
     expect(blockRects({}, ids, tall).get("f")!.y).toBeGreaterThanOrEqual(50 + 640);
-    // Before they are measured, a block is taken to be as tall as a full one, so the first frame does not overlap either.
-    check(new Map([...blockRects({}, ids, {})].map(([id, r]) => [id, { ...r, h: 470 }])));
+    // Before they are measured, a card is taken to be as tall as a closed one, so the first frame does not overlap either.
+    check(new Map([...blockRects({}, ids, {})].map(([id, r]) => [id, { ...r, h: UNMEASURED_BLOCK_H }])));
     expect(blockRects({ c: { x: 7, y: 9 } }, ids, tall).get("c")).toEqual({ x: 7, y: 9, w: 320, h: 470 });
   });
 
