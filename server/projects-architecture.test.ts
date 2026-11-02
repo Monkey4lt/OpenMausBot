@@ -390,3 +390,12 @@ describe("regex literals and markup comments", () => {
     expect(parseImports("A.vue", "<!-- a\nb -->\nconst r = /'/;\nimport x from \"./x\";")).toEqual([{ spec: "./x", line: 4 }]);
   });
 });
+
+describe("classify edge cases", () => {
+  it.each([
+    ["src/components/LicenseExpiryBanner.tsx", "ui"], ["server/license.ts", "server"], ["src/readme-parser.ts", "server"],
+    ["LICENSE.txt", "docs"], ["README.rst", "docs"], ["CHANGELOG.md", "docs"], ["LICENSE", "docs"],
+    ["app/main.py", "server"], ["app/controllers/users_controller.rb", "server"], ["app/Main.java", "server"],
+    ["app/page.tsx", "ui"], ["app/layout.ts", "ui"], ["app/globals.css", "ui"],
+  ])("%s → %s", (path, family) => expect(classify(path)).toBe(family));
+});

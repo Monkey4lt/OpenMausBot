@@ -2,11 +2,19 @@ export type Family = "tests" | "docs" | "i18n" | "data" | "config" | "scripts" |
 
 export const FAMILY_ORDER: readonly Family[] = ["tests", "docs", "i18n", "data", "config", "scripts", "assets", "ui", "server", "other"];
 
-interface FamilyRule { dirs: readonly string[]; names: readonly RegExp[]; exts: readonly string[] }
+interface FamilyRule {
+  dirs: readonly string[];
+  names: readonly RegExp[];
+  exts: readonly string[];
+  namesOnlyWithExts?: readonly string[];
+  dirsNotForExts?: Readonly<Record<string, readonly string[]>>;
+}
+
+const SERVER_LANGUAGE_EXTS = [".py", ".rb", ".go", ".rs", ".php", ".java"];
 
 const RULES: Record<Exclude<Family, "other">, FamilyRule> = {
   tests: { dirs: ["test", "tests", "__tests__", "spec"], names: [/\.(test|spec)\./i, /_test\.go$/i, /^test_.*\.py$/i], exts: [] },
-  docs: { dirs: ["docs"], names: [/^(readme|changelog|license)/i], exts: [".md", ".mdx", ".rst"] },
+  docs: { dirs: ["docs"], names: [/^(readme|changelog|license)/i], exts: [".md", ".mdx", ".rst"], namesOnlyWithExts: ["", ".md", ".mdx", ".txt", ".rst"] },
   i18n: { dirs: ["locales", "i18n", "lang"], names: [], exts: [".po"] },
   data: { dirs: ["migrations", "db", "database", "models", "prisma"], names: [/^schema/i], exts: [".sql", ".prisma"] },
   config: {
@@ -23,6 +31,7 @@ const RULES: Record<Exclude<Family, "other">, FamilyRule> = {
   ui: {
     dirs: ["components", "pages", "app", "views", "ui"],
     names: [],
+    dirsNotForExts: { app: SERVER_LANGUAGE_EXTS },
     exts: [".tsx", ".jsx", ".vue", ".svelte", ".css", ".scss", ".sass", ".less", ".html"],
   },
   server: {
@@ -45,7 +54,9 @@ export function classify(path: string): Family {
   for (const family of FAMILY_ORDER) {
     if (family === "other") break;
     const rule = RULES[family];
-    if (dirs.some((d) => rule.dirs.includes(d)) || rule.names.some((re) => re.test(name)) || rule.exts.includes(ext)) return family;
+    const dirHit = dirs.some((d) => rule.dirs.includes(d) && !rule.dirsNotForExts?.[d]?.includes(ext));
+    const nameHit = (!rule.namesOnlyWithExts || rule.namesOnlyWithExts.includes(ext)) && rule.names.some((re) => re.test(name));
+    if (dirHit || nameHit || rule.exts.includes(ext)) return family;
   }
   return "other";
 }
