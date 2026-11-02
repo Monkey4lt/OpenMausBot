@@ -149,7 +149,7 @@ it("arrangeByGroup wraps after 4 blocks and leaves a gap between groups", () => 
   - `FAMILY_ORDER: readonly Family[]` (l'ordre de priorité ci-dessus)
   - `classify(path: string): Family`
 
-- [ ] **Step 1 : Write the failing tests** — un `it.each` sur le tableau de la spec, plus l'ordre :
+- [x] **Step 1 : Write the failing tests** — un `it.each` sur le tableau de la spec, plus l'ordre :
 
 ```ts
 it.each([
@@ -166,10 +166,10 @@ it.each([
 ])("%s → %s", (path, family) => expect(classify(path)).toBe(family));
 ```
 
-- [ ] **Step 2 :** Run → FAIL.
-- [ ] **Step 3 :** `classify` teste les règles dans `FAMILY_ORDER` : segments de dossier (comparés en minuscules), puis nom de fichier, puis extension. Un `.ts`/`.js` hors dossier reconnu → `server` ; un `.tsx`/`.jsx` → `ui`.
-- [ ] **Step 4 :** Run → PASS.
-- [ ] **Step 5 :** Commit `feat(projects): classify files into families`.
+- [x] **Step 2 :** Run → FAIL.
+- [x] **Step 3 :** `classify` teste les règles dans `FAMILY_ORDER` : segments de dossier (comparés en minuscules), puis nom de fichier, puis extension. Un `.ts`/`.js` hors dossier reconnu → `server` ; un `.tsx`/`.jsx` → `ui`.
+- [x] **Step 4 :** Run → PASS.
+- [x] **Step 5 :** Commit `feat(projects): classify files into families`.
 
 ### Task 6: Modules et corrections de l'utilisateur
 
