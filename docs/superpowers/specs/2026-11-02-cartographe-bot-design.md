@@ -86,3 +86,60 @@ status: validé en conversation, en attente de relecture du document
 ## Documentation à mettre à jour
 
 - `docs/approval-levels.md` : le Cartographe est une exception assumée (« aucune carte de revue propre à l'appli ») — sa carte s'affiche à tous les niveaux.
+
+---
+
+# Partie 2 : comprendre le projet en profondeur (ajoutée le 2026-11-02)
+
+## Règle n°1
+
+Une personne **qui n'est pas du tout dans la tech** doit avoir, d'un coup d'œil, une **vision simple et complète** de son projet. Tout ce que le Cartographe écrit ou affiche est en **français simple** ; un terme technique n'apparaît qu'en petit, à côté d'un mot simple (« Base de données · PostgreSQL »).
+
+## Ce que l'utilisateur a validé
+
+1. **Inspection en profondeur** d'un projet : détection automatique des **pièces** et des **liens invisibles** dans les imports.
+2. **Lecture d'un fichier** (lecture seule, limitée) quand le bot a besoin d'aller au fond. L'utilisateur accepte que du **contenu** de fichiers soit envoyé à l'IA utilisée ; le message d'accueil le dit.
+3. **Carte du projet plus parlante** : fiche « En bref », descriptions des familles et modules, étiquettes de pièces, flèches entre pièces.
+4. **Propositions d'automatisations** : le bot en propose de lui-même (2 ou 3, avec la raison), n'en crée **aucune sans un oui** dans la discussion, et confie celles qui doivent agir à un autre bot qui a les outils.
+5. L'analyse **entre projets** est reportée.
+
+## Pièces détectées
+
+| Pièce (mot simple) | Indices (exemples, liste fermée dans le code) |
+|---|---|
+| Site / interface | `react`, `vue`, `svelte`, `next`, `nuxt`, `vite`, `angular`, fichiers `.tsx/.vue/.svelte/.html` |
+| Serveur / API | `express`, `fastify`, `koa`, `hono`, `nestjs`, `fastapi`, `flask`, `django`, `gin`, `echo`, `actix`, `axum`, `rails` ; définitions de routes |
+| Base de données | `pg`, `postgres`, `mysql2`, `mongodb`, `mongoose`, `sqlite3`, `better-sqlite3`, `prisma`, `typeorm`, `sequelize`, `drizzle-orm`, `sqlalchemy`, `psycopg`, `gorm`, `diesel`, `sqlx` ; dossiers `migrations/`, fichiers `.sql`, `schema.prisma` ; services `postgres/mysql/mongo` dans `docker-compose` |
+| Cache / mémoire rapide | `redis`, `ioredis`, `memcached` |
+| Tâches en arrière-plan | `bullmq`, `bull`, `celery`, `rq`, `agenda`, `node-cron`, `croner` |
+| Services externes | `stripe`, `nodemailer`, `@sendgrid/*`, `twilio`, `openai`, `@anthropic-ai/*`, `aws-sdk`/`@aws-sdk/*`, `firebase` |
+| Bot de messagerie | `telegraf`, `node-telegram-bot-api`, `python-telegram-bot`, `aiogram`, `discord.js`, `discord.py` |
+| Tests | famille Tests de la carte |
+| Mise en ligne | `Dockerfile`, `docker-compose*.yml`, `.github/workflows/*`, `vercel.json`, `netlify.toml`, `fly.toml`, `Procfile` |
+
+Chaque pièce détectée porte : un mot simple, la technologie, les **preuves** (fichier et raison, 5 au plus) et les **modules** de la carte qui la portent.
+
+## Liens entre pièces (au-delà des imports)
+
+- **Site → Serveur** : une URL d'appel (`fetch`, `axios`, `httpx`, `requests`) dont le chemin (`/api/orders`) correspond à une route définie côté serveur (`app.get("/api/orders")`, `@app.get("/orders")`, `router.post(...)`) → lien avec le fichier appelant et le fichier de la route.
+- **Serveur → Base de données / Cache / Service externe** : les modules qui importent le client de la base, du cache ou du service.
+- Résultat : une liste de liens `{ de, vers, nombre de preuves, exemples }` entre pièces.
+
+## Nouveaux changements que le bot peut proposer (même carte d'accord)
+
+- `describe_project { projectId, summary }` : fiche « En bref », 600 caractères au plus.
+- `describe_family { projectId, family, text }` et `describe_module { projectId, moduleId, text }` : 160 caractères au plus.
+- Ces textes sont nettoyés comme les autres ; la carte d'accord les montre en entier (tronqués à 160 caractères dans la ligne).
+
+## Outils ajoutés (Cartographe seulement)
+
+- `projects_inspect_project({ projectId })` → pièces, liens entre pièces, langages, résumé chiffré ; plafonné à 20 000 caractères.
+- `projects_read_file({ projectId, path, maxChars? })` → texte d'un fichier du projet (8 000 caractères par défaut, 20 000 au plus), seulement si le chemin fait partie de l'arbre du projet, jamais un fichier caché ou d'un dossier ignoré ; jamais `.env`, clés (`*.pem`, `*.key`, `id_rsa*`), ni fichiers de plus de 256 Ko.
+- Automatisations : le bot reçoit en plus les outils existants `trigger` et `trigger_info`.
+
+## Affichage
+
+- Fiche « En bref » en haut de la carte du projet (et une ligne d'aperçu sur le bloc du projet dans la vue d'ensemble).
+- Étiquettes de pièces sur la carte du projet ; un clic montre les preuves en mots simples.
+- Les flèches entre pièces s'ajoutent à celles des imports, avec un style différent et une légende simple.
+- Descriptions affichées sous le nom des familles et modules.
