@@ -5,7 +5,7 @@ import * as wire from "../../shared/projects-architecture";
 import * as wirePieces from "../../shared/projects-pieces";
 
 import {
-  cardPieces, flowLayout, linkPhrase, EVIDENCE_WORDS, FAMILY_COLORS, FAMILY_ORDER, PIECE_COLORS, evidenceLine, pieceBadges, pieceLinkRows, summaryPreview, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, mergeTwoWay, moduleLabel, plainModuleLabel, withFamilyName, withModuleFamily, type Architecture,
+  cardPieces, flowLayout, linkPhrase, EVIDENCE_WORDS, FAMILY_COLORS, FAMILY_ORDER, evidenceLine, summaryPreview, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, mergeTwoWay, moduleLabel, plainModuleLabel, withFamilyName, withModuleFamily, type Architecture,
 } from "./projects-architecture-view";
 
 const arch: Architecture = {
@@ -181,26 +181,12 @@ describe("pieces", () => {
     { kind: "database" as const, tech: "", evidence: [{ path: "migrations/1.sql", code: "migration" as const, reason: "database migration" }], modules: [] },
   ];
 
-  it("labels pieces with the plain word first and the tech second", () => {
-    expect(pieceBadges(pieces, "fr")).toEqual([
-      { kind: "ui", label: "Site ou appli", tech: "React", modules: ["src/ui"], color: PIECE_COLORS.ui },
-      { kind: "database", label: "Base de données", tech: "PostgreSQL", modules: [], color: PIECE_COLORS.database },
-      { kind: "database", label: "Base de données", tech: "", modules: [], color: PIECE_COLORS.database },
-    ]);
-    expect(pieceBadges(pieces, "en")[0]).toMatchObject({ label: "Website or app", tech: "React" });
-  });
-
   it("says each piece of evidence in plain words, in both languages", () => {
     expect(evidenceLine(pieces[0]!.evidence[0]!, "fr")).toBe("package.json : la liste des outils du projet le demande");
     expect(evidenceLine(pieces[1]!.evidence[0]!, "fr")).toBe("compose.yml : un service lancé avec Docker");
     expect(evidenceLine(pieces[2]!.evidence[0]!, "en")).toBe("migrations/1.sql: a change to the database's layout");
     expect(Object.keys(EVIDENCE_WORDS.fr).sort()).toEqual([...wirePieces.EVIDENCE_CODES].sort());
     expect(Object.keys(EVIDENCE_WORDS.en).sort()).toEqual([...wirePieces.EVIDENCE_CODES].sort());
-  });
-
-  it("lists piece links with plain words and counts, skipping kinds no piece has", () => {
-    expect(pieceLinkRows([{ from: "ui", to: "api", count: 3, examples: [] }, { from: "api", to: "database", count: 1, examples: [] }], "fr"))
-      .toEqual([{ from: "ui", to: "api", text: "Site ou appli → Serveur", count: 3 }, { from: "api", to: "database", text: "Serveur → Base de données", count: 1 }]);
   });
 
   it("previews a summary as its first line, cut to 120", () => {

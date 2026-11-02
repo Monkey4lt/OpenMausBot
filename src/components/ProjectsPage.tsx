@@ -564,8 +564,9 @@ export function ProjectsPage() {
           </div>
         </aside>
 
-        {mapOf && !openWorkflow && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow}
-          onAskCartographe={() => void askCartographe(mapOf.name)} />}
+        {mapOf && !openWorkflow && <ArchitectureView key={mapOf.id} project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow}
+          onAskCartographe={() => void askCartographe(mapOf.name)}
+          onPieces={(kinds) => setData((prev) => (prev ? { ...prev, pieceKinds: { ...prev.pieceKinds, [mapOf.id]: kinds } } : prev))} />}
         {openWorkflow && <Suspense fallback={<div className="flex flex-1 items-center justify-center"><Loader2 size={20} className="animate-spin text-ink-secondary" /></div>}>
           <WorkflowEditor key={openWorkflow} workflowId={openWorkflow} projects={projects.map((p) => ({ id: p.id, name: p.name }))}
             bots={appState.bots.filter((b) => !b.hidden).map((b) => ({ id: b.id, name: b.name, color: MAUS_COLORS[b.color] }))}

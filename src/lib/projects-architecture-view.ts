@@ -39,16 +39,12 @@ export const EVIDENCE_WORDS: Readonly<Record<Locale, Record<EvidenceCode, string
   },
 };
 
-export function pieceBadges(pieces: readonly Piece[], locale: Locale): { kind: PieceKind; label: string; tech: string; modules: string[]; color: string }[] {
-  return pieces.map((p) => ({ kind: p.kind, label: PIECE_LABELS[p.kind][locale], tech: p.tech, modules: p.modules, color: PIECE_COLORS[p.kind] }));
+export function evidenceWords(evidence: Piece["evidence"][number], locale: Locale): string {
+  return EVIDENCE_WORDS[locale][evidence.code] ?? evidence.reason;
 }
 
 export function evidenceLine(evidence: Piece["evidence"][number], locale: Locale): string {
-  return `${evidence.path}${locale === "fr" ? " : " : ": "}${EVIDENCE_WORDS[locale][evidence.code] ?? evidence.reason}`;
-}
-
-export function pieceLinkRows(links: readonly PieceLink[], locale: Locale): { from: PieceKind; to: PieceKind; text: string; count: number }[] {
-  return links.map((l) => ({ from: l.from, to: l.to, text: `${PIECE_LABELS[l.from][locale]} → ${PIECE_LABELS[l.to][locale]}`, count: l.count }));
+  return `${evidence.path}${locale === "fr" ? " : " : ": "}${evidenceWords(evidence, locale)}`;
 }
 
 const PREVIEW_MAX = 120;

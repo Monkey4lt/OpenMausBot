@@ -32,7 +32,8 @@ const arch: Architecture = {
 
 const project = { id: "s1:api", name: "api" };
 const render = (props: Partial<Parameters<typeof ArchitectureView>[0]> = {}) =>
-  renderToStaticMarkup(createElement(ArchitectureView, { project, onBack: () => {}, initial: arch, ...props }));
+  renderToStaticMarkup(createElement(ArchitectureView, { project, onBack: () => {}, initial: arch, initialMode: "detail", ...props }));
+const simple = (props: Partial<Parameters<typeof ArchitectureView>[0]> = {}) => render({ initialMode: undefined, ...props });
 
 beforeEach(async () => { await loadLocale("fr"); });
 afterEach(() => { setLocale("en"); });
@@ -76,7 +77,7 @@ describe("ArchitectureView", () => {
 
   it("import links are solid and piece links dashed in the accent colour", () => {
     const html = render({ initial: { ...withPieces, edges: [...arch.edges, { level: "family" as const, from: "server", to: "ui", weight: 1 }], pieceLinks: [{ from: "api", to: "ui", count: 1, examples: [] }] } });
-    const imports = renderToStaticMarkup(createElement(ArchitectureView, { project, onBack: () => {}, initial: arch }));
+    const imports = render();
     expect(imports).toMatch(/data-edge-line[^>]*stroke-width="3"/);
     expect(imports).not.toContain("stroke-dasharray");
     expect(html).toMatch(/data-edge-line[^>]*stroke-dasharray="4 4"[^>]*stroke:var\(--color-accent\)/);
@@ -95,9 +96,10 @@ describe("ArchitectureView", () => {
     }
   });
 
-  it("lists outside tools at the family level", () => {
+  it("lists ready-made building blocks at the family level of the detailed view only", () => {
     const html = render();
-    expect(html).toContain("Outils externes utilisés");
+    expect(html).toContain("Briques toutes faites utilisées");
+    expect(simple({ initial: withPieces })).not.toContain("Briques toutes faites");
     expect(html).toContain("react");
     expect(html).toContain("zod");
   });
@@ -106,16 +108,19 @@ describe("ArchitectureView", () => {
     expect(render({ initial: { ...arch, families: [{ ...arch.families[0], name: "Front" }, arch.families[1]] } })).toContain("Front");
   });
 
-  it("shows the truncated banner when truncated is true", () => {
-    expect(render({ initial: { ...arch, truncated: true } })).toContain("Carte partielle");
-    expect(render()).not.toContain("Carte partielle");
+  it("says softly, in one grey line, when only part of a very big project was read", () => {
+    const html = simple({ initial: { ...withPieces, truncated: true } });
+    expect(html).toContain("Projet très grand : seule une partie a été lue, il peut manquer des blocs.");
+    expect(html).toMatch(/data-truncated[^>]*text-ink-tertiary/);
+    expect(html).not.toContain("warning");
+    expect(render()).not.toContain("Projet très grand");
   });
 
   it("inside a family shows the breadcrumb and its modules, labelled by their last segment", () => {
     const html = render({ initialFocus: { family: "ui" } });
     expect(html).toContain("Interface");
     expect(html).toContain("components");
-    expect(html).not.toContain("Outils externes utilisés");
+    expect(html).not.toContain("Briques toutes faites utilisées");
     expect(html).toMatch(/data-node-toolbar[^>]*>.*Déplacer vers…/);
     expect(html.match(/Déplacer vers…/g)).toHaveLength(1);
   });
@@ -171,8 +176,8 @@ describe("ArchitectureView", () => {
     expect(render({ initialFocus: { family: "ui", module: "src/components" } })).toContain("Choisissez un fichier");
   });
 
-  it("without data yet, shows the loading state", () => {
-    expect(render({ initial: undefined })).toContain("Lecture des fichiers du projet");
+  it("without data yet, says it is reading and that a big project takes a while", () => {
+    expect(simple({ initial: undefined })).toContain("Je lis le projet… Un grand projet peut prendre une minute.");
   });
 
   const withPieces: ArchitectureWithPieces = {
@@ -187,26 +192,80 @@ describe("ArchitectureView", () => {
   const described = { overrides: { "s1:api": { moduleFamily: {}, familyNames: {}, summary: "Une API pour les commandes.\nElle parle à la base.", familyText: { ui: "Ce que voient les clients" }, moduleText: { "src/components": "Les morceaux d'écran" } } } };
 
   it("shows the En bref summary when present, and an invitation otherwise", () => {
-    const html = render({ initial: withPieces, state: described });
+    const html = simple({ initial: withPieces, state: described });
     expect(html).toContain("En bref");
     expect(html).toContain("Une API pour les commandes.");
     expect(html).toContain("Elle parle à la base.");
-    const empty = render({ initial: withPieces, state: { overrides: {} }, onAskCartographe: () => {} });
-    expect(empty).toContain("Demander au Cartographe une fiche En bref");
-    expect(render({ initial: withPieces, state: { overrides: {} } })).not.toContain("Demander au Cartographe une fiche En bref");
+    const empty = simple({ initial: withPieces, state: { overrides: {} }, onAskCartographe: () => {} });
+    expect(empty).toContain("Demander au Cartographe de le décrire");
+    expect(simple({ initial: withPieces, state: { overrides: {} } })).not.toContain("Demander au Cartographe");
   });
 
-  it("labels pieces with the plain word first and the tech second", () => {
+  it("opens on « Comment ça marche »: one box per big part in its column, plain phrases on the arrows, no counts, no families", () => {
+    const html = simple({ initial: withPieces });
+    expect(html).toContain('data-flow-box="ui"');
+    expect(html).toContain('data-flow-box="api"');
+    expect(html).toContain('data-flow-box="database"');
+    expect(html).toContain("Site ou appli");
+    expect(html).toContain("Ce que les gens voient et utilisent.");
+    expect(html).toContain('data-flow-column="see"');
+    expect(html).toContain("Ce qui travaille derrière");
+    expect(html).toContain("envoie ses demandes au");
+    expect(html).not.toContain("PostgreSQL");
+    expect(html).not.toContain("Interface");
+    expect(html).not.toContain("appels");
+    expect(html).not.toContain("Liens entre pièces");
+    expect(html).not.toContain("Les pièces du projet");
+    expect(html).toContain("Vue détaillée");
+    expect(html).not.toContain("Vue simple");
+    expect(html).toContain('aria-label="Comment marche le projet"');
+    expect(html).not.toContain("uppercase");
+  });
+
+  it("« Vue détaillée » shows the families, and offers « Vue simple » and the project's name to come back", () => {
     const html = render({ initial: withPieces });
-    expect(html).toContain("Base de données");
-    expect(html).toContain("PostgreSQL");
-    expect(html.indexOf("Base de données")).toBeLessThan(html.indexOf("PostgreSQL"));
-    expect(html.match(/data-piece=/g)).toHaveLength(3);
+    expect(html).toContain('data-canvas-node="ui"');
+    expect(html).toContain("Interface");
+    expect(html).toContain("Vue simple");
+    expect(html).not.toContain("data-flow-box");
+    expect(html).toMatch(/<button[^>]*>api<\/button>/);
   });
 
-  it("a chosen piece shows its evidence in plain words", () => {
-    const html = render({ initial: withPieces, initialPiece: 2 });
-    expect(html).toContain("compose.yml : un service lancé avec Docker");
+  it("uses the Cartographe's line for a box", () => {
+    const html = simple({ initial: withPieces, state: { overrides: { "s1:api": { moduleFamily: {}, familyNames: {}, pieceText: { api: "Prend les commandes des clients." } } } } });
+    expect(html).toContain("Prend les commandes des clients.");
+  });
+
+  it("a chosen box says how we know, in plain words, with the files in small and the tools recognised", () => {
+    const html = simple({ initial: withPieces, initialWhy: { box: "database" } });
+    expect(html).toContain("Comment on le sait : Base de données");
+    expect(html).toContain("un service lancé avec Docker");
+    expect(html).toMatch(/font-mono[^>]*>compose.yml</);
+    expect(html).toContain("Outils reconnus : PostgreSQL");
+    expect(html).toContain("Voir ces fichiers dans la vue détaillée");
+  });
+
+  it("a chosen arrow says how many times it was found, with examples", () => {
+    const html = simple({ initial: withPieces, initialWhy: { edge: "ui->api" } });
+    expect(html).toContain("Comment on le sait : Site ou appli envoie ses demandes au Serveur");
+    expect(html).toContain("Trouvé 4 fois dans le code");
+    expect(html).toContain("src/components/A.tsx → server/routes/users.ts");
+  });
+
+  it("with no big part found, says so and offers the Cartographe and the detailed view", () => {
+    const html = simple({ initial: { ...arch, pieces: [], pieceLinks: [] }, onAskCartographe: () => {} });
+    expect(html).toContain("Je n&#x27;ai pas encore reconnu de grands blocs dans ce projet.");
+    expect(html).toContain("Demander au Cartographe de l&#x27;expliquer");
+    expect(html).toContain("data-no-pieces");
+    expect(html).not.toContain("data-canvas=");
+  });
+
+  it("a project of three files or fewer lists them instead of a map", () => {
+    const tiny: ArchitectureWithPieces = { ...arch, files: [{ path: "README.md", module: "(root)/docs", uses: [], usedBy: [] }], pieces: [], pieceLinks: [] };
+    const html = simple({ initial: tiny });
+    expect(html).toContain("Ce projet contient 1 fichier :");
+    expect(html).toContain("README.md");
+    expect(html).not.toContain("data-canvas=");
   });
 
   it("shows family and module descriptions under their names", () => {
@@ -216,8 +275,8 @@ describe("ArchitectureView", () => {
 
   it("says the project's main folder in plain words where a piece lives", () => {
     const rooted = { ...withPieces, pieces: [{ ...withPieces.pieces[2]!, modules: ["(root)/config"] }] };
-    const html = render({ initial: rooted, initialPiece: 0 });
-    expect(html).toContain("Dans : dossier principal");
+    const html = simple({ initial: rooted, initialWhy: { box: "database" } });
+    expect(html).toContain("Rangé dans : dossier principal");
     expect(html).not.toContain("(root)");
   });
 
@@ -237,14 +296,5 @@ describe("ArchitectureView", () => {
     expect(html).toMatch(/data-edge-line[^>]*stroke-dasharray="4 4"[^>]*stroke:var\(--color-accent\)/);
   });
 
-  it("draws piece links with the legend", () => {
-    const html = render({ initial: withPieces });
-    expect(html).toContain("Liens entre pièces");
-    expect(html).toContain("Site ou appli → Serveur");
-    expect(html).toContain('data-piece-link="ui-&gt;api"');
-    expect(html).toContain("4 appels");
-    expect(render({ initial: { ...withPieces, pieceLinks: [{ ...withPieces.pieceLinks[0]!, count: 1 }] } })).toContain("1 appel<");
-    expect(render()).not.toContain("Liens entre pièces");
-  });
 });
 
