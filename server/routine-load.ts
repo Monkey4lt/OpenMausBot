@@ -3,7 +3,7 @@
 import { z } from "zod";
 
 import type { RoutineRequestOperation } from "../shared/routine-request.ts";
-import { ROUTINE_CHECKS, type RoutineCheck } from "../shared/routines.ts";
+import { ROUTINE_CHECKS, WORKFLOW_ROUTINE_BOT, type RoutineCheck } from "../shared/routines.ts";
 import { ROUTINE_PARTS, type PartPair, type RoutinePart } from "./package-parts.ts";
 import { loadAttachments, loadTimeoutMinutes } from "./routine-attachments.ts";
 import { isRoutineHoldCause } from "./routine-holds.ts";
@@ -27,8 +27,21 @@ export function loadInstalledPackage(value: unknown): RoutinePackageStamp | unde
   };
 }
 
-function loadTarget(value: unknown): RoutineTarget {
-  return value === "room-goal" ? "room-goal" : "bot";
+/** Null for a target this version does not know (a newer version wrote it): the caller keeps that row on disk, unused.
+ * A row with no target is an old bot routine. */
+function loadTarget(value: unknown): RoutineTarget | null {
+  if (value === undefined || value === null || value === "bot") return "bot";
+  return value === "room-goal" || value === "workflow" ? value : null;
+}
+
+const WORKFLOW_ID = /^[\w-]{1,64}$/;
+function loadWorkflowId(value: unknown, target: RoutineTarget): string | undefined {
+  return target === "workflow" && typeof value === "string" && WORKFLOW_ID.test(value) ? value : undefined;
+}
+
+/** An older version reads a workflow routine as a bot one and may write it back so; its bot and workflow tell it apart. */
+function rewrittenWorkflow(row: { target?: unknown; botId?: unknown; workflowId?: unknown }, target: RoutineTarget): RoutineTarget {
+  return target === "bot" && row.botId === WORKFLOW_ROUTINE_BOT && typeof row.workflowId === "string" && WORKFLOW_ID.test(row.workflowId) ? "workflow" : target;
 }
 
 const ROUTINE_GOAL_STATUSES = new Set<RoutineGoalStatus>([
@@ -75,16 +88,20 @@ function withoutUndefined<T extends object>(record: T, keys: ReadonlyArray<keyof
   return record;
 }
 
-/** Null when its schedule cannot load: the caller keeps it on disk, unscheduled. */
+/** Null when its schedule or its target cannot load: the caller keeps it on disk, unscheduled. */
 export function loadRoutine(routine: Routine, now: number): Routine | null {
   const schedule = loadSchedule(routine.schedule, now);
-  if (!schedule) return null;
-  const target = loadTarget(routine.target);
+  const known = loadTarget(routine.target);
+  if (!schedule || !known) return null;
+  const target = rewrittenWorkflow(routine, known);
+  const workflowId = loadWorkflowId(routine.workflowId, target);
+  if (target === "workflow" && !workflowId) return null;
   const loaded: Routine = {
     ...routine,
     schedule,
     target,
     groupId: loadGroupId(routine.groupId, target),
+    workflowId,
     runOn: routine.runOn ?? "maus",
     timeoutMinutes: loadTimeoutMinutes(routine.timeoutMinutes),
     attachments: loadAttachments(routine.attachments),
@@ -101,16 +118,20 @@ export function loadRoutine(routine: Routine, now: number): Routine | null {
     heldFor: isRoutineHoldCause(routine.heldFor) ? routine.heldFor : undefined,
   };
   delete loaded.failureStreak;
-  return withCheckFields(withoutUndefined(loaded, ["timeoutMinutes", "runOnStartup", "installedPackage", "checkedAt", "checkTrouble", "wakeAt", "heldFor"]));
+  return withCheckFields(withoutUndefined(loaded, ["workflowId", "timeoutMinutes", "runOnStartup", "installedPackage", "checkedAt", "checkTrouble", "wakeAt", "heldFor"]));
 }
 
-export function loadRun(run: RoutineRun): RoutineRun {
-  const target = loadTarget(run.target);
+/** Null for a run of a target this version does not know: the caller keeps it on disk, unused. */
+export function loadRun(run: RoutineRun): RoutineRun | null {
+  const known = loadTarget(run.target);
+  if (!known) return null;
+  const target = rewrittenWorkflow(run, known);
   const loaded: RoutineRun = {
     ...run,
     target,
     goalStatus: loadGoalStatus(run.goalStatus, target),
     groupId: loadGroupId(run.groupId, target),
+    workflowId: loadWorkflowId(run.workflowId, target),
     runOn: run.runOn ?? "maus",
     timeoutMinutes: loadTimeoutMinutes(run.timeoutMinutes),
     attachments: loadAttachments(run.attachments),
@@ -120,7 +141,7 @@ export function loadRun(run: RoutineRun): RoutineRun {
     deliver: run.deliver === "brief" ? "brief" : undefined,
     checkKey: typeof run.checkKey === "string" && /^[\w-]{1,128}$/.test(run.checkKey) ? run.checkKey : undefined,
   };
-  return withoutUndefined(loaded, ["timeoutMinutes", "access", "deliver", "checkKey"]);
+  return withoutUndefined(loaded, ["workflowId", "timeoutMinutes", "access", "deliver", "checkKey"]);
 }
 
 const REQUEST_ACTIONS = new Set<RoutineRequestOperation["action"]>(["create", "update", "pause", "resume", "run_now", "delete"]);

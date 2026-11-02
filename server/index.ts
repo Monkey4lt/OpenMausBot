@@ -633,7 +633,7 @@ import { createDevsReports } from "./host/devs-reports.ts"; import { bugReportEn
 import { createCardRequester, linePersonKey } from "./host/thread-person.ts"; import { createActingPeople, HANDED_PEOPLE_FILE, HandedPeople, type HandedRun, keptPrivate, privateHandBack, withPerson } from "./host/acting-person.ts";
 import { createThreadRoutes } from "./routes/threads.ts";
 import { createWebhookRoutes } from "./routes/webhooks.ts";
-import { createProjectReaders, createProjectRoutes } from "./routes/projects.ts"; import { cartographeBotId, ensureCartographeBot, repairCartographeBot } from "./cartographe-bot.ts"; import { agentsCallTimeoutMs, createCartographeHost } from "./cartographe-host.ts";
+import { createProjectReaders, createProjectRoutes } from "./routes/projects.ts"; import { createWorkflowHost } from "./workflows/host.ts"; import { cartographeBotId, ensureCartographeBot, repairCartographeBot } from "./cartographe-bot.ts"; import { agentsCallTimeoutMs, createCartographeHost } from "./cartographe-host.ts";
 import { withScopeHint } from "./connector-scope-hint.ts";
 import { connectorRequestItems } from "./connector-request-items.ts";
 import { onThreadSeen, personAsks as personAskAt, sawThread } from "./thread-presence.ts"; import { createWarmSummaryHost, HARNESS_IDLE_FRACTION } from "./host/warm-summary-host.ts";
@@ -5659,6 +5659,8 @@ function isUnattended(botId?: string | null, threadId?: string): boolean {
 
 const reviewAnswerThreads = new Set<string>(); const firstHourHooks = createFirstHourHooks({ dataDir: DATA_DIR, personal: Boolean(CLOUD_PERSONAL) });
 let routines: RoutineManager | null = null;
+/** Set once the workflow host is made (after the routines engine): the routines engine starts workflows through it. */
+let workflowRoutines: Pick<ReturnType<typeof createWorkflowHost>, "routineLink" | "routineRunFailed"> | null = null;
 const automationReports = createAutomationReports({ store, routines: () => routines, busy: threadBusy, wrote: markTaskContextExternallyUpdated, brief: (run, turnId) => proactive.runSettled(run, turnId), threadLanguage,
   notify: (kind, bot, threadId, detail) => notify(buildNotification(kind, bot, threadId, detail, { avatarUrl: bot.avatarUrl }), { routine: true }) });
 const proactive = createProactive({ store, cfg, composio, registry, dataDir: DATA_DIR, ideas: (botId) => memoryUpkeep.ideas(botId), ...firstHourHooks.proactive, team: Boolean(HOSTED_WORKSPACE || CLOUD_TEAM), frozen: moveFreeze.frozen, routines: () => routines, mainThread: botMainThread, threadBusy, notify, helpers: { decider, extractor }, cloud: Boolean(CLOUD_HOME || HOSTED_WORKSPACE || CLOUD_TEAM),
@@ -8979,10 +8981,17 @@ routines = new RoutineManager({
     }
   },
   interruptGoal: interruptRoutineGroupGoal,
+  workflowState: (workflowId) => workflowRoutines?.routineLink.workflowState(workflowId) ?? "missing",
+  startWorkflow: (workflowId, runId, text, onDispatchError, source) => {
+    if (!workflowRoutines) return onDispatchError("Workflows are not ready yet");
+    workflowRoutines.routineLink.startWorkflow(workflowId, runId, text, onDispatchError, source);
+  },
+  stopWorkflow: (runId) => workflowRoutines?.routineLink.stopWorkflow(runId),
   onRunChanged: (run) => { cloudHealth?.noteRoutineRun(run); syncRoutineRunToSource(run); },
   onRunCut: (run) => run.groupId ? coordinator.cancelRoom(run.groupId, run.threadId!, ROUTINE_RESTARTED) : coordinator.cancelDirect(run.threadId!, ROUTINE_RESTARTED),
   onRunFailed: (run, alert) => {
     cloudHealth?.noteRoutineRun(run);
+    if (run.target === "workflow") return workflowRoutines?.routineRunFailed(run);
     const bot = store.bot(run.botId);
     if (!bot || alert === null || run.deliver === "brief") return;
     const said = alert?.detail ?? run.error, detail = said ? `${run.routineName}: ${said}` : run.routineName;
@@ -9664,6 +9673,12 @@ const cartographe = createCartographeHost({ dataDir: DATA_DIR, cloud: CLOUD_HOME
 ROUTES.push(createProjectRoutes({ dataDir: DATA_DIR, readers: projectReaders, onChanged: cartographe.onChanged, cartographeBotId: cartographe.cartographeBotId,
   ensureCartographe: () => (CLOUD_HOME || HOSTED_WORKSPACE ? null : ensureCartographeBot(store, { dataDir: DATA_DIR })?.id ?? null),
   recreateCartographe: () => (CLOUD_HOME || HOSTED_WORKSPACE ? null : ensureCartographeBot(store, { dataDir: DATA_DIR, recreate: true })?.id ?? null) }));
+const workflowHost = createWorkflowHost({ dataDir: DATA_DIR, language: appLanguage, botExists: (id) => Boolean(store.bot(id)), broadcast, bots: () => store.bots, bot: (id) => store.bot(id), budgetAllows: () => { try { assertWithinBudget(cfg, DATA_DIR); return true; } catch { return false; } },
+  sideText: (botId, instanceId) => { const instance = instanceId ? registry.get(instanceId) : undefined; return instanceId && !instance ? null : sideJobs.text("workflow", botId, instance ? { instance } : undefined); }, createTask: (botId, title) => store.createTask(botId, title, false), interruptTurn: (botId, threadId) => interruptDirectThread(botId, threadId, "The workflow was stopped"),
+  startTurn: (botId, prompt, opts) => startTurn(botId, prompt, { threadId: opts.threadId, automationSource: "webhook", onSettled: opts.onSettled, onDispatchError: opts.onDispatchError }).then(() => {}), appendMessage: (threadId, message) => { store.appendMessage(threadId, message as Omit<Message, "id" | "at">); }, dismissCard: cartographe.dismissCard, outboundRequests, notify, routines: () => routines,
+  cartographe: { chat: store, isCartographe: cartographe.isCartographe, active: (capability) => internalCapabilityIsActive(capability as InternalCapability), mcpCallTimeoutMs: cartographe.mcpCallTimeoutMs } });
+ROUTES.push(workflowHost.routes); workflowRoutines = workflowHost;
+try { workflowHost.routineLink.reconcile(); } catch (error) { console.error("workflows: could not line up the workflow routines", error); }
 ROUTES.push(createWebhookRoutes({ webhooks, ingress: webhookIngressStatus, visible: (auth) => visibleTo(viewerFor(auth)) }));
 
 const RUNTIME_KEEP_MS = 30 * 24 * 60 * 60_000;
@@ -12588,6 +12603,10 @@ ROUTES.push(createBrowserViewerRoutes({
   restartRefusal: (session) => browserRestartRefusal(browserRuntime.interrupted(session), store.bots.filter((candidate) => candidate.busy
     && browserSessionsOf(candidate.id, candidate.browserProfile).includes(session)).map((candidate) => ({ waitingOnBrowser: computerControl.snapshot(candidate.id).help?.place === "browser" }))),
 }));
+const cartographeToolRoutes: typeof cartographe.routes = async (ctx) => {
+  const out = await cartographe.routes(ctx);
+  return out === PASS && workflowHost.cartographeRoutes ? workflowHost.cartographeRoutes(ctx) : out;
+};
 const internalToolRoutes = createInternalToolRoutes({ helpers: { decider, extractor }, notifications: { bot: (id) => store.bot(id), team: sharedMembership, broadcast }, xResearch: { credential: () => researchCredential(cfg.treg?.key), botEnabled: (botId) => store.bot(botId)?.xResearch !== false, cloudHome: CLOUD_HOME !== null, researchOff: () => researchAvailability.refused() } }); const waitRoutes = createWaitRoutes({ waits: botWaits, cloudHome: Boolean(CLOUD_HOME), sleeps: Boolean(CLOUD_HOME) && CLOUD_TEAM === null }); ROUTES.push(createXConnectorRoutes({ credential: () => researchCredential(cfg.treg?.key), included: () => xCredential(), unavailable: () => xResearchStatus().unavailable === true }));
 
 // Live calls: the client holds the WebRTC audio; the key never leaves the harness, which creates the session.
@@ -13159,7 +13178,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         return body;
       };
-      if (await cartographe.routes({ method, path, res, json, botId: internalSender.id, threadId: internalCapability.threadId, capability: internalCapability, readBody: readInternalBody }) !== PASS) return; // The Cartographe's /api/internal/projects/* only.
+      if (await cartographeToolRoutes({ method, path, res, json, botId: internalSender.id, threadId: internalCapability.threadId, capability: internalCapability, readBody: readInternalBody }) !== PASS) return; // The Cartographe's /api/internal/projects/* only.
       const requireActiveInternalCapability = () => {
         if (!internalCapabilityIsActive(internalCapability)) {
           throw Object.assign(new Error("the internal turn capability has expired"), { status: 401 });

@@ -518,8 +518,8 @@
     ]
   },
   "default+cartographe": {
-    "bytes": 16805,
-    "sha256": "89bbaa96c7d6ed369da043df0177e984463b24ef29b3fe52ac99f08b2fba874c",
+    "bytes": 16840,
+    "sha256": "247a2d736f18ad608092a8aad476742173aee90d91f73c88bed77f8a270e51a0",
     "tools": [
       "tool_result_read",
       "list_room_targets",

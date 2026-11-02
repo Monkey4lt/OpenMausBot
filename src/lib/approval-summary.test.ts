@@ -121,6 +121,18 @@ describe("outboundSummary for code run on the app's side", () => {
   });
 });
 
+describe("outboundSummary for a workflow the Cartographe proposes", () => {
+  it("asks to create the workflow and lists what it will do, never as a send on the person's behalf", () => {
+    const labels = ["Workflow « Factures du lundi »", "Déclencheur : chaque lundi à 09:00", "Bot Doué : range les factures"];
+    const summary = outboundSummary({ subtitle: labels.join("\n"), outboundRequest: { tool: "workflows_propose", app: null, calls: labels.map((label) => ({ app: null, label })) } });
+    expect(summary).toEqual({ headline: "Create this workflow?", summary: "", lines: labels });
+  });
+
+  it("reads the lines from the subtitle when the calls are missing", () => {
+    expect(outboundSummary({ subtitle: "x\ny", outboundRequest: { tool: "workflows_propose", app: null } })?.lines).toEqual(["x", "y"]);
+  });
+});
+
 describe("outboundSummary for a change to the Projects maps", () => {
   const card = (labels: string[]) => ({
     subtitle: labels.join("\n"),

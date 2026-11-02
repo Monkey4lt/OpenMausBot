@@ -53,10 +53,14 @@ export function blockRect(pos: Record<string, { x: number; y: number }>, id: str
   return { x: at.x, y: at.y, w: size?.w ?? BLOCK_W, h: size?.h ?? DEFAULT_BLOCK_H };
 }
 
-/** Every block's rectangle: a saved position stays; the others fill a 4-column grid whose rows are as tall as their tallest block. */
-export function blockRects(pos: Record<string, { x: number; y: number }>, ids: readonly string[], sizes: Record<string, { w: number; h: number } | undefined>): Map<string, Rect> {
+/**
+ * Every block's rectangle: a saved position stays; the others fill a 4-column grid whose rows are as tall as their tallest block
+ * plus what hangs under it (`below`, e.g. the workflows under a project), so nothing overlaps the next row.
+ */
+export function blockRects(pos: Record<string, { x: number; y: number }>, ids: readonly string[], sizes: Record<string, { w: number; h: number } | undefined>,
+  below: Readonly<Record<string, number>> = {}): Map<string, Rect> {
   const free = ids.filter((id) => !Object.hasOwn(pos, id));
-  const grid = arrangeByGroup([free.map((id) => ({ id, h: sizes[id]?.h ?? UNMEASURED_BLOCK_H }))], { perRow: 4, step: 380, rowGap: 40, groupGap: 0, x0: 50, y0: 50 });
+  const grid = arrangeByGroup([free.map((id) => ({ id, h: (sizes[id]?.h ?? UNMEASURED_BLOCK_H) + (below[id] ?? 0) }))], { perRow: 4, step: 380, rowGap: 40, groupGap: 0, x0: 50, y0: 50 });
   return new Map(ids.map((id, index) => [id, blockRect(Object.hasOwn(pos, id) ? pos : grid, id, index, sizes[id])]));
 }
 

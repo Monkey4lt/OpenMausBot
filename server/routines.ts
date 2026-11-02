@@ -41,7 +41,10 @@ export type { RoutineIntervalSchedule, RoutineIntervalScheduleInput, RoutineSche
 
 /** `cloud` runs the agent inside the bot's Boat VM; `maus` runs the bot's own provider and borrows only its computer tools. */
 export type RoutineRunOn = "maus" | "cloud";
-export type RoutineTarget = "bot" | "room-goal";
+export type RoutineTarget = "bot" | "room-goal" | "workflow";
+/** How a workflow routine run ended (server/workflows/runner.ts). */
+export type RoutineWorkflowStatus = "succeeded" | "failed" | "cancelled";
+export { WORKFLOW_ROUTINE_BOT } from "../shared/routines.ts";
 export type RoutineGoalStatus = Exclude<GroupGoalRunStatus, "working">;
 
 
@@ -52,6 +55,8 @@ export interface Routine {
   target: RoutineTarget;
   botId: string;
   groupId?: string;
+  /** Target "workflow": the workflow it starts. */
+  workflowId?: string;
   runOn: RoutineRunOn;
   enabled: boolean;
   schedule: RoutineSchedule;
@@ -98,6 +103,7 @@ export interface RoutineRun {
   target: RoutineTarget;
   goalStatus?: RoutineGoalStatus;
   groupId?: string;
+  workflowId?: string;
   botId: string;
   runOn: RoutineRunOn;
   scheduledFor: number;
@@ -167,6 +173,7 @@ export interface RoutineInput {
   target?: RoutineTarget;
   botId: string;
   groupId?: string | null;
+  workflowId?: string | null;
   runOn?: RoutineRunOn;
   enabled?: boolean;
   schedule: RoutineScheduleInput;
@@ -245,6 +252,18 @@ export interface RoutineManagerOptions {
     runId: string,
     onDispatchError: (message: string) => void,
   ) => Promise<void>;
+  /** Target "workflow": whether it can start now. Absent: workflow routines read as missing. */
+  workflowState?: (workflowId: string) => "ready" | "busy" | "missing";
+  /** Starts the workflow for routine run `runId`; the workflow host ends that run with finishWorkflowRun. */
+  startWorkflow?: (
+    workflowId: string,
+    runId: string,
+    triggerText: string | undefined,
+    onDispatchError: (message: string) => void,
+    source: "manual" | "schedule" | "ai-reset",
+  ) => Promise<void> | void;
+  /** A workflow routine run was cancelled or ran out of time: stop the workflow run it started. */
+  stopWorkflow?: (runId: string) => void;
   interruptTurn?: (botId: string, threadId: string) => Promise<void>;
   interruptGoal?: (
     groupId: string | undefined,
@@ -299,6 +318,8 @@ export class RoutineManager {
   private routines: Routine[] = [];
   /** Written back unchanged on every save, so unrelated work never deletes a repairable row. */
   private unloadedRoutines: Routine[] = [];
+  /** Runs of a target this version does not know, written back unchanged. */
+  private unloadedRuns: RoutineRun[] = [];
   private runs: RoutineRun[] = [];
   private routineRequestReceipts: RoutineRequestReceipt[] = [];
   private webhookRunReceipts: EventRunReceipt[] = [];
@@ -331,12 +352,16 @@ export class RoutineManager {
       this.routines = Array.isArray(disk.routines) ? disk.routines.flatMap((routine) => {
         const loaded = loadRoutine(routine, this.now());
         if (!loaded) {
-          console.warn(`routines: keeping ${String(routine.id)} on disk unscheduled; its schedule could not load`);
+          console.warn(`routines: keeping ${String(routine.id)} on disk unscheduled; its schedule or its target could not load`);
           this.unloadedRoutines.push(routine);
         }
         return loaded ? [loaded] : [];
       }) : [];
-      this.runs = Array.isArray(disk.runs) ? disk.runs.map(loadRun) : [];
+      this.runs = Array.isArray(disk.runs) ? disk.runs.flatMap((run) => {
+        const loaded = loadRun(run);
+        if (!loaded) this.unloadedRuns.push(run);
+        return loaded ? [loaded] : [];
+      }) : [];
       this.routineRequestReceipts = loadRequestReceipts(disk.routineRequestReceipts);
       this.webhookRunReceipts = loadEventReceipts(disk.webhookRunReceipts, this.runs, this.now());
       this.frozenPending = disk.frozenResultsCleared !== true;
@@ -346,6 +371,7 @@ export class RoutineManager {
     } catch (error) {
       this.routines = [];
       this.unloadedRoutines = [];
+      this.unloadedRuns = [];
       this.runs = [];
       this.routineRequestReceipts = [];
       this.webhookRunReceipts = [];
@@ -575,6 +601,7 @@ export class RoutineManager {
       target: patch.target ?? routine.target,
       botId: patch.botId ?? routine.botId,
       groupId: Object.hasOwn(patch, "groupId") ? patch.groupId : routine.groupId,
+      workflowId: Object.hasOwn(patch, "workflowId") ? patch.workflowId : routine.workflowId,
       runOn: patch.runOn ?? routine.runOn,
       enabled: patch.enabled ?? routine.enabled,
       schedule: patch.schedule ? mergeScheduleUpdate(routine.schedule, patch.schedule) : routine.schedule,
@@ -835,6 +862,7 @@ export class RoutineManager {
     if (reason) run.error = reason;
     this.save();
     this.emitRun(run);
+    if (run.target === "workflow") this.stopWorkflowRun(run);
     if (run.threadId) {
       if (run.target === "room-goal") {
         await this.options.interruptGoal?.(run.groupId, run.threadId).catch(() => {});
@@ -1124,6 +1152,10 @@ export class RoutineManager {
           this.failRun(run, this.missingTargetMessage(run.target));
           continue;
         }
+        if (run.target === "workflow") {
+          await this.dispatchWorkflow(run, triggerSource);
+          continue;
+        }
         const startedAt = this.now();
         const suffix = ` · ${new Date(startedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
         const title = `${run.routineName.slice(0, 80 - suffix.length).trimEnd()}${suffix}`;
@@ -1351,6 +1383,49 @@ export class RoutineManager {
     return cloneRun(run);
   }
 
+  /** The workflow run a workflow routine run started has ended. Null when that routine run is not going on. */
+  finishWorkflowRun(runId: string, status: RoutineWorkflowStatus, detail: string): RoutineRun | null {
+    const run = this.runs.find((candidate) => candidate.id === runId && candidate.target === "workflow" && ["running", "waiting"].includes(candidate.status));
+    if (!run) return null;
+    const safeDetail = redactSecretsInText(detail).trim();
+    if (status === "failed") this.failRun(run, safeDetail || "The workflow failed");
+    else {
+      Object.assign(run, { status: status === "cancelled" ? "cancelled" : "completed", attention: undefined, finishedAt: this.now(), error: undefined } satisfies Partial<RoutineRun>);
+      if (status === "succeeded") run.output = safeDetail.slice(0, 2_000) || undefined;
+      else if (safeDetail) run.error = safeDetail.slice(0, 500);
+      this.save();
+      this.emitRun(run);
+    }
+    queueMicrotask(() => this.tickInBackground());
+    return cloneRun(run);
+  }
+
+  private async dispatchWorkflow(run: RoutineRun, triggerSource: RoutineRunTrigger) {
+    if (!this.options.startWorkflow || !run.workflowId) {
+      this.failRun(run, this.missingTargetMessage("workflow"));
+      return;
+    }
+    Object.assign(run, { startedAt: this.now(), status: "running" } satisfies Partial<RoutineRun>);
+    try { this.save(); } catch (error) { Object.assign(run, { status: "queued", startedAt: undefined } satisfies Partial<RoutineRun>); throw error; }
+    this.emitRun(run);
+    const schedule = this.routines.find((routine) => routine.id === run.routineId)?.schedule;
+    const source = triggerSource === "manual" ? "manual" : schedule?.type === "limit_reset" ? "ai-reset" : "schedule";
+    const refuse = (message: string) => {
+      const current = this.runs.find((candidate) => candidate.id === run.id && ["running", "waiting"].includes(candidate.status));
+      if (current) this.failRun(current, message);
+    };
+    try {
+      await this.options.startWorkflow(run.workflowId, run.id, run.prompt?.trim() || undefined, refuse, source);
+    } catch (error) {
+      refuse(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private stopWorkflowRun(run: RoutineRun) {
+    try { this.options.stopWorkflow?.(run.id); }
+    catch (error) { console.error("routines: could not stop a workflow run", error); }
+  }
+
   /** Timed from when it began, so a later occurrence can tell a wait that went unanswered. */
   private wait(run: RoutineRun, attention: string | undefined) {
     if (run.status !== "waiting" || run.waitingSince === undefined) run.waitingSince = this.now();
@@ -1361,6 +1436,7 @@ export class RoutineManager {
   private async stopRun(run: RoutineRun, detail: string, status: "stopped" | "limit-reached") {
     if (run.target === "room-goal") run.goalStatus = status;
     this.failRun(run, detail);
+    if (run.target === "workflow") this.stopWorkflowRun(run);
     if (!run.threadId) return;
     if (run.target === "room-goal") await this.options.interruptGoal?.(run.groupId, run.threadId, { status, detail }).catch(() => {});
     else await this.options.interruptTurn?.(run.botId, run.threadId).catch(() => {});
@@ -1391,10 +1467,14 @@ export class RoutineManager {
     }
   }
 
-  private targetState(target: Pick<RoutineRun, "target" | "groupId" | "botId">): "ready" | "busy" | "missing" {
+  private targetState(target: Pick<RoutineRun, "target" | "groupId" | "botId" | "workflowId">): "ready" | "busy" | "missing" {
     if (target.target === "room-goal") {
       if (!this.options.goalState) return "missing";
       return this.options.goalState(target.groupId, target.botId);
+    }
+    if (target.target === "workflow") {
+      if (!this.options.workflowState || !target.workflowId) return "missing";
+      return this.options.workflowState(target.workflowId);
     }
     return this.options.botState(target.botId);
   }
@@ -1402,6 +1482,8 @@ export class RoutineManager {
   private missingTargetMessage(target: RoutineTarget): string {
     return target === "room-goal"
       ? "The assigned room or coordinator no longer exists"
+      : target === "workflow"
+      ? "The workflow no longer exists"
       : "The assigned bot no longer exists";
   }
 
@@ -1559,7 +1641,7 @@ export class RoutineManager {
       version: 1,
       ...(this.frozenPending ? {} : { frozenResultsCleared: true }),
       routines: [...this.routines, ...this.unloadedRoutines],
-      runs: this.runs,
+      runs: [...this.runs, ...this.unloadedRuns],
       routineRequestReceipts: this.routineRequestReceipts,
       webhookRunReceipts: this.webhookRunReceipts,
       ...(this.startupLaunchId === undefined ? {} : { startupLaunchId: this.startupLaunchId }),

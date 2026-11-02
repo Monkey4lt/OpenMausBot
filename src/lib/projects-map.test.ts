@@ -91,6 +91,14 @@ describe("the projects map on the canvas", () => {
     expect(blockRects({ c: { x: 7, y: 9 } }, ids, tall).get("c")).toEqual({ x: 7, y: 9, w: 320, h: 470 });
   });
 
+  it("what hangs under a block (its workflows) pushes the next row down, and the block keeps its own height", () => {
+    const ids = ["a", "b", "c", "d", "e"];
+    const sizes = Object.fromEntries(ids.map((id) => [id, { w: 320, h: 300 }]));
+    const rects = blockRects({}, ids, sizes, { b: 150 });
+    expect(rects.get("b")!.h).toBe(300);
+    expect(rects.get("e")!.y).toBeGreaterThanOrEqual(rects.get("b")!.y + 300 + 150);
+  });
+
   it("dragging a block saves its world position through the existing save path with baseRev", async () => {
     const puts: unknown[] = [];
     const sync = createMapSync<typeof old & { rev: number }>({

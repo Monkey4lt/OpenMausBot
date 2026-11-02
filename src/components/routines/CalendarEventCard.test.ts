@@ -54,3 +54,12 @@ describe("a calendar card's fit", () => {
     expect(visibleText(quarter)).toBe("Weekly planning");
   });
 });
+
+describe("a workflow's routine on the calendar", () => {
+  it("shows the workflow's name and a workflow mark, never a missing bot", () => {
+    const item = { ...commitCheck, routine: { ...commitCheck.routine!, name: "Factures du lundi", target: "workflow", workflowId: "w1", botId: "workflow:routine" } } as unknown as CalendarEventItem;
+    const html = render(item);
+    expect(visibleText(html)).toContain("Factures du lundi");
+    expect(/title="([^"]*)"/.exec(html)?.[1]).toMatch(/^Factures du lundi · 11:31.* · Workflow · /);
+  });
+});
