@@ -55,6 +55,7 @@ export function setGithubTransport(t: GithubTransport | null): void {
   transport = t ? { cliToken: async () => null, forgetCredential: async () => {}, ...t } : realTransport;
   session = null;
   trees.clear();
+  perPush.clear();
 }
 
 async function loginFor(candidate: string | null): Promise<{ token: string; login: string } | null> {
@@ -82,7 +83,7 @@ export async function githubSignIn(switchAccount: boolean): Promise<string | nul
   return session?.login ?? null;
 }
 
-async function gh<T>(path: string, auth: string | null, retryAnonymous = true): Promise<T> {
+async function ghResponse(path: string, auth: string | null, retryAnonymous: boolean, timeoutMs: number): Promise<Response> {
   const res = await transport.fetch(`${API}${path}`, {
     headers: {
       accept: "application/vnd.github+json",
@@ -90,11 +91,11 @@ async function gh<T>(path: string, auth: string | null, retryAnonymous = true): 
       "user-agent": "openmausbot-projects",
       ...(auth ? { authorization: `Bearer ${auth}` } : {}),
     },
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(timeoutMs),
   }).catch(() => { throw new Error("GitHub unreachable: check the internet connection"); });
   if (res.status === 401 && auth && retryAnonymous) {
     session = null;
-    return gh<T>(path, null);
+    return ghResponse(path, null, false, timeoutMs);
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { message?: string };
@@ -102,7 +103,17 @@ async function gh<T>(path: string, auth: string | null, retryAnonymous = true): 
     if (res.status === 403 || res.status === 429) throw new Error(`GitHub: ${body.message ?? "rate limited, try again later"}`);
     throw new Error(`GitHub ${res.status}: ${body.message ?? res.statusText}`);
   }
-  return res.json() as Promise<T>;
+  return res;
+}
+
+async function gh<T>(path: string, auth: string | null, retryAnonymous = true): Promise<T> {
+  return (await ghResponse(path, auth, retryAnonymous, 20_000)).json() as Promise<T>;
+}
+
+/** The gzipped tarball of `ref`; the API answers with a redirect to codeload.github.com, which fetch follows. */
+export async function githubTarball(fullName: string, ref: string): Promise<Uint8Array> {
+  const res = await ghResponse(`/repos/${fullName}/tarball/${encodeURIComponent(ref)}`, await token(), true, 120_000);
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 interface ApiRepo { name: string; full_name: string; default_branch: string; pushed_at: string; owner: { login: string } }
@@ -134,6 +145,18 @@ export async function listGithubRepos(target: string): Promise<GithubRepo[]> {
 }
 
 const trees = new Map<string, { pushedAt: string; lines: string[] }>();
+const perPush = new Map<string, { pushedAt: string; value: Promise<unknown> }>();
+
+/** One `make()` per repository, kind and push; a failure is not kept. */
+export function cachedForPush<T>(repo: GithubRepo, kind: string, make: () => Promise<T>): Promise<T> {
+  const key = `${kind}\n${repo.fullName}`;
+  const hit = perPush.get(key);
+  if (hit && hit.pushedAt === repo.pushedAt) return hit.value as Promise<T>;
+  const value = make();
+  perPush.set(key, { pushedAt: repo.pushedAt, value });
+  value.catch(() => { if (perPush.get(key)?.value === value) perPush.delete(key); });
+  return value;
+}
 
 /** Lines "d name/…" / "f name/…" for one repository, the shape `projectsFromLines` reads. Cached until the next push. */
 export async function githubRepoLines(repo: GithubRepo): Promise<string[]> {

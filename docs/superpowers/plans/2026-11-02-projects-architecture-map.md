@@ -359,7 +359,7 @@ it("a path containing a colon is split on the first :<digits>: only", () => {});
 **Interfaces:**
 - Produces : `readTar(buf: Uint8Array): { path: string; data: Uint8Array }[]` (fichiers réguliers seulement, en-têtes `ustar` avec `prefix`, et en-têtes PAX `path=`) ; `readGithubImports(repo: GithubRepo): Promise<ImportSet>`, mis en cache par `pushedAt`.
 
-- [ ] **Step 1 : Write the failing tests**
+- [x] **Step 1 : Write the failing tests**
 
 ```ts
 it("reads a tar built in the test, with a long PAX path", () => { /* build 2 entries by hand: 512-byte headers + data */ });
@@ -368,8 +368,8 @@ it("strips the GitHub top folder <owner>-<repo>-<sha>/", async () => { /* simula
 it("downloads the tarball once per push", async () => {});
 ```
 
-- [ ] **Step 2 :** FAIL. **Step 3 :** `gunzipSync` puis `readTar` ; même filtre code/256 Ko qu'en local. **Step 4 :** PASS.
-- [ ] **Step 5 :** Commit `feat(projects): read imports from GitHub tarballs`.
+- [x] **Step 2 :** FAIL. **Step 3 :** `gunzipSync` puis `readTar` ; même filtre code/256 Ko qu'en local. **Step 4 :** PASS.
+- [x] **Step 5 :** Commit `feat(projects): read imports from GitHub tarballs`.
 
 ### Task 13: Route de l'architecture
 

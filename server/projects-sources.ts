@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
+import { gunzipSync } from "node:zlib";
 
 import { aliasesFromTsconfig, CODE_EXTENSIONS, MAX_CODE_FILES, parseImports, type FileImports } from "./projects-architecture.ts";
+import { cachedForPush, githubTarball, type GithubRepo } from "./projects-github.ts";
 import { PROJECT_IGNORE, remoteShellPath, shellQuote } from "./projects.ts";
+import { readTar } from "./tar.ts";
 
 export const MAX_FILE_BYTES = 256 * 1024;
 
@@ -145,4 +148,38 @@ export async function readSshImports(host: string, projectPath: string, run: Ssh
     { timeout: SSH_IMPORT_TIMEOUT_MS, maxBuffer: SSH_MAX_BUFFER },
   );
   return parseSshImportOutput(out);
+}
+
+export const MAX_TARBALL_BYTES = 200 * 1024 * 1024;
+const MB = 1024 * 1024;
+const CONFIG_FILES = new Set(["tsconfig.json", "tsconfig.app.json", "go.mod"]);
+
+function unpackGithubTarball(fullName: string, gz: Uint8Array): ImportSet {
+  let tarBytes: Uint8Array;
+  try {
+    tarBytes = gunzipSync(gz, { maxOutputLength: MAX_TARBALL_BYTES });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") {
+      throw new Error(`GitHub archive of ${fullName} is larger than ${MAX_TARBALL_BYTES / MB} MB unpacked`);
+    }
+    throw new Error(`GitHub archive of ${fullName} could not be read`);
+  }
+  const decoder = new TextDecoder();
+  const read: FileImports[] = [];
+  const config = new Map<string, string>();
+  for (const entry of readTar(tarBytes)) {
+    const path = entry.path.slice(entry.path.indexOf("/") + 1);
+    if (!path || entry.data.length > MAX_FILE_BYTES) continue;
+    if (CONFIG_FILES.has(path)) config.set(path, decoder.decode(entry.data));
+    else if (isCodeFile(path) && read.length < MAX_CODE_FILES) read.push({ path, imports: parseImports(path, decoder.decode(entry.data)) });
+  }
+  return {
+    read,
+    tsconfig: pickTsconfig(config.get("tsconfig.json") ?? null, config.get("tsconfig.app.json") ?? null),
+    goMod: config.get("go.mod") ?? null,
+  };
+}
+
+export function readGithubImports(repo: GithubRepo): Promise<ImportSet> {
+  return cachedForPush(repo, "imports", async () => unpackGithubTarball(repo.fullName, await githubTarball(repo.fullName, repo.defaultBranch)));
 }

@@ -1,11 +1,16 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { gzipSync } from "node:zlib";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CODE_EXTENSIONS } from "./projects-architecture.ts";
-import { isCodeFile, MAX_FILE_BYTES, parseGrepOutput, parseSshImportOutput, readLocalImports, readSshImports, sshImportCommand, toPosix } from "./projects-sources.ts";
+import { setGithubTransport } from "./projects-github.ts";
+import {
+  isCodeFile, MAX_FILE_BYTES, MAX_TARBALL_BYTES, parseGrepOutput, parseSshImportOutput, readGithubImports, readLocalImports, readSshImports, sshImportCommand, toPosix,
+} from "./projects-sources.ts";
+import { tar } from "./testing/tar-builder.ts";
 
 const dirs: string[] = [];
 const tmp = () => { const d = mkdtempSync(join(tmpdir(), "projmap-src-")); dirs.push(d); return d; };
@@ -203,5 +208,69 @@ describe("SSH grep command on a real shell", () => {
       tsconfig: '{ "files": [] }',
       goMod: "module example.com/app\n",
     });
+  });
+});
+
+describe("GitHub import reading", () => {
+  afterEach(() => setGithubTransport(null));
+  const repo = { name: "r", fullName: "o/r", defaultBranch: "main", pushedAt: "2026-01-01T00:00:00Z" };
+  const top = "o-r-0123abc";
+
+  function serve(archive: () => Uint8Array) {
+    const calls: string[] = [];
+    setGithubTransport({
+      credential: async () => null,
+      fetch: (async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        calls.push(url.pathname);
+        if (url.pathname === `/repos/o/r/tarball/main`) return new Response(archive(), { status: 200, headers: { "content-type": "application/x-gzip" } });
+        return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
+      }) as typeof globalThis.fetch,
+    });
+    return calls;
+  }
+
+  it("strips the GitHub top folder <owner>-<repo>-<sha>/", async () => {
+    serve(() => gzipSync(tar([
+      { name: `${top}/`, type: "5" },
+      { name: `${top}/src/a.ts`, data: 'import b from "./b";' },
+      { name: `${top}/tsconfig.json`, data: '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }' },
+      { name: `${top}/go.mod`, data: "module example.com/app\n" },
+      { name: `${top}/README.md`, data: 'import "./no"' },
+      { name: `${top}/src/big.ts`, data: "x".repeat(MAX_FILE_BYTES + 1) },
+    ])));
+    expect(await readGithubImports(repo)).toEqual({
+      read: [{ path: "src/a.ts", imports: [{ spec: "./b", line: 1 }] }],
+      tsconfig: '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }',
+      goMod: "module example.com/app\n",
+    });
+  });
+
+  it("downloads the tarball once per push", async () => {
+    const calls = serve(() => gzipSync(tar([{ name: `${top}/a.ts`, data: "" }])));
+    await readGithubImports(repo);
+    await readGithubImports(repo);
+    expect(calls).toHaveLength(1);
+    await readGithubImports({ ...repo, pushedAt: "2026-02-01T00:00:00Z" });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("a tarball GitHub refuses is an error with its message", async () => {
+    setGithubTransport({
+      credential: async () => null,
+      fetch: (async () => new Response(JSON.stringify({ message: "Git Repository is empty." }), { status: 404 })) as typeof globalThis.fetch,
+    });
+    await expect(readGithubImports(repo)).rejects.toThrow("GitHub: not found");
+  });
+
+  it("an archive larger than the cap once unpacked is a clear error", async () => {
+    expect(MAX_TARBALL_BYTES).toBe(200 * 1024 * 1024);
+    serve(() => gzipSync(new Uint8Array(MAX_TARBALL_BYTES + 1024)));
+    await expect(readGithubImports(repo)).rejects.toThrow("GitHub archive of o/r is larger than 200 MB unpacked");
+  });
+
+  it("a download that is not gzip is a clear error", async () => {
+    serve(() => new TextEncoder().encode("<html>nope</html>"));
+    await expect(readGithubImports(repo)).rejects.toThrow("GitHub archive of o/r could not be read");
   });
 });
