@@ -115,13 +115,14 @@ export function modulesOf(paths: string[], overrides?: ArchOverrides): ModuleInf
 
 export type ImportRef = { spec: string; line: number };
 
-interface Syntax { lineComment: string | null; blockComment: boolean; quotes: string; tripleQuotes: boolean }
+interface Syntax { lineComment: string | null; blockComment: boolean; quotes: string; tripleQuotes: boolean; regexLiterals?: boolean; markupComments?: boolean }
 
 const C_LIKE: Syntax = { lineComment: "//", blockComment: true, quotes: "\"'`", tripleQuotes: false };
-type Language = "js" | "css" | "scss" | "py" | "go" | "rs";
+type Language = "js" | "sfc" | "css" | "scss" | "py" | "go" | "rs";
 
 const SYNTAX: Record<Language, Syntax> = {
-  js: C_LIKE,
+  js: { ...C_LIKE, regexLiterals: true },
+  sfc: { ...C_LIKE, regexLiterals: true, markupComments: true },
   css: { lineComment: null, blockComment: true, quotes: "\"'", tripleQuotes: false },
   scss: { lineComment: "//", blockComment: true, quotes: "\"'", tripleQuotes: false },
   py: { lineComment: "#", blockComment: false, quotes: "\"'", tripleQuotes: true },
@@ -130,7 +131,7 @@ const SYNTAX: Record<Language, Syntax> = {
 };
 
 const LANGUAGE_OF: Partial<Record<string, Language>> = {
-  ".ts": "js", ".tsx": "js", ".mts": "js", ".cts": "js", ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js", ".vue": "js", ".svelte": "js",
+  ".ts": "js", ".tsx": "js", ".mts": "js", ".cts": "js", ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js", ".vue": "sfc", ".svelte": "sfc",
   ".css": "css", ".scss": "scss", ".sass": "scss", ".less": "scss",
   ".py": "py", ".go": "go", ".rs": "rs",
 };
@@ -166,10 +167,46 @@ function blankCommentsKeepingOffsets(text: string, syntax: Syntax): { code: stri
       const end = close < 0 ? text.length : close + 2;
       blank(i, end); i = end; continue;
     }
+    if (syntax.markupComments && text.startsWith("<!--", i)) {
+      const close = text.indexOf("-->", i + 4);
+      const end = close < 0 ? text.length : close + 3;
+      blank(i, end); i = end; continue;
+    }
+    if (syntax.regexLiterals && ch === "/" && startsRegexLiteral(text, i)) {
+      const end = regexLiteralEnd(text, i);
+      blank(i, end); i = end; continue;
+    }
     i++;
   }
   parts.push(text.slice(kept));
   return { code: parts.join(""), strings };
+}
+
+const BEFORE_REGEX = "(,=:[!&|?{};+-*%<>~^";
+
+function startsRegexLiteral(text: string, slash: number): boolean {
+  let k = slash - 1;
+  while (k >= 0 && (text[k] === " " || text[k] === "\t")) k--;
+  if (k < 0 || text[k] === "\n") return true;
+  if (BEFORE_REGEX.includes(text[k])) return true;
+  return /(?:^|[^\w$])(?:return|typeof|case|do|else|in|of|void|yield|await)$/.test(text.slice(Math.max(0, k - 6), k + 1));
+}
+
+function regexLiteralEnd(text: string, slash: number): number {
+  let inClass = false;
+  for (let j = slash + 1; j < text.length; j++) {
+    const c = text[j];
+    if (c === "\n") return j;
+    if (c === "\\") j++;
+    else if (c === "[") inClass = true;
+    else if (c === "]") inClass = false;
+    else if (c === "/" && !inClass) {
+      let end = j + 1;
+      while (end < text.length && /[a-z]/i.test(text[end])) end++;
+      return end;
+    }
+  }
+  return text.length;
 }
 
 type Found = { spec: string; at: number };
@@ -226,7 +263,7 @@ function expandRustUse(tree: string): string[] {
 
 function findImports(language: Language, code: string): Found[] {
   switch (language) {
-    case "js": return [...findAll(JS_STATIC, code, 2), ...findAll(JS_CALL, code, 2)];
+    case "js": case "sfc": return [...findAll(JS_STATIC, code, 2), ...findAll(JS_CALL, code, 2)];
     case "css": case "scss": return [...findAll(CSS_IMPORT, code, 2), ...findAll(CSS_URL, code, 1)];
     case "py": return [
       ...[...code.matchAll(PY_IMPORT)].flatMap((m) => m[1].split(",")

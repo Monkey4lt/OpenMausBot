@@ -372,3 +372,21 @@ describe("Python names in the architecture", () => {
     expect(arch.external).toEqual([{ name: "os", count: 1 }]);
   });
 });
+
+describe("regex literals and markup comments", () => {
+  it.each([
+    ["a.ts", `const r = /[']/g; import z from "./z";`, ["./z"]],
+    ["a.ts", "const r = /`/;\nimport a from \"./a\";\nimport b from \"./b\";", ["./a", "./b"]],
+    ["a.ts", "if (/\"/.test(x)) {}\nimport a from \"./a\";", ["./a"]],
+    ["a.ts", "const r = /[/'\"]/; const s = /\\/'/;\nimport a from \"./a\";", ["./a"]],
+    ["a.ts", "x = [/'/, /\"/];\nimport a from \"./a\";", ["./a"]],
+    ["a.ts", "const half = a / 2; const q = b / 'x'.length;\nimport a from \"./a\";", ["./a"]],
+    ["a.ts", "return /'/.test(s) && require(\"./r\");", ["./r"]],
+    ["A.vue", '<!-- import x from "./no" -->\n<script>\nimport B from "./B.vue";\n</script>', ["./B.vue"]],
+    ["A.svelte", '<!--\n<script>import x from "./no";</script>\n-->\n<script>import C from "./C.svelte";</script>', ["./C.svelte"]],
+  ])("%s %s", (path, text, specs) => expect(parseImports(path, text).map((r) => r.spec)).toEqual(specs));
+
+  it("lines stay right after a regex and a markup comment", () => {
+    expect(parseImports("A.vue", "<!-- a\nb -->\nconst r = /'/;\nimport x from \"./x\";")).toEqual([{ spec: "./x", line: 4 }]);
+  });
+});
