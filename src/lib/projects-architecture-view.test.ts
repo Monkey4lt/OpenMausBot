@@ -5,7 +5,7 @@ import * as wire from "../../shared/projects-architecture";
 import * as wirePieces from "../../shared/projects-pieces";
 
 import {
-  EVIDENCE_WORDS, FAMILY_COLORS, FAMILY_ORDER, PIECE_COLORS, evidenceLine, pieceBadges, pieceLinkRows, summaryPreview, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, mergeTwoWay, moduleLabel, plainModuleLabel, withFamilyName, withModuleFamily, type Architecture,
+  cardPieces, flowLayout, linkPhrase, EVIDENCE_WORDS, FAMILY_COLORS, FAMILY_ORDER, PIECE_COLORS, evidenceLine, pieceBadges, pieceLinkRows, summaryPreview, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, mergeTwoWay, moduleLabel, plainModuleLabel, withFamilyName, withModuleFamily, type Architecture,
 } from "./projects-architecture-view";
 
 const arch: Architecture = {
@@ -227,5 +227,79 @@ describe("drawn edges", () => {
     expect(plainModuleLabel("(root)/config", "dossier principal")).toBe("dossier principal");
     expect(plainModuleLabel("(root)/x#tests", "dossier principal")).toBe("dossier principal (tests)");
     expect(plainModuleLabel("src/components", "dossier principal")).toBe("components");
+  });
+});
+
+describe("cardPieces", () => {
+  it("shows each kind once, in the card's order, never tests or deploy, at most three then a count", () => {
+    expect(cardPieces(["database", "ui", "ui", "tests", "deploy", "api"])).toEqual({ shown: ["ui", "api", "database"], more: 0 });
+    expect(cardPieces(["external", "cache", "database", "jobs", "api", "chatbot", "ui"])).toEqual({ shown: ["ui", "chatbot", "api"], more: 4 });
+    expect(cardPieces(["tests", "deploy"])).toEqual({ shown: [], more: 0 });
+    expect(cardPieces(undefined)).toEqual({ shown: [], more: 0 });
+  });
+});
+
+describe("flowLayout", () => {
+  const piece = (kind: wirePieces.PieceKind, tech: string, path = "package.json"): wirePieces.Piece =>
+    ({ kind, tech, evidence: [{ path, code: "dependency", reason: `depends on ${tech}` }], modules: [] });
+  const shop = [piece("ui", "React"), piece("ui", "Vite"), piece("api", "Express"), piece("database", "PostgreSQL"), piece("external", "Stripe"), piece("external", "SendGrid"), piece("tests", ""), piece("deploy", "Docker")];
+  const links: wirePieces.PieceLink[] = [
+    { from: "ui", to: "api", count: 3, examples: [{ from: "web/A.tsx", to: "server/a.ts" }] },
+    { from: "api", to: "database", count: 1, examples: [] },
+    { from: "api", to: "external", count: 2, examples: [] },
+  ];
+
+  it("puts boxes in the four columns left to right, one box per kind, each outside service on its own", () => {
+    const flow = flowLayout(shop, links, undefined, "fr");
+    expect(flow.boxes.map((b) => b.key)).toEqual(["ui", "api", "database", "external:SendGrid", "external:Stripe"]);
+    const x = (key: string) => flow.boxes.find((b) => b.key === key)!.rect.x;
+    expect(x("ui")).toBeLessThan(x("api"));
+    expect(x("api")).toBeLessThan(x("database"));
+    expect(x("database")).toBeLessThan(x("external:Stripe"));
+    expect(x("external:Stripe")).toBe(x("external:SendGrid"));
+    expect(flow.columns.map((c) => c.id)).toEqual(["see", "work", "store", "outside"]);
+    const ui = flow.boxes.find((b) => b.key === "ui")!;
+    expect(ui).toMatchObject({ label: "Site ou appli", text: "Ce que les gens voient et utilisent.", described: false, techs: ["React", "Vite"] });
+    expect(ui.pieces).toHaveLength(2);
+    expect(flow.boxes.find((b) => b.key === "external:Stripe")).toMatchObject({ label: "Stripe", subtitle: "Service extérieur" });
+  });
+
+  it("puts tests and deploy in a quiet row underneath", () => {
+    const flow = flowLayout(shop, links, undefined, "fr");
+    expect(flow.build.map((b) => b.key)).toEqual(["tests", "deploy"]);
+    const bottom = Math.max(...flow.boxes.map((b) => b.rect.y + b.rect.h));
+    for (const b of flow.build) expect(b.rect.y).toBeGreaterThan(bottom);
+    expect(flowLayout([piece("api", "Express")], [], undefined, "fr").build).toEqual([]);
+  });
+
+  it("uses the Cartographe's line for a box when there is one", () => {
+    const flow = flowLayout(shop, links, { api: "Prend les commandes.", "external:Stripe": "Encaisse." }, "fr");
+    expect(flow.boxes.find((b) => b.key === "api")).toMatchObject({ text: "Prend les commandes.", described: true });
+    expect(flow.boxes.find((b) => b.key === "external:Stripe")).toMatchObject({ text: "Encaisse.", described: true });
+  });
+
+  it("draws each found link as a phrase, fans the server's link out to every outside service, and drops a link with a missing end", () => {
+    const flow = flowLayout(shop, links, undefined, "fr");
+    expect(flow.edges.map((e) => [e.fromKey, e.toKey, e.label])).toEqual([
+      ["ui", "api", "envoie ses demandes au"],
+      ["api", "database", "range les informations dans"],
+      ["api", "external:SendGrid", "envoie les e-mails avec"],
+      ["api", "external:Stripe", "encaisse les paiements avec"],
+    ]);
+    expect(new Set(flow.edges.map((e) => e.id)).size).toBe(4);
+    for (const e of flow.edges) expect(e.label).not.toMatch(/\d/);
+    const noServer = flowLayout([piece("ui", "React"), piece("database", "PostgreSQL")], links, undefined, "fr");
+    expect(noServer.edges).toEqual([]);
+  });
+
+  it("says each link in plain words in both languages", () => {
+    expect(linkPhrase({ from: "api", to: "cache", count: 1, examples: [] }, { kind: "cache", tech: "Redis" }, "fr")).toBe("garde sous la main dans");
+    expect(linkPhrase({ from: "api", to: "external", count: 1, examples: [] }, { kind: "external", tech: "Twilio" }, "fr")).toBe("envoie les SMS avec");
+    expect(linkPhrase({ from: "api", to: "external", count: 1, examples: [] }, { kind: "external", tech: "AWS" }, "en")).toBe("uses");
+    expect(linkPhrase({ from: "ui", to: "api", count: 1, examples: [] }, { kind: "api", tech: "" }, "en")).toBe("sends its requests to");
+  });
+
+  it("an empty project lays out nothing", () => {
+    expect(flowLayout([], [], undefined, "fr")).toMatchObject({ boxes: [], build: [], edges: [], columns: [] });
   });
 });

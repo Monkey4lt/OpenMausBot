@@ -1,8 +1,13 @@
+import { facingAnchors } from "@/lib/canvas/geometry";
 import { edgePoint, type Rect } from "@/lib/projects-map";
+import type { CanvasEdge } from "@/components/canvas/EdgeLayer";
 
 import { FAMILY_ORDER, MAX_CODE_FILES } from "../../shared/projects-architecture";
 import type { ArchOverrides, Architecture, Family } from "../../shared/projects-architecture";
-import { PIECE_LABELS, type ArchitectureWithPieces, type EvidenceCode, type Piece, type PieceKind, type PieceLink } from "../../shared/projects-pieces";
+import {
+  BUILD_KINDS, CARD_KINDS, FLOW_COLUMNS, LINK_PHRASES, PIECE_DEFAULT_TEXT, PIECE_LABELS, externalPhrase, pieceKey,
+  type ArchitectureWithPieces, type EvidenceCode, type Piece, type PieceKind, type PieceLink,
+} from "../../shared/projects-pieces";
 
 export { FAMILY_ORDER, MAX_CODE_FILES as MAX_READ_FILES };
 export type { ArchOverrides, Architecture, ArchitectureWithPieces, Family, Piece, PieceKind, PieceLink };
@@ -203,4 +208,92 @@ export function withFamilyName<S extends WithOverrides>(state: S, projectId: str
     if (trimmed) familyNames[family] = trimmed; else delete familyNames[family];
     return { ...o, familyNames };
   });
+}
+
+const CARD_MAX = 3;
+
+/** The kinds a project's card shows: each once, in card order, never tests or deploy; at most three, and how many more. */
+export function cardPieces(kinds: readonly PieceKind[] | undefined): { shown: PieceKind[]; more: number } {
+  const all = CARD_KINDS.filter((kind) => kinds?.includes(kind));
+  return { shown: all.slice(0, CARD_MAX), more: Math.max(0, all.length - CARD_MAX) };
+}
+
+/** What `link` does to the box of `to`, read as "[from] phrase [to]". */
+export function linkPhrase(link: PieceLink, to: { kind: PieceKind; tech: string }, locale: Locale): string {
+  if (link.to === "external") return externalPhrase(to.tech, locale);
+  const key = `${link.from}->${link.to}`;
+  return Object.hasOwn(LINK_PHRASES, key) ? LINK_PHRASES[key as keyof typeof LINK_PHRASES][locale] : "";
+}
+
+export type FlowBox = {
+  key: string;
+  kind: PieceKind;
+  label: string;
+  /** « Service extérieur » under an outside service's brand. */
+  subtitle?: string;
+  text: string;
+  /** True when the text is the Cartographe's, not the default line. */
+  described: boolean;
+  techs: string[];
+  pieces: Piece[];
+  rect: Rect;
+};
+export type FlowEdge = CanvasEdge & { fromKey: string; toKey: string; link: PieceLink; label: string };
+export type FlowColumn = { id: (typeof FLOW_COLUMNS)[number]["id"]; x: number; y: number; w: number };
+
+export const FLOW_BOX = { w: 240, h: 92, gapX: 150, gapY: 28, x0: 40, y0: 56, buildW: 200, buildH: 44, buildGap: 70 };
+
+/** The « Comment ça marche » view: one box per kind (one per outside service) in four columns, tests and deploy in a row under them, and one plain phrase per found link. */
+export function flowLayout(pieces: readonly Piece[], links: readonly PieceLink[], texts: Readonly<Record<string, string>> | undefined, locale: Locale): {
+  boxes: FlowBox[]; build: FlowBox[]; columns: FlowColumn[]; buildRow: { x: number; y: number } | null; edges: FlowEdge[];
+} {
+  const groupsOf = (kind: PieceKind): { key: string; tech: string; pieces: Piece[] }[] => {
+    const own = pieces.filter((p) => p.kind === kind);
+    if (!own.length) return [];
+    if (kind !== "external") return [{ key: kind, tech: "", pieces: own }];
+    const byKey = new Map<string, { key: string; tech: string; pieces: Piece[] }>();
+    for (const p of own) {
+      const key = pieceKey(p);
+      const found = byKey.get(key) ?? { key, tech: p.tech, pieces: [] };
+      found.pieces.push(p);
+      byKey.set(key, found);
+    }
+    return [...byKey.values()].sort((a, b) => byText(a.tech.toLowerCase(), b.tech.toLowerCase()));
+  };
+  const box = (kind: PieceKind, group: { key: string; tech: string; pieces: Piece[] }, rect: Rect): FlowBox => {
+    const own = texts && Object.hasOwn(texts, group.key) ? texts[group.key] : undefined;
+    const brand = kind === "external" && group.tech;
+    return {
+      key: group.key, kind, label: brand ? group.tech : PIECE_LABELS[kind][locale], ...(brand ? { subtitle: PIECE_LABELS.external[locale] } : {}),
+      text: own || PIECE_DEFAULT_TEXT[kind][locale], described: Boolean(own),
+      techs: [...new Set(group.pieces.map((p) => p.tech).filter(Boolean))], pieces: group.pieces, rect,
+    };
+  };
+  const B = FLOW_BOX;
+  const boxes: FlowBox[] = [];
+  const columns: FlowColumn[] = [];
+  let bottom = B.y0;
+  for (const column of FLOW_COLUMNS) {
+    const groups = column.kinds.flatMap((kind) => groupsOf(kind).map((g) => ({ kind, g })));
+    if (!groups.length) continue;
+    const x = B.x0 + columns.length * (B.w + B.gapX);
+    columns.push({ id: column.id, x, y: B.y0 - 34, w: B.w });
+    groups.forEach(({ kind, g }, row) => {
+      const rect = { x, y: B.y0 + row * (B.h + B.gapY), w: B.w, h: B.h };
+      boxes.push(box(kind, g, rect));
+      bottom = Math.max(bottom, rect.y + rect.h);
+    });
+  }
+  const buildKinds = BUILD_KINDS.filter((kind) => pieces.some((p) => p.kind === kind));
+  const buildRow = buildKinds.length ? { x: B.x0, y: (boxes.length ? bottom : B.y0) + B.buildGap - 30 } : null;
+  const build = buildKinds.map((kind, i) => box(kind, groupsOf(kind)[0]!, { x: B.x0 + i * (B.buildW + B.gapY), y: buildRow!.y + 30, w: B.buildW, h: B.buildH }));
+  const edges = links.flatMap((link) => {
+    const from = boxes.find((b) => b.kind === link.from);
+    if (!from) return [];
+    return boxes.filter((b) => b.kind === link.to).map((to): FlowEdge => {
+      const [a, b] = facingAnchors(from.rect, to.rect);
+      return { id: `${from.key}->${to.key}`, fromKey: from.key, toKey: to.key, link, from: a, to: b, label: linkPhrase(link, { kind: to.kind, tech: to.techs[0] ?? "" }, locale), arrow: "end", dashed: false };
+    });
+  });
+  return { boxes, build, columns, buildRow, edges };
 }
