@@ -16,6 +16,8 @@ import { PASS, type RouteHandler } from "./table.ts";
 export interface ProjectRouteDeps {
   dataDir: string;
   onArchitectureRead?: (projectId: string) => void;
+  /** Shares one architecture cache with other callers; made from dataDir and onArchitectureRead when absent. */
+  architectures?: ArchitectureReader;
   /** Called after each saved write with the new rev. */
   onChanged?: (rev: number) => void;
   cartographeBotId?: () => string | null;
@@ -32,15 +34,12 @@ const ARCHITECTURE_CACHE_SIZE = 32;
  *   404 {error} for an id no source has, 502 {error} with the source's message when it cannot be read
  */
 export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
-  const architectures = new PromiseLru<Architecture>(ARCHITECTURE_CACHE_SIZE);
+  const architectures = deps.architectures ?? createArchitectureReader(deps);
   return async ({ req, res, url, path, method, json, readBody }) => {
     if (path === "/api/projects/architecture" && method === "GET") {
-      const state = readProjectMapState(deps.dataDir);
-      const found = findProject(state, url.searchParams.get("id") ?? "");
-      if (!found) return json(res, 404, { error: "Unknown project" });
+      const id = url.searchParams.get("id") ?? "";
       try {
-        if (url.searchParams.get("refresh") === "1") architectures.delete(`${found.source.id}:${found.name}`);
-        const architecture = await projectArchitecture(state, found.source, found.name, architectures, deps.onArchitectureRead);
+        const architecture = await architectures(id, { refresh: url.searchParams.get("refresh") === "1" });
         if (!architecture) return json(res, 404, { error: "Unknown project" });
         return json(res, 200, architecture);
       } catch (error) {
@@ -49,16 +48,7 @@ export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
     }
     if (path === "/api/projects" && method === "GET") {
       const state = readProjectMapState(deps.dataDir);
-      const projects: Project[] = [];
-      const errors: { sourceId: string; message: string }[] = [];
-      await Promise.all(state.sources.map(async (source) => {
-        try {
-          projects.push(...await scanSource(source));
-        } catch (error) {
-          errors.push({ sourceId: source.id, message: error instanceof Error ? error.message : String(error) });
-        }
-      }));
-      projects.sort((a, b) => a.id.localeCompare(b.id));
+      const { projects, errors } = await scanProjects(state);
       return json(res, 200, { state, projects, errors, cartographeBotId: deps.cartographeBotId?.() ?? null });
     }
     if (path === "/api/projects/state" && method === "PUT") {
@@ -80,6 +70,36 @@ export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
       return json(res, 200, { login: await githubSignIn(body?.switch === true) });
     }
     return PASS;
+  };
+}
+
+/** Every source scanned at once; a source that fails is reported in errors and the others still load. */
+export async function scanProjects(state: ProjectMapState): Promise<{ projects: Project[]; errors: { sourceId: string; message: string }[] }> {
+  const projects: Project[] = [];
+  const errors: { sourceId: string; message: string }[] = [];
+  await Promise.all(state.sources.map(async (source) => {
+    try {
+      projects.push(...await scanSource(source));
+    } catch (error) {
+      errors.push({ sourceId: source.id, message: error instanceof Error ? error.message : String(error) });
+    }
+  }));
+  projects.sort((a, b) => a.id.localeCompare(b.id));
+  return { projects, errors };
+}
+
+/** null for an id no source has; a source that cannot be read rejects with its message. */
+export type ArchitectureReader = (projectId: string, options?: { refresh?: boolean }) => Promise<Architecture | null>;
+
+/** Reads a project's architecture with the saved overrides, cached until its code files, overrides or source change. */
+export function createArchitectureReader(deps: { dataDir: string; onArchitectureRead?: (projectId: string) => void }): ArchitectureReader {
+  const cache = new PromiseLru<Architecture>(ARCHITECTURE_CACHE_SIZE);
+  return async (projectId, options = {}) => {
+    const state = readProjectMapState(deps.dataDir);
+    const found = findProject(state, projectId);
+    if (!found) return null;
+    if (options.refresh) cache.delete(`${found.source.id}:${found.name}`);
+    return projectArchitecture(state, found.source, found.name, cache, deps.onArchitectureRead);
   };
 }
 

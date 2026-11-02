@@ -146,7 +146,7 @@ it("the card title counts the changes", () => {});
   - `POST /api/internal/projects/map` · `POST /api/internal/projects/architecture { projectId, includeFiles? }` · `POST /api/internal/projects/apply { changes }` → `{ applied: true, rev } | { applied: false, reason: "refused" | "timeout" | "invalid" | "inactive", problems? }`. Autre bot → 403 ; `cloud` → 403.
   - Ordre d'`apply` : parser → valider sur l'état courant (invalide → réponse immédiate, pas de carte) → `hold.ask` avec `describeChanges` → si `allow` : vérifier `active` → relire l'état → `applyChanges` → si invalide : `invalid` → écrire → `onChanged(rev)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it("another bot gets 403 on every route", async () => {});
@@ -161,8 +161,8 @@ it("the card lines come from the changes, not from any text the bot sent", async
 it("the wait is clamped to the bot's MCP call timeout when it is lower", async () => {});
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS.
-- [ ] **Step 5:** Commit `feat(cartographe): internal routes to read the maps and apply a batch`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter. **Step 4:** PASS.
+- [x] **Step 5:** Commit `feat(cartographe): internal routes to read the maps and apply a batch`.
 
 ### Task 5: Outils du catalogue `agents`
 
