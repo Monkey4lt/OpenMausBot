@@ -41,7 +41,7 @@
   - `interface Piece { kind: PieceKind; tech: string; evidence: { path: string; reason: string }[]; modules: string[] }`
   - `detectPieces(input: { paths: string[]; manifests: Record<string, string>; read: FileImports[]; arch: Architecture }): Piece[]` — `manifests` = contenu des manifestes par chemin ; une pièce par (kind, tech) ; `evidence` ≤ 5 ; `modules` = modules de `arch` qui contiennent un fichier preuve ou un import du paquet.
 
-- [ ] **Step 1: Write the failing tests** — un projet fixture par pièce du tableau (au moins un indice chacun), plus :
+- [x] **Step 1: Write the failing tests** — un projet fixture par pièce du tableau (au moins un indice chacun), plus :
 
 ```ts
 it("a monorepo with web/package.json (react) and api/package.json (express, pg) gives ui on web/*, api and database on api/*", () => {});
@@ -50,8 +50,8 @@ it("a project with no manifest gives no pieces and does not throw", () => { expe
 it("keeps at most 5 evidence entries per piece", () => {});
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter (lecture JSON/TOML/texte minimale, sans dépendance). **Step 4:** PASS.
-- [ ] **Step 5:** Commit `feat(cartographe): detect the pieces of a project`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter (lecture JSON/TOML/texte minimale, sans dépendance). **Step 4:** PASS.
+- [x] **Step 5:** Commit `feat(cartographe): detect the pieces of a project`.
 
 ### Task 10: Liens entre pièces
 
