@@ -15,6 +15,7 @@ describe("Canvas", () => {
       tool: "select", view: { x: 10, y: 20, scale: 1 },
       underlay: createElement("div", { id: "zone" }), overlay: createElement("div", { id: "notes" }),
       toolbar: createElement("div", { id: "tools" }), bottomLeft: createElement("div", { id: "mini" }),
+      bottomRight: createElement("div", { id: "corner" }),
     }, createElement("div", { id: "block" }, "Bloc A")));
     expect(html).toMatch(/data-canvas-world[^>]*style="[^"]*transform:translate\(10px, 20px\) scale\(1\)/);
     expect(html).toContain("100%");
@@ -23,6 +24,7 @@ describe("Canvas", () => {
     expect(html.indexOf('id="block"')).toBeLessThan(html.indexOf('id="notes"'));
     expect(html).toContain('id="tools"');
     expect(html).toContain('id="mini"');
+    expect(html).toMatch(/data-canvas-chrome="right"[^>]*>(<[^>]+>)*<div id="corner"/);
     expect(html).toContain('aria-label="Toile"');
     expect(html).toContain('tabindex="0"');
   });

@@ -32,7 +32,7 @@ const SCROLLS = "textarea, [data-canvas-scroll]";
 
 type Gesture = { id: number; start: Point; view: View; moved: boolean; background: boolean };
 
-export function Canvas({ view: controlled, onViewChange, tool, readOnly = false, rects = [], underlay, overlay, children, toolbar, bottomLeft, minimap = false, onBackgroundClick, label, className }: {
+export function Canvas({ view: controlled, onViewChange, tool, readOnly = false, rects = [], underlay, overlay, children, toolbar, bottomLeft, bottomRight, minimap = false, onBackgroundClick, label, className }: {
   view?: View;
   onViewChange?: (view: View) => void;
   tool: Tool;
@@ -45,6 +45,8 @@ export function Canvas({ view: controlled, onViewChange, tool, readOnly = false,
   children?: ReactNode;
   toolbar?: ReactNode;
   bottomLeft?: ReactNode;
+  /** Bottom-right corner on a wide canvas; above the toolbar, on the right, on a narrow one. */
+  bottomRight?: ReactNode;
   /** Adds a minimap toggle to the zoom pill. */
   minimap?: boolean;
   onBackgroundClick?: () => void;
@@ -158,7 +160,7 @@ export function Canvas({ view: controlled, onViewChange, tool, readOnly = false,
             minimapOpen={minimapOpen} onToggleMinimap={minimap ? () => setMinimapOpen((open) => !open) : undefined} />
         </div>
         <div data-canvas-chrome className="pointer-events-auto flex min-w-0 justify-center">{toolbar}</div>
-        <div />
+        <div data-canvas-chrome="right" className="flex min-w-0 justify-end">{bottomRight}</div>
       </div>
     </div>
   </CanvasContext.Provider>;

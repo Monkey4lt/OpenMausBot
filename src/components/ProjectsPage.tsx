@@ -2,8 +2,8 @@
 // its full file tree, on the shared canvas. Blocks are grouped by "pôle" (group) and joined by links.
 // Shown in place of the chat, like Team map. Layout is saved on the server; the view is kept per device.
 import {
-  ChevronDown, ChevronRight, CircleHelp, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
-  Network, Pencil, Plus, RefreshCw, Search, Server, Sparkles, Trash2, X,
+  Bot as BotIcon, ChevronDown, ChevronRight, CircleHelp, File, Folder, FolderTree, Github, HardDrive, LayoutGrid, Link2, Loader2,
+  Network, Pencil, Plus, RefreshCw, Search, Server, Trash2, X,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -31,6 +31,7 @@ import { NodeFrame } from "./canvas/NodeFrame";
 import { Toolbar } from "./canvas/Toolbar";
 import { readStoredView, useCanvasView } from "./canvas/useCanvasView";
 import { ArchitectureView } from "./projects/ArchitectureView";
+import { BotAvatar, type BotAvatarProps } from "./Avatar";
 import { ChatView } from "./ChatView";
 
 // ---------- types (mirror server/projects.ts) ----------
@@ -299,12 +300,39 @@ export function ProjectsPage() {
 
   const cartographe = data?.cartographeBotId ? appState.bots.find((bot) => bot.id === data.cartographeBotId) ?? null : null;
   const [panelOpen, setPanelOpen] = useState(() => readPanelOpen(browserStorage()));
+  const [making, setMaking] = useState(false);
+  const [cartoError, setCartoError] = useState(false);
+  // The draft to put in once a Cartographe being made shows up in the app.
+  const pendingDraft = useRef<{ projectName?: string } | null>(null);
   const width = useWindowWidth();
   const togglePanel = useCallback((open: boolean, projectName?: string) => {
     if (open && cartographe) leadComposerDraft(`bot:${cartographe.id}:${cartographe.threadId}`, panelDraft({ projectName }));
     setPanelOpen(open);
     writePanelOpen(browserStorage(), open);
   }, [cartographe]);
+  useEffect(() => {
+    if (!cartographe || !pendingDraft.current) return;
+    leadComposerDraft(`bot:${cartographe.id}:${cartographe.threadId}`, panelDraft(pendingDraft.current));
+    pendingDraft.current = null;
+  }, [cartographe]);
+  /** Opens the Cartographe's chat, making it again first when it was deleted. */
+  const askCartographe = useCallback(async (projectName?: string) => {
+    setCartoError(false);
+    if (cartographe) { togglePanel(true, projectName); return; }
+    if (making) return;
+    setMaking(true);
+    try {
+      const { cartographeBotId } = await api<{ cartographeBotId: string }>("/api/projects/cartographe", { method: "POST" });
+      pendingDraft.current = { projectName };
+      setData((prev) => (prev ? { ...prev, cartographeBotId } : prev));
+      togglePanel(true);
+    } catch {
+      setCartoError(true);
+    } finally {
+      setMaking(false);
+    }
+  }, [cartographe, making, togglePanel]);
+  const panelShown = panelOpen && Boolean(data?.cartographeBotId);
   const openInChat = useCallback(() => {
     if (cartographe) openBot(dispatch, cartographe, showThreads);
   }, [cartographe, dispatch, showThreads]);
@@ -440,7 +468,6 @@ export function ProjectsPage() {
             <ToolButton onClick={() => void load()} label={t("projects.refresh")}><RefreshCw size={15} className={cn(loading && "animate-spin")} /></ToolButton>
             <ToolButton onClick={() => update((s) => ({ ...s, help: !s.help }))} label={t("projects.help.button")}><CircleHelp size={15} /></ToolButton>
           </ToolGroup>
-          <CartographeButton bot={cartographe} onAsk={() => togglePanel(!panelOpen, mapOf?.name)} />
         </div>
       </header>
       {mapChanged && <MapChangedNotice onClose={() => setMapChanged(false)} />}
@@ -475,13 +502,14 @@ export function ProjectsPage() {
         </aside>
 
         {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow}
-          onAskCartographe={cartographe ? () => togglePanel(true, mapOf.name) : undefined} />}
+          onAskCartographe={() => void askCartographe(mapOf.name)} />}
         <div ref={setBox} className={cn("relative flex min-w-0 flex-1", mapOf && "hidden")}
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && (e.target as Element).closest("[data-canvas]")) { e.preventDefault(); setSearchOpen(true); }
           }}>
           <Canvas view={view} onViewChange={setView} tool={tool} rects={frame} minimap onBackgroundClick={() => setSelected(null)}
             toolbar={<Toolbar tool={tool} onTool={setTool} search={() => setSearchOpen((open) => !open)} />}
+            bottomRight={<CartographeFab bot={cartographe} busy={making} open={panelShown} onAsk={() => void askCartographe()} />}
             overlay={<AnnotationLayer items={annotations} tool={tool} selectedId={selected} onSelect={setSelected} onTool={setTool}
               onChange={(items) => update((s) => ({ ...s, annotations: items }))} />}
             underlay={<>
@@ -547,15 +575,21 @@ export function ProjectsPage() {
               <CanvasSearch items={searchItems} onPick={focus} onClose={() => setSearchOpen(false)} />
             </div>
           )}
-          {((data?.errors.length ?? 0) > 0 || linkFrom) && (
+          {((data?.errors.length ?? 0) > 0 || linkFrom || cartoError) && (
             <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-col items-center gap-1.5">
-              {data!.errors.map((e) => (
+              {(data?.errors ?? []).map((e) => (
                 <button key={e.sourceId} onClick={() => setSourcesOpen(true)}
                   className="pointer-events-auto flex w-full max-w-[640px] items-start gap-2 rounded-xl border border-danger/30 bg-card px-3 py-2 text-left text-[13px] text-danger hover:border-danger/60">
                   <span className="font-medium">{t("projects.sourceError", { name: sourceLabel(e.sourceId) })}</span>
                   <span className="min-w-0 flex-1 text-ink-secondary">{e.message}</span>
                 </button>
               ))}
+              {cartoError && (
+                <div role="alert" className="animate-pop-in pointer-events-auto flex items-center gap-2 rounded-xl border border-danger/30 bg-card py-1.5 pl-3 pr-1.5 text-[13px] text-danger">
+                  {t("projects.cartographe.unavailable")}
+                  <button type="button" className="ui-icon-button" aria-label={t("projects.close")} onClick={() => setCartoError(false)}><X size={14} /></button>
+                </div>
+              )}
               {linkFrom && (
                 <div className="animate-pop-in pointer-events-auto flex items-center gap-3 rounded-full bg-ink py-2 pl-4 pr-2 text-[13px] font-medium text-app">
                   {t("projects.link.pick", { name: projects.find((p) => p.id === linkFrom)?.name ?? "" })}
@@ -586,7 +620,7 @@ export function ProjectsPage() {
             </div>
           )}
         </div>
-        {panelOpen && (
+        {panelShown && (
           <CartographePanel botId={data?.cartographeBotId ?? null} bot={cartographe} width={width}
             chat={cartographe ? <ChatView bot={cartographe} /> : null} onClose={() => togglePanel(false)} onOpenInChat={openInChat} />
         )}
@@ -662,10 +696,13 @@ export function CartographePanel({ botId, bot, width, chat, onClose, onOpenInCha
   if (!botId) return null;
   const layout = panelLayout(width);
   return (
-    <aside className={layout.className} data-cartographe-panel={layout.narrow ? "overlay" : "side"} aria-label={t("projects.cartographe.ask")}>
+    <aside className={layout.className} data-cartographe-panel={layout.narrow ? "overlay" : "side"} aria-label={t("projects.cartographe.fab")}>
       <div className="flex items-center gap-2 border-b border-hairline/40 px-3 py-2">
-        <Sparkles size={15} className="shrink-0 text-ink-secondary" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{t("projects.cartographe.ask")}</span>
+        <CartographeHead bot={bot} size={26} />
+        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate text-[13px] font-medium text-ink">{t("projects.cartographe.title")}</span>
+          <span className="truncate text-[11.5px] text-ink-tertiary">{t("projects.cartographe.subtitle")}</span>
+        </span>
         <button type="button" onClick={onOpenInChat} className="rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink">{t("projects.cartographe.openInChat")}</button>
         <button type="button" onClick={onClose} aria-label={t("projects.cartographe.close")} title={t("projects.cartographe.close")}
           className="grid size-7 place-items-center rounded-lg text-ink-tertiary hover:bg-raised-hover hover:text-ink"><X size={15} /></button>
@@ -678,12 +715,23 @@ export function CartographePanel({ botId, bot, width, chat, onClose, onOpenInCha
 }
 
 
-export function CartographeButton<B extends CartographeBot>({ bot, onAsk }: { bot: B | null; onAsk: (bot: B) => void }) {
-  if (!bot) return null;
+type HeadBot = Partial<CartographeBot> & Partial<BotAvatarProps["bot"]>;
+
+/** The Cartographe's own avatar, as in the sidebar; a plain bot head while it does not exist. */
+function CartographeHead({ bot, size }: { bot: HeadBot | null; size: number }) {
+  return bot?.color
+    ? <BotAvatar bot={bot as BotAvatarProps["bot"]} size={size} label="" />
+    : <BotIcon size={Math.round(size * 0.7)} strokeWidth={1.75} className="shrink-0 text-ink-secondary" />;
+}
+
+/** Round button in the canvas' bottom-right corner: opens the Cartographe's chat, making it again if it was deleted. */
+export function CartographeFab({ bot, busy, open, onAsk }: { bot: HeadBot | null; busy: boolean; open: boolean; onAsk: () => void }) {
+  if (open) return null;
+  const label = t("projects.cartographe.fab");
   return (
-    <button type="button" onClick={() => onAsk(bot)} title={t("projects.cartographe.ask")} aria-label={t("projects.cartographe.ask")}
-      className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-ink px-3.5 text-[13px] font-medium text-app hover:bg-ink/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
-      <Sparkles size={15} /><span className="hidden md:inline">{t("projects.cartographe.ask")}</span>
+    <button type="button" data-cartographe-fab onClick={onAsk} disabled={busy} aria-busy={busy || undefined} title={label} aria-label={label}
+      className="pointer-events-auto grid size-11 shrink-0 place-items-center overflow-hidden rounded-full border border-black/10 bg-[#f7f7f5] text-[#1c1c1e] transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-progress">
+      {busy ? <Loader2 size={20} className="animate-spin" /> : bot?.color ? <CartographeHead bot={bot} size={34} /> : <BotIcon size={22} strokeWidth={1.75} />}
     </button>
   );
 }
