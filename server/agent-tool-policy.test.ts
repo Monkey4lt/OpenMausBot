@@ -16,6 +16,8 @@ describe("built-in agent tool read policy", () => {
       "list_waits",
       "skills_list",
       "list_unread_notifications",
+      "projects_read_map",
+      "projects_read_architecture",
     ]);
     for (const name of READ_ONLY_AGENT_TOOL_NAMES) {
       expect(isReadOnlyAgentTool(name)).toBe(true);
@@ -37,6 +39,7 @@ describe("built-in agent tool read policy", () => {
     // Read through their action tools, never as read-only names of their own.
     "list_triggers", "list_trigger_events", "session_read",
     "propose_team_setup", "propose_bot_deletion",
+    "projects_apply_changes", "projects_read", "projects_read_files",
     "list_secrets", "read_credentials", "list_bots_and_delete", "unknown", "",
     "mcp__agents__list_bots", "agents.list_bots", "LIST_BOTS", " list_bots",
   ])("does not infer read access for %s", (name) => {

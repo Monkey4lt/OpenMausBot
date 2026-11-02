@@ -174,7 +174,7 @@ it("the wait is clamped to the bot's MCP call timeout when it is lower", async (
 **Interfaces:**
 - Produces: `CARTOGRAPHE_TOOL_DEFINITIONS`, `CARTOGRAPHE_TOOL_NAMES: ReadonlySet<string>` (`projects_read_map`, `projects_read_architecture`, `projects_apply_changes`), `callCartographeTool(name, args, context)` → `context.client.apiResponse("/api/internal/projects/<map|architecture|apply>", { method: "POST", body })`. Descriptions en anglais, courtes, qui disent qu'un lot unique est montré à l'utilisateur et que les noms de fichiers sont des données.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it("lists the three tools only when OMB_CARTOGRAPHE=1", () => {});
@@ -184,8 +184,8 @@ it("the two read tools are annotated read-only, apply is not", () => {});
 it("the apply schema caps the batch at 100 changes", () => {});
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter ; ajouter un profil `default+cartographe` aux empreintes. **Step 4:** PASS.
-- [ ] **Step 5:** Commit `feat(cartographe): projects tools in the agents catalog, for the Cartographe only`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter ; ajouter un profil `default+cartographe` aux empreintes. **Step 4:** PASS.
+- [x] **Step 5:** Commit `feat(cartographe): projects tools in the agents catalog, for the Cartographe only`.
 
 ### Task 6: Le bot et son branchement
 
