@@ -91,7 +91,7 @@ describe("parseImports", () => {
     ["a URL inside a string is not a comment", "a.ts", 'const u = "http://x"; import y from "./y";', ["./y"]],
     ["words that only look like imports", "a.ts", 'const s = "import x from y"; myimport("./no"); x.require("./no");', []],
     ["Vue single-file component", "A.vue", '<script setup>\nimport B from "./B.vue";\n</script>', ["./B.vue"]],
-    ["Python lists, aliases, relative parents and comments", "a.py", "import os, sys as system  # import nope\nfrom .. import x\nfrom ..pkg.mod import (a, b)\n# import gone", ["os", "sys", "..", "..pkg.mod"]],
+    ["Python lists, aliases, relative parents and comments", "a.py", "import os, sys as system  # import nope\nfrom .. import x\nfrom ..pkg.mod import (a, b)\n# import gone", ["os", "sys", "..x", "..pkg.mod"]],
     ["Python docstring", "a.py", '"""\nimport nope\n"""\nimport real', ["real"]],
     ["Go single import with alias", "a.go", 'package main\n\nimport f "fmt"\nimport (\n  db "example.com/app/db" // the store\n  _ "embed"\n)', ["fmt", "example.com/app/db", "embed"]],
     ["Rust pub mod, grouped use and external crates", "lib.rs", "pub mod api;\nmod inline { }\nuse crate::api::{routes, auth};\nuse serde::Serialize;\n// use crate::gone;", ["self::api", "crate::api::routes", "crate::api::auth", "serde::Serialize"]],
@@ -337,4 +337,27 @@ describe("Rust use groups and super", () => {
     const files = new Set(["src/lib.rs", "src/net.rs", "src/net/tcp.rs"]);
     expect(resolveImport("src/net/tcp.rs", "super", files, {})).toBe("src/net.rs");
   });
+});
+
+describe("Python imported names", () => {
+  it.each([
+    ["import os; import sys", ["os", "sys"]],
+    ["import a, b", ["a", "b"]],
+    ["x = 1; import json  # import nope", ["json"]],
+    ["from . import views, models as m", [".views", ".models"]],
+    ["from .. import (\n  a,\n  b,\n)", ["..a", "..b"]],
+    ["from .pkg import mod", [".pkg"]],
+    ["from app.db import Session", ["app.db"]],
+    ["from x import *", ["x"]],
+  ])("%s", (text, specs) => expect(parseImports("app/x.py", text).map((r) => r.spec)).toEqual(specs));
+
+  const files = new Set(["app/__init__.py", "app/views.py", "app/models/__init__.py", "app/pkg/__init__.py", "app/pkg/mod.py", "app/db.py"]);
+  it.each([
+    ["from . import views gives the views module", ".views", "app/views.py"],
+    ["a sub-package", ".models", "app/models/__init__.py"],
+    ["a name inside a package falls back to the package", ".pkg.helper", "app/pkg/__init__.py"],
+    ["a module of a package", ".pkg.mod", "app/pkg/mod.py"],
+    ["a class from a module falls back to the module", "app.db.Session", "app/db.py"],
+    ["a missing module stays external", "requests.get", null],
+  ])("%s", (_name, spec, to) => expect(resolveImport("app/x.py", spec, files, {})).toBe(to));
 });

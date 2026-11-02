@@ -178,8 +178,8 @@ const JS_STATIC = /(?<![.\w$])(?:import|export)\s+(?:type\s+)?(?:[\w$*{},][\w$*{
 const JS_CALL = /(?<![.\w$])(?:import|require)\s*\(\s*(["'`])([^"'`\n]+)\1\s*\)/g;
 const CSS_IMPORT = /@(?:import|use|forward)\s+(?:url\(\s*)?(["'])([^"'\n]+)\1/g;
 const CSS_URL = /@import\s+url\(\s*([^"'\s)]+)\s*\)/g;
-const PY_IMPORT = /^[ \t]*import[ \t]+([^\n]+)/gm;
-const PY_FROM = /^[ \t]*from[ \t]+(\.*\w[\w.]*|\.+)[ \t]+import\b/gm;
+const PY_IMPORT = /(?:^|;)[ \t]*import[ \t]+([^\n;#]+)/gm;
+const PY_FROM = /(?:^|;)[ \t]*from[ \t]+(\.*\w[\w.]*|\.+)[ \t]+import[ \t]*(\([^()]{0,4000}\)|[^\n;#]+)/gm;
 const GO_SINGLE = /\bimport[ \t]+(?:[\w.]+[ \t]+)?"([^"\n]+)"/g;
 const GO_BLOCK = /\bimport\s*\(([^()]*)\)/g;
 const GO_SPEC = /(?:[\w.]+[ \t]+)?"([^"\n]+)"/g;
@@ -188,6 +188,11 @@ const RS_USE = /^[ \t]*(?:pub(?:\([^)\n]{0,40}\))?[ \t]+)?use[ \t]+([^;]{1,4000}
 
 function findAll(re: RegExp, code: string, group: number): Found[] {
   return [...code.matchAll(re)].map((m) => ({ spec: m[group], at: m.index }));
+}
+
+function pythonFromSpecs(module: string, names: string): string[] {
+  const listed = names.replace(/[()]/g, " ").split(",").map((part) => part.trim().split(/\s+/)[0]).filter((name) => /^\w+$/.test(name));
+  return /^\.+$/.test(module) && listed.length ? listed.map((name) => `${module}${name}`) : [module];
 }
 
 function expandRustUse(tree: string): string[] {
@@ -227,7 +232,7 @@ function findImports(language: Language, code: string): Found[] {
         .map((part) => part.trim().split(/\s+/)[0])
         .filter((name) => /^[\w.]+$/.test(name))
         .map((spec) => ({ spec, at: m.index }))),
-      ...findAll(PY_FROM, code, 1),
+      ...[...code.matchAll(PY_FROM)].flatMap((m) => pythonFromSpecs(m[1], m[2]).map((spec) => ({ spec, at: m.index }))),
     ];
     case "go": return [
       ...findAll(GO_SINGLE, code, 1),
@@ -323,10 +328,13 @@ function resolvePython(from: string, spec: string, files: ReadonlySet<string>): 
       base = dirnameOf(base);
     }
   }
-  const rest = spec.slice(dots).split(".").filter(Boolean).join("/");
-  const target = rest ? (base ? `${base}/${rest}` : rest) : base;
-  const candidates = rest ? [`${target}.py`, `${target}/__init__.py`] : [`${target ? `${target}/` : ""}__init__.py`];
-  return firstExisting(candidates, files);
+  const segments = spec.slice(dots).split(".").filter(Boolean);
+  for (let n = segments.length; n > 0; n--) {
+    const target = [base, ...segments.slice(0, n)].filter(Boolean).join("/");
+    const found = firstExisting([`${target}.py`, `${target}/__init__.py`], files);
+    if (found) return found;
+  }
+  return dots ? firstExisting([`${base ? `${base}/` : ""}__init__.py`], files) : null;
 }
 
 function rustModuleDir(from: string): string {
