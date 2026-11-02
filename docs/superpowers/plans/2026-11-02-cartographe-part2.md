@@ -132,7 +132,7 @@ it("the card line shows a description cleaned to one line of at most 160 chars",
 **Interfaces:**
 - Produces: `pieceBadges(pieces: Piece[], locale: "fr" | "en"): { label: string; tech: string; modules: string[] }[]` ; `ArchitectureView` affiche la fiche « En bref » (ou une invitation « Demander au Cartographe une fiche En bref »), les descriptions sous les noms, les étiquettes de pièces (clic → preuves en mots simples) et les flèches entre pièces avec un style distinct et une légende.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it("shows the En bref summary when present, and an invitation otherwise", () => {});
@@ -141,8 +141,8 @@ it("shows family and module descriptions under their names", () => {});
 it("draws piece links with the legend", () => {});
 ```
 
-- [ ] **Step 2:** FAIL. **Step 3:** Implémenter ; `generate-locale --check` PASS. **Step 4:** PASS ; captures (sans skin et Aurora) avec la fixture multi-langages enrichie d'une base et d'appels front → API.
-- [ ] **Step 5:** Commit `feat(cartographe): a plain-language project map`.
+- [x] **Step 2:** FAIL. **Step 3:** Implémenter ; `generate-locale --check` PASS. **Step 4:** PASS ; captures (sans skin et Aurora) avec la fixture multi-langages enrichie d'une base et d'appels front → API.
+- [x] **Step 5:** Commit `feat(cartographe): a plain-language project map`.
 
 ### Task 14: Vérification et relecture
 

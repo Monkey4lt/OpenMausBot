@@ -1,7 +1,7 @@
 import { classify } from "./projects-architecture.ts";
 import type { Architecture, FileImports } from "./projects-architecture.ts";
 import { PIECE_KINDS, PIECE_LABELS } from "../shared/projects-pieces.ts";
-import type { Piece, PieceKind, PieceLink } from "../shared/projects-pieces.ts";
+import type { EvidenceCode, Piece, PieceKind, PieceLink } from "../shared/projects-pieces.ts";
 
 export type { Piece, PieceKind, PieceLink };
 
@@ -82,25 +82,25 @@ const COMPOSE_IMAGES: Readonly<Record<string, { kind: PieceKind; tech: string }>
   redis: { kind: "cache", tech: "Redis" },
 };
 
-interface FileCue { kind: PieceKind; tech: string; reason: string; test: (path: string, name: string) => boolean }
+interface FileCue { kind: PieceKind; tech: string; code: EvidenceCode; reason: string; test: (path: string, name: string) => boolean }
 
 const COMPOSE_FILE = /^(docker-)?compose[\w.-]{0,64}\.ya?ml$/i;
 
 const FILE_CUES: readonly FileCue[] = [
-  { kind: "ui", tech: "Vue", reason: "Vue component", test: (_, name) => /\.vue$/i.test(name) },
-  { kind: "ui", tech: "Svelte", reason: "Svelte component", test: (_, name) => /\.svelte$/i.test(name) },
-  { kind: "ui", tech: "", reason: "screen component", test: (_, name) => /\.tsx$/i.test(name) },
-  { kind: "ui", tech: "", reason: "web page", test: (_, name) => /\.html$/i.test(name) },
-  { kind: "database", tech: "Prisma", reason: "Prisma schema", test: (_, name) => name.toLowerCase() === "schema.prisma" },
-  { kind: "database", tech: "", reason: "database migration", test: (path) => path.toLowerCase().split("/").slice(0, -1).includes("migrations") },
-  { kind: "database", tech: "", reason: "SQL file", test: (_, name) => /\.sql$/i.test(name) },
-  { kind: "deploy", tech: "Docker", reason: "Docker build file", test: (_, name) => /^dockerfile|\.dockerfile$/i.test(name) },
-  { kind: "deploy", tech: "Docker", reason: "Docker Compose file", test: (_, name) => COMPOSE_FILE.test(name) },
-  { kind: "deploy", tech: "GitHub Actions", reason: "GitHub workflow", test: (path) => /(^|\/)\.github\/workflows\/[^/]+$/.test(path) },
-  { kind: "deploy", tech: "Vercel", reason: "Vercel settings", test: (_, name) => name.toLowerCase() === "vercel.json" },
-  { kind: "deploy", tech: "Netlify", reason: "Netlify settings", test: (_, name) => name.toLowerCase() === "netlify.toml" },
-  { kind: "deploy", tech: "Fly.io", reason: "Fly.io settings", test: (_, name) => name.toLowerCase() === "fly.toml" },
-  { kind: "deploy", tech: "Procfile", reason: "list of processes to start online", test: (_, name) => name === "Procfile" },
+  { kind: "ui", tech: "Vue", code: "vue_component", reason: "Vue component", test: (_, name) => /\.vue$/i.test(name) },
+  { kind: "ui", tech: "Svelte", code: "svelte_component", reason: "Svelte component", test: (_, name) => /\.svelte$/i.test(name) },
+  { kind: "ui", tech: "", code: "screen_component", reason: "screen component", test: (_, name) => /\.tsx$/i.test(name) },
+  { kind: "ui", tech: "", code: "web_page", reason: "web page", test: (_, name) => /\.html$/i.test(name) },
+  { kind: "database", tech: "Prisma", code: "prisma_schema", reason: "Prisma schema", test: (_, name) => name.toLowerCase() === "schema.prisma" },
+  { kind: "database", tech: "", code: "migration", reason: "database migration", test: (path) => path.toLowerCase().split("/").slice(0, -1).includes("migrations") },
+  { kind: "database", tech: "", code: "sql_file", reason: "SQL file", test: (_, name) => /\.sql$/i.test(name) },
+  { kind: "deploy", tech: "Docker", code: "docker_build", reason: "Docker build file", test: (_, name) => /^dockerfile|\.dockerfile$/i.test(name) },
+  { kind: "deploy", tech: "Docker", code: "compose_file", reason: "Docker Compose file", test: (_, name) => COMPOSE_FILE.test(name) },
+  { kind: "deploy", tech: "GitHub Actions", code: "ci_workflow", reason: "GitHub workflow", test: (path) => /(^|\/)\.github\/workflows\/[^/]+$/.test(path) },
+  { kind: "deploy", tech: "Vercel", code: "vercel", reason: "Vercel settings", test: (_, name) => name.toLowerCase() === "vercel.json" },
+  { kind: "deploy", tech: "Netlify", code: "netlify", reason: "Netlify settings", test: (_, name) => name.toLowerCase() === "netlify.toml" },
+  { kind: "deploy", tech: "Fly.io", code: "fly", reason: "Fly.io settings", test: (_, name) => name.toLowerCase() === "fly.toml" },
+  { kind: "deploy", tech: "Procfile", code: "procfile", reason: "list of processes to start online", test: (_, name) => name === "Procfile" },
 ];
 
 const MAX_EVIDENCE = 5;
@@ -306,7 +306,7 @@ function importsCue(cue: PackageCue, eco: Ecosystem, key: string): boolean {
   return cueMatches(eco, cue.deps[eco], key);
 }
 
-interface Draft { kind: PieceKind; tech: string; evidence: Map<string, string>; modules: Set<string> }
+interface Draft { kind: PieceKind; tech: string; evidence: Map<string, { code: EvidenceCode; reason: string }>; modules: Set<string> }
 
 /** One piece per (kind, tech) from the closed cue lists; a piece with no tech is dropped when a named one of its kind is found. */
 export function detectPieces(input: { paths: string[]; manifests: Record<string, string>; read: FileImports[]; arch: Architecture }): Piece[] {
@@ -318,8 +318,8 @@ export function detectPieces(input: { paths: string[]; manifests: Record<string,
     return found;
   };
   const moduleOf = new Map(input.arch.files.map((f) => [f.path, f.module]));
-  const addEvidence = (d: Draft, path: string, reason: string, withModule: boolean) => {
-    if (!d.evidence.has(path)) d.evidence.set(path, reason);
+  const addEvidence = (d: Draft, path: string, code: EvidenceCode, reason: string, withModule: boolean) => {
+    if (!d.evidence.has(path)) d.evidence.set(path, { code, reason });
     const module = withModule ? moduleOf.get(path) : undefined;
     if (module) d.modules.add(module);
   };
@@ -336,7 +336,7 @@ export function detectPieces(input: { paths: string[]; manifests: Record<string,
     if (eco === "compose") {
       for (const image of composeImages(text)) {
         const cue = Object.hasOwn(COMPOSE_IMAGES, image) ? COMPOSE_IMAGES[image] : undefined;
-        if (cue) addEvidence(draft(cue.kind, cue.tech), path, `runs the ${image} image`, true);
+        if (cue) addEvidence(draft(cue.kind, cue.tech), path, "compose_image", `runs the ${image} image`, true);
       }
       continue;
     }
@@ -346,7 +346,7 @@ export function detectPieces(input: { paths: string[]; manifests: Record<string,
       const key = normalize(eco, name);
       for (const cue of cuesFor(eco, key)) {
         const d = draft(cue.kind, cue.tech);
-        addEvidence(d, path, `depends on ${name}`, false);
+        addEvidence(d, path, "dependency", `depends on ${name}`, false);
         for (const file of scoped) {
           if (![...file.keys].some((k) => importsCue(cue, file.eco, k))) continue;
           const module = moduleOf.get(file.path);
@@ -358,13 +358,13 @@ export function detectPieces(input: { paths: string[]; manifests: Record<string,
 
   for (const path of [...input.paths].sort(byText)) {
     const name = baseName(path);
-    for (const cue of FILE_CUES) if (cue.test(path, name)) addEvidence(draft(cue.kind, cue.tech), path, cue.reason, true);
+    for (const cue of FILE_CUES) if (cue.test(path, name)) addEvidence(draft(cue.kind, cue.tech), path, cue.code, cue.reason, true);
   }
 
   const testModules = input.arch.modules.filter((m) => m.family === "tests").map((m) => m.id);
   if (testModules.length) {
     const tests = draft("tests", "");
-    for (const f of input.arch.files) if (testModules.includes(f.module)) addEvidence(tests, f.path, "test file", true);
+    for (const f of input.arch.files) if (testModules.includes(f.module)) addEvidence(tests, f.path, "test_file", "test file", true);
   }
 
   const named = new Set([...drafts.values()].filter((d) => d.tech).map((d) => d.kind));
@@ -375,7 +375,7 @@ export function detectPieces(input: { paths: string[]; manifests: Record<string,
     .map((d) => ({
       kind: d.kind,
       tech: d.tech,
-      evidence: [...d.evidence].sort(([a], [b]) => byText(a, b)).slice(0, MAX_EVIDENCE).map(([path, reason]) => ({ path, reason })),
+      evidence: [...d.evidence].sort(([a], [b]) => byText(a, b)).slice(0, MAX_EVIDENCE).map(([path, { code, reason }]) => ({ path, code, reason })),
       modules: moduleOrder.filter((id) => d.modules.has(id)),
     }));
 }

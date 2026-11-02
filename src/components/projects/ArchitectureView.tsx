@@ -1,11 +1,11 @@
-import { ArrowLeft, ChevronRight, File, Loader2, Pencil, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ChevronRight, File, Loader2, Pencil, Sparkles, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { cn } from "@/lib/cn";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 import {
-  FAMILY_COLORS, FAMILY_ORDER, MAX_READ_FILES, edgeCurve, edgeWidth, layoutLevel, levelOf, moduleLabel, withFamilyName, withModuleFamily,
-  type Architecture, type ArchOverrides, type Family, type LevelNode,
+  FAMILY_COLORS, FAMILY_ORDER, MAX_READ_FILES, edgeCurve, edgeWidth, evidenceLine, layoutLevel, levelOf, moduleLabel, pieceBadges, pieceLinkRows, withFamilyName, withModuleFamily,
+  type Architecture, type ArchitectureWithPieces, type ArchOverrides, type Family, type LevelNode, type Piece, type PieceLink,
 } from "@/lib/projects-architecture-view";
 import { api } from "@/state/api";
 import type { LocaleKey } from "@/locales";
@@ -20,17 +20,24 @@ export function familyLabel(arch: Architecture, family: Family): string {
   return name && name !== family ? name : t(`projects.map.family.${family}` as LocaleKey);
 }
 
-export function ArchitectureView<S extends SavedState>({ project, onBack, state, onSave, initial, initialFocus = {}, initialFile = null }: {
+const locale = (): "fr" | "en" => (activeLocale().startsWith("fr") ? "fr" : "en");
+
+export function ArchitectureView<S extends SavedState>({ project, onBack, state, onSave, initial, initialFocus = {}, initialFile = null, initialPiece = null, onAskCartographe }: {
   project: { id: string; name: string };
   onBack: () => void;
   /** The page's current saved layout; a move or rename is applied to it and handed to onSave, which writes it at once. */
   state?: S | null;
   onSave?: (next: S) => Promise<void>;
-  initial?: Architecture;
+  initial?: Architecture | ArchitectureWithPieces;
   initialFocus?: Focus;
   initialFile?: string | null;
+  initialPiece?: number | null;
+  /** Opens the Cartographe with this project in mind; without it the En bref invitation is not shown. */
+  onAskCartographe?: () => void;
 }) {
-  const [arch, setArch] = useState<Architecture | null>(initial ?? null);
+  const [arch, setArch] = useState<(Architecture & Partial<Pick<ArchitectureWithPieces, "pieces" | "pieceLinks">>) | null>(initial ?? null);
+  const [piece, setPiece] = useState<number | null>(initialPiece);
+  const own = state?.overrides && Object.hasOwn(state.overrides, project.id) ? state.overrides[project.id] : undefined;
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<Focus>(initialFocus);
   const [file, setFile] = useState<string | null>(initialFile);
@@ -40,7 +47,7 @@ export function ArchitectureView<S extends SavedState>({ project, onBack, state,
   const load = useCallback(async () => {
     setError(null);
     try {
-      setArch(await api<Architecture>(`/api/projects/architecture?id=${encodeURIComponent(project.id)}`, { timeoutMs: 180_000 }));
+      setArch(await api<ArchitectureWithPieces>(`/api/projects/architecture?id=${encodeURIComponent(project.id)}`, { timeoutMs: 180_000 }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -105,9 +112,13 @@ export function ArchitectureView<S extends SavedState>({ project, onBack, state,
         </div>
       )}
 
+      {arch && !focus.family && (
+        <ProjectSummary summary={own?.summary} pieces={arch.pieces ?? []} links={arch.pieceLinks ?? []} piece={piece} onPiece={setPiece} onAsk={onAskCartographe} />
+      )}
+
       {arch && (
         <div className="flex min-h-0 flex-1">
-          <MapCanvas arch={arch} focus={focus} menu={menu} setMenu={setMenu} onMove={moveModule}
+          <MapCanvas arch={arch} focus={focus} menu={menu} setMenu={setMenu} onMove={moveModule} texts={own}
             onOpen={(id) => { setFile(null); setFocus(focus.family ? { family: focus.family, module: id } : { family: id as Family }); }} />
           {focus.module && <FilePanel arch={arch} module={focus.module} file={file} onPick={setFile} />}
         </div>
@@ -118,9 +129,100 @@ export function ArchitectureView<S extends SavedState>({ project, onBack, state,
   );
 }
 
-function MapCanvas({ arch, focus, menu, setMenu, onMove, onOpen }: {
-  arch: Architecture; focus: Focus; menu: string | null; setMenu: (id: string | null) => void;
-  onMove: (moduleId: string, family: Family) => void; onOpen: (id: string) => void;
+function ProjectSummary({ summary, pieces, links, piece, onPiece, onAsk }: {
+  summary: string | undefined; pieces: Piece[]; links: PieceLink[]; piece: number | null; onPiece: (index: number | null) => void; onAsk?: () => void;
+}) {
+  const badges = pieceBadges(pieces, locale());
+  const chosen = piece === null ? undefined : pieces[piece];
+  if (!summary && !onAsk && !badges.length) return null;
+  return (
+    <section className="border-b border-hairline/40 px-4 py-3">
+      {summary ? (
+        <div className="mb-3 max-w-[760px]">
+          <h3 className="mb-1 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-tertiary">{t("projects.map.brief")}</h3>
+          <p className="whitespace-pre-line text-[13.5px] leading-relaxed text-ink">{summary}</p>
+        </div>
+      ) : onAsk && (
+        <button type="button" onClick={onAsk} className="mb-3 inline-flex h-8 items-center gap-1.5 rounded-full border border-hairline px-3 text-[12.5px] text-ink-secondary hover:bg-raised-hover hover:text-ink">
+          <Sparkles size={14} />{t("projects.map.briefAsk")}
+        </button>
+      )}
+      {badges.length > 0 && (
+        <div>
+          <h3 className="mb-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-tertiary">{t("projects.map.pieces")}</h3>
+          <div className="flex flex-wrap gap-1.5" title={t("projects.map.piecesHint")}>
+            {badges.map((b, i) => (
+              <button key={`${b.kind}:${b.tech}`} type="button" data-piece={b.kind} onClick={() => onPiece(piece === i ? null : i)} aria-pressed={piece === i}
+                className={cn("inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12.5px]", piece === i ? "border-accent-border bg-raised text-ink" : "border-hairline bg-card text-ink hover:bg-raised-hover")}>
+                <span className="size-2 rounded-full" style={{ background: b.color }} />
+                <span>{b.label}</span>
+                {b.tech && <span className="font-mono text-[11px] text-ink-tertiary">{b.tech}</span>}
+              </button>
+            ))}
+          </div>
+          <PieceLinksLegend links={links} />
+          {chosen && (
+            <div className="mt-2 max-w-[760px] rounded-xl border border-hairline bg-card px-3 py-2 text-[12.5px] text-ink-secondary">
+              <p className="mb-1 font-medium text-ink">{t("projects.map.pieceEvidence", { name: badges[piece!]!.label })}</p>
+              <ul className="flex flex-col gap-0.5">{chosen.evidence.map((e) => <li key={e.path} className="break-all">{evidenceLine(e, locale())}</li>)}</ul>
+              {chosen.modules.length > 0 && <p className="mt-1 text-ink-tertiary">{t("projects.map.pieceModules", { modules: [...new Set(chosen.modules.map(plainModule))].join(", ") })}</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PieceLinksLegend({ links }: { links: PieceLink[] }) {
+  if (!links.length) return null;
+  return (
+    <div className="mt-2.5">
+      <h3 className="mb-1 flex items-center gap-2 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-tertiary">
+        <svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" stroke={PIECE_LINK_COLOR} strokeWidth="2" strokeDasharray="2 4" strokeLinecap="round" /></svg>
+        {t("projects.map.pieceLinks")}
+      </h3>
+      <ul className="flex flex-wrap gap-x-5 gap-y-1">
+        {pieceLinkRows(links, locale()).map((row) => (
+          <li key={`${row.from}->${row.to}`} data-piece-link={`${row.from}->${row.to}`} className="flex items-center gap-2 text-[12.5px] text-ink">
+            <span>{row.text}</span>
+            <span className="font-mono text-[11px] text-ink-tertiary">{t(row.from === "ui" && row.to === "api" ? "projects.map.pieceLinkCalls" : "projects.map.pieceLinkFiles", { count: row.count })}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const PIECE_LINK_COLOR = "#e0a33a";
+
+const plainModule = (id: string) => (id.startsWith("(root)/") ? t("projects.map.rootFolder") : moduleLabel(id));
+
+/** Families that only describe a project, never where a piece's code runs. */
+const NOT_CODE: ReadonlySet<Family> = new Set(["config", "docs", "assets", "i18n", "scripts"]);
+
+/** The two families a piece link is drawn between: the code families holding most of each piece's modules; null when they are the same. */
+function pieceLinkEnds(arch: Architecture & { pieces?: Piece[] }, link: PieceLink): [Family, Family] | null {
+  const familyOfModule = new Map(arch.modules.map((m) => [m.id, m.family]));
+  const mainFamily = (kind: Piece["kind"]): Family | undefined => {
+    const counts = new Map<Family, number>();
+    for (const p of arch.pieces ?? []) {
+      if (p.kind !== kind) continue;
+      for (const m of p.modules) {
+        const f = familyOfModule.get(m);
+        if (f && !NOT_CODE.has(f)) counts.set(f, (counts.get(f) ?? 0) + 1);
+      }
+    }
+    return [...counts].sort((a, b) => b[1] - a[1] || FAMILY_ORDER.indexOf(a[0]) - FAMILY_ORDER.indexOf(b[0]))[0]?.[0];
+  };
+  const from = mainFamily(link.from);
+  const to = mainFamily(link.to);
+  return from && to && from !== to ? [from, to] : null;
+}
+
+function MapCanvas({ arch, focus, menu, setMenu, onMove, onOpen, texts }: {
+  arch: Architecture & Partial<Pick<ArchitectureWithPieces, "pieces" | "pieceLinks">>; focus: Focus; menu: string | null; setMenu: (id: string | null) => void;
+  onMove: (moduleId: string, family: Family) => void; onOpen: (id: string) => void; texts?: ArchOverrides;
 }) {
   const level = levelOf(arch, focus.module ? { family: focus.family } : focus);
   const rects = layoutLevel(level, NODE);
@@ -130,6 +232,10 @@ function MapCanvas({ arch, focus, menu, setMenu, onMove, onOpen }: {
   const height = Math.max(...all.map((r) => r.y + r.h), 0) + 80;
   const colorOf = (node: LevelNode) => FAMILY_COLORS[focus.family ?? (node.id as Family)] ?? FAMILY_COLORS.other;
   const atTop = !focus.family;
+  const describe = (id: string): string | undefined => {
+    if (atTop) return texts?.familyText?.[id as Family];
+    return texts?.moduleText && Object.hasOwn(texts.moduleText, id) ? texts.moduleText[id] : undefined;
+  };
   return (
     <div className="relative min-w-0 flex-1 overflow-auto"
       style={{ backgroundImage: "linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)", backgroundSize: "28px 28px" }}>
@@ -138,7 +244,15 @@ function MapCanvas({ arch, focus, menu, setMenu, onMove, onOpen }: {
         <svg className="pointer-events-none absolute inset-0 overflow-visible" width={width} height={height}>
           <defs>
             <marker id="pa-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#8a8a8a" /></marker>
+            <marker id="pa-piece-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill={PIECE_LINK_COLOR} /></marker>
           </defs>
+          {atTop && (arch.pieceLinks ?? []).map((link) => {
+            const ends = pieceLinkEnds(arch, link);
+            const A = ends && rects[ends[0]], B = ends && rects[ends[1]];
+            if (!A || !B) return null;
+            const { d } = edgeCurve(A, B, -48);
+            return <path key={`piece:${link.from}->${link.to}`} data-piece-arrow={`${link.from}->${link.to}`} d={d} fill="none" stroke={PIECE_LINK_COLOR} strokeWidth={2} strokeDasharray="2 5" strokeLinecap="round" markerEnd="url(#pa-piece-arrow)" />;
+          })}
           {level.edges.map((e) => {
             const A = rects[e.from], B = rects[e.to];
             if (!A || !B) return null;
@@ -165,6 +279,7 @@ function MapCanvas({ arch, focus, menu, setMenu, onMove, onOpen }: {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14.5px] font-semibold text-ink">{label}</span>
+                  {describe(node.id) && <span className="block truncate text-[11.5px] text-ink-secondary" title={describe(node.id)}>{describe(node.id)}</span>}
                   <span className="block truncate font-mono text-[11px] text-ink-tertiary">{t("projects.map.files", { count: node.files })}</span>
                 </span>
               </button>

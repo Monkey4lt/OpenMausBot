@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildArchitecture, parseImports } from "./projects-architecture.ts";
 import { detectPieces, findCalls, findRoutes, isManifestPath, languagesOf, linkPieces, pieceDiagramHtml, routeMatches } from "./projects-inspect.ts";
-import type { Piece } from "../shared/projects-pieces.ts";
+import { EVIDENCE_CODES, type Piece } from "../shared/projects-pieces.ts";
 
 function project(files: Record<string, string>) {
   const paths = Object.keys(files);
@@ -29,7 +29,7 @@ describe("detectPieces", () => {
       "src/components/A.tsx": 'import React from "react";\n', "src/components/B.tsx": 'import { useState } from "react";\n', "src/components/C.tsx": "export const c = 1;\n",
     });
     expect(kinds(list)).toEqual(["ui:React"]);
-    expect(list[0]).toEqual({ kind: "ui", tech: "React", evidence: [{ path: "package.json", reason: "depends on React" }], modules: ["src/components"] });
+    expect(list[0]).toEqual({ kind: "ui", tech: "React", evidence: [{ path: "package.json", code: "dependency", reason: "depends on React" }], modules: ["src/components"] });
   });
 
   it("finds a server, a database, a cache, background tasks and an outside service from package.json", () => {
@@ -74,7 +74,7 @@ describe("detectPieces", () => {
     });
     expect(kinds(list)).toEqual(["tests:", "deploy:Docker", "deploy:Fly.io", "deploy:GitHub Actions", "deploy:Netlify", "deploy:Procfile", "deploy:Vercel"]);
     expect(find(list, "tests", "")!.modules).toEqual(["tests"]);
-    expect(find(list, "deploy", "GitHub Actions")!.evidence).toEqual([{ path: ".github/workflows/ci.yml", reason: "GitHub workflow" }]);
+    expect(find(list, "deploy", "GitHub Actions")!.evidence).toEqual([{ path: ".github/workflows/ci.yml", code: "ci_workflow", reason: "GitHub workflow" }]);
   });
 
   it("finds a database from migrations, SQL files and a Prisma schema", () => {
@@ -101,7 +101,7 @@ describe("detectPieces", () => {
       "api/db/pool.ts": 'import { Pool } from "pg";\n', "api/db/q.ts": "", "api/db/r.ts": "",
     });
     expect(kinds(list)).toEqual(["ui:React", "api:Express", "database:PostgreSQL"]);
-    expect(find(list, "ui", "React")).toEqual({ kind: "ui", tech: "React", evidence: [{ path: "web/package.json", reason: "depends on react" }], modules: ["web/src/components"] });
+    expect(find(list, "ui", "React")).toEqual({ kind: "ui", tech: "React", evidence: [{ path: "web/package.json", code: "dependency", reason: "depends on react" }], modules: ["web/src/components"] });
     expect(find(list, "api", "Express")!.modules).toEqual(["api/routes"]);
     expect(find(list, "database", "PostgreSQL")!.modules).toEqual(["api/db"]);
   });
@@ -111,7 +111,18 @@ describe("detectPieces", () => {
       "docker-compose.prod.yml": 'services:\n  db:\n    image: "postgres:16-alpine"\n  cache:\n    image: library/redis@sha256:abc\n  web:\n    image: ghcr.io/me/web:1 # postgres\n',
     });
     expect(kinds(list)).toEqual(["database:PostgreSQL", "cache:Redis", "deploy:Docker"]);
-    expect(find(list, "database", "PostgreSQL")!.evidence).toEqual([{ path: "docker-compose.prod.yml", reason: "runs the postgres image" }]);
+    expect(find(list, "database", "PostgreSQL")!.evidence).toEqual([{ path: "docker-compose.prod.yml", code: "compose_image", reason: "runs the postgres image" }]);
+  });
+
+  it("gives every evidence entry a code from the closed list", () => {
+    const list = pieces({
+      "package.json": JSON.stringify({ dependencies: { react: "1" } }), "src/App.vue": "", "a.svelte": "", "b.tsx": "", "c.html": "",
+      "prisma/schema.prisma": "", "migrations/1.sql": "", "q.sql": "", "Dockerfile": "", "compose.yml": "image: redis", ".github/workflows/x.yml": "",
+      "vercel.json": "", "netlify.toml": "", "fly.toml": "", "Procfile": "", "tests/a.test.ts": "", "tests/b.test.ts": "", "tests/c.test.ts": "",
+    });
+    const codes = new Set(list.flatMap((p) => p.evidence.map((e) => e.code)));
+    for (const code of codes) expect(EVIDENCE_CODES).toContain(code);
+    expect(codes.size).toBeGreaterThan(10);
   });
 
   it("keeps at most 5 evidence entries per piece, in path order", () => {

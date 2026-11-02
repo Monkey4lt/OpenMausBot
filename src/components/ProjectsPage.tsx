@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 import { prependComposerDraft } from "@/lib/drafts";
 import { t } from "@/lib/i18n";
 import { listenLiveFrames } from "@/lib/live-events";
-import type { ArchOverrides } from "@/lib/projects-architecture-view";
+import { summaryPreview, type ArchOverrides } from "@/lib/projects-architecture-view";
 import { arrangeByGroup, edgePoint, groupZone } from "@/lib/projects-map";
 import { createMapSync } from "@/lib/projects-map-sync";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -455,7 +455,8 @@ export function ProjectsPage() {
           </div>
         </aside>
 
-        {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow} />}
+        {mapOf && <ArchitectureView project={mapOf} onBack={() => setMapOf(null)} state={S} onSave={saveNow}
+          onAskCartographe={cartographe ? () => askCartographe(cartographe, { prependDraft: prependComposerDraft, showChat: () => dispatch({ type: "showChat" }), openBot: (opened) => openBot(dispatch, opened, showThreads) }) : undefined} />}
         {/* toile */}
         <div ref={wrapRef} className={cn("relative min-w-0 flex-1 overflow-auto", mapOf && "hidden")}
           style={{ backgroundImage: "linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)", backgroundSize: "28px 28px" }}>
@@ -536,6 +537,7 @@ export function ProjectsPage() {
                       <div className="truncate font-mono text-[11px] text-ink-tertiary">
                         {multiSource && `${sourceLabel(p.sourceId)} · `}{t("projects.counts", { dirs: p.dirs, files: p.files })}{p.truncated && "+"}
                       </div>
+                      <ProjectBlockSummary summary={S.overrides && Object.hasOwn(S.overrides, p.id) ? S.overrides[p.id]!.summary : undefined} />
                     </div>
                     <ProjectBlockHeaderActions name={p.name} linking={linkFrom === p.id} collapsed={collapsed}
                       onMap={() => setMapOf(p)} onLink={() => void onLink(p.id)}
@@ -625,6 +627,13 @@ export function MapChangedNotice({ onClose }: { onClose: () => void }) {
       <button type="button" className="ui-icon-button" aria-label={t("projects.mapChanged.close")} title={t("projects.mapChanged.close")} onClick={onClose}><X size={14} /></button>
     </div>
   );
+}
+
+/** The first line of the project's En bref card, under its name in the overview. */
+export function ProjectBlockSummary({ summary }: { summary: string | undefined }) {
+  const line = summaryPreview(summary);
+  if (!line) return null;
+  return <div className="mt-0.5 truncate text-[12px] text-ink-secondary" title={summary}>{line}</div>;
 }
 
 export function ProjectBlockHeaderActions({ name, linking, collapsed, onMap, onLink, onFold }: {

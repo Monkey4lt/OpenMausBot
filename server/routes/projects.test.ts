@@ -238,6 +238,18 @@ describe("GET /api/projects/architecture", () => {
     expect(body.truncated).toBe(false);
   });
 
+  it("adds the project's pieces and the links between them", async () => {
+    const root = localProject({
+      "package.json": JSON.stringify({ dependencies: { react: "18", express: "4" } }),
+      "web/Orders.tsx": 'fetch("/api/orders");\n',
+      "server/orders.ts": 'app.get("/api/orders", h);\n',
+    });
+    const route = await withSources([{ id: "s1", label: "Here", kind: "local", path: root }]);
+    const { body } = await architecture(route, "s1:api") as unknown as { body: { pieces: { kind: string; tech: string }[]; pieceLinks: { from: string; to: string; count: number }[] } };
+    expect(body.pieces.map((p) => `${p.kind}:${p.tech}`)).toEqual(["ui:React", "api:Express"]);
+    expect(body.pieceLinks).toEqual([{ from: "ui", to: "api", count: 1, examples: [{ from: "web/Orders.tsx", to: "server/orders.ts" }] }]);
+  });
+
   it("uses the saved family names of that project", async () => {
     const root = localProject({ "src/App.tsx": "" });
     const route = await withSources([{ id: "s1", label: "Here", kind: "local", path: root }], { "s1:api": { moduleFamily: {}, familyNames: { ui: "Front" } } });

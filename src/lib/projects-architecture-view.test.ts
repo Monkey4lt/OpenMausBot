@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { FAMILY_ORDER as SERVER_FAMILY_ORDER } from "../../server/projects-architecture.ts";
 import * as wire from "../../shared/projects-architecture";
+import * as wirePieces from "../../shared/projects-pieces";
 
 import {
-  FAMILY_COLORS, FAMILY_ORDER, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, moduleLabel, withFamilyName, withModuleFamily, type Architecture,
+  EVIDENCE_WORDS, FAMILY_COLORS, FAMILY_ORDER, PIECE_COLORS, evidenceLine, pieceBadges, pieceLinkRows, summaryPreview, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, moduleLabel, withFamilyName, withModuleFamily, type Architecture,
 } from "./projects-architecture-view";
 
 const arch: Architecture = {
@@ -170,5 +171,42 @@ describe("edgeCurve", () => {
     expect(there.d).toBe("M108 25 Q200 -15 292 25");
     expect(there.label).toEqual([200, 5]);
     expect(back.label[1]).toBeGreaterThan(25);
+  });
+});
+
+describe("pieces", () => {
+  const pieces = [
+    { kind: "ui" as const, tech: "React", evidence: [{ path: "package.json", code: "dependency" as const, reason: "depends on react" }], modules: ["src/ui"] },
+    { kind: "database" as const, tech: "PostgreSQL", evidence: [{ path: "compose.yml", code: "compose_image" as const, reason: "runs the postgres image" }], modules: [] },
+    { kind: "database" as const, tech: "", evidence: [{ path: "migrations/1.sql", code: "migration" as const, reason: "database migration" }], modules: [] },
+  ];
+
+  it("labels pieces with the plain word first and the tech second", () => {
+    expect(pieceBadges(pieces, "fr")).toEqual([
+      { kind: "ui", label: "Site / interface", tech: "React", modules: ["src/ui"], color: PIECE_COLORS.ui },
+      { kind: "database", label: "Base de données", tech: "PostgreSQL", modules: [], color: PIECE_COLORS.database },
+      { kind: "database", label: "Base de données", tech: "", modules: [], color: PIECE_COLORS.database },
+    ]);
+    expect(pieceBadges(pieces, "en")[0]).toMatchObject({ label: "Website / interface", tech: "React" });
+  });
+
+  it("says each piece of evidence in plain words, in both languages", () => {
+    expect(evidenceLine(pieces[0]!.evidence[0]!, "fr")).toBe("package.json : la liste des outils du projet le demande");
+    expect(evidenceLine(pieces[1]!.evidence[0]!, "fr")).toBe("compose.yml : un service lancé avec Docker");
+    expect(evidenceLine(pieces[2]!.evidence[0]!, "en")).toBe("migrations/1.sql: a change to the database's layout");
+    expect(Object.keys(EVIDENCE_WORDS.fr).sort()).toEqual([...wirePieces.EVIDENCE_CODES].sort());
+    expect(Object.keys(EVIDENCE_WORDS.en).sort()).toEqual([...wirePieces.EVIDENCE_CODES].sort());
+  });
+
+  it("lists piece links with plain words and counts, skipping kinds no piece has", () => {
+    expect(pieceLinkRows([{ from: "ui", to: "api", count: 3, examples: [] }, { from: "api", to: "database", count: 1, examples: [] }], "fr"))
+      .toEqual([{ from: "ui", to: "api", text: "Site / interface → Serveur / API", count: 3 }, { from: "api", to: "database", text: "Serveur / API → Base de données", count: 1 }]);
+  });
+
+  it("previews a summary as its first line, cut to 120", () => {
+    expect(summaryPreview("Une boutique en ligne.\nAvec un site.")).toBe("Une boutique en ligne.");
+    expect(summaryPreview("\n\n  Deuxième ligne")).toBe("Deuxième ligne");
+    expect(summaryPreview(undefined)).toBe("");
+    expect(summaryPreview("x".repeat(300))).toBe(`${"x".repeat(119)}…`);
   });
 });

@@ -2823,5 +2823,15 @@
   "projects.map.retry": "Réessayer",
   "projects.map.empty": "Rien à montrer ici.",
   "projects.map.pickFile": "Choisissez un fichier pour voir ce qu’il utilise et qui l’utilise.",
-  "projects.map.fileList": "Fichiers de {name}"
+  "projects.map.fileList": "Fichiers de {name}",
+  "projects.map.brief": "En bref",
+  "projects.map.briefAsk": "Demander au Cartographe une fiche En bref",
+  "projects.map.pieces": "Les pièces du projet",
+  "projects.map.piecesHint": "Cliquez sur une pièce pour voir d’où elle vient.",
+  "projects.map.pieceEvidence": "Pourquoi « {name} »",
+  "projects.map.pieceModules": "Dans : {modules}",
+  "projects.map.rootFolder": "dossier principal",
+  "projects.map.pieceLinks": "Liens entre pièces",
+  "projects.map.pieceLinkCalls": "{count} appels",
+  "projects.map.pieceLinkFiles": "{count} fichiers"
 }

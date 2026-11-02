@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadLocale, setLocale, t } from "@/lib/i18n";
-import { askCartographe, CartographeButton, MapChangedNotice, ProjectBlockHeaderActions } from "./ProjectsPage";
+import { askCartographe, CartographeButton, MapChangedNotice, ProjectBlockHeaderActions, ProjectBlockSummary } from "./ProjectsPage";
 
 beforeEach(async () => { await loadLocale("fr"); });
 afterEach(() => { setLocale("en"); });
@@ -18,6 +18,15 @@ describe("project block header", () => {
     expect(html).toContain('aria-label="Relier à un autre projet"');
     expect(html).toContain('aria-label="Plier / déplier"');
     expect(html.match(/<button/g)).toHaveLength(3);
+  });
+});
+
+describe("project block summary", () => {
+  it("shows the first line of the En bref card under the project's name, and nothing without one", () => {
+    const html = renderToStaticMarkup(createElement(ProjectBlockSummary, { summary: "Une boutique en ligne.\nAvec un site." }));
+    expect(html).toContain(">Une boutique en ligne.</div>");
+    expect(html).toContain('title="Une boutique en ligne.');
+    expect(renderToStaticMarkup(createElement(ProjectBlockSummary, { summary: undefined }))).toBe("");
   });
 });
 

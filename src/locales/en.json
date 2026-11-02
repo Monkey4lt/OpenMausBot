@@ -7405,5 +7405,15 @@
   "projects.map.retry": "Try again",
   "projects.map.empty": "Nothing to show here.",
   "projects.map.pickFile": "Choose a file to see what it uses and what uses it.",
-  "projects.map.fileList": "Files of {name}"
+  "projects.map.fileList": "Files of {name}",
+  "projects.map.brief": "In short",
+  "projects.map.briefAsk": "Ask the Cartographe for an In short card",
+  "projects.map.pieces": "The project's pieces",
+  "projects.map.piecesHint": "Click a piece to see where it comes from.",
+  "projects.map.pieceEvidence": "Why “{name}”",
+  "projects.map.pieceModules": "In: {modules}",
+  "projects.map.rootFolder": "main folder",
+  "projects.map.pieceLinks": "Links between pieces",
+  "projects.map.pieceLinkCalls": "{count} calls",
+  "projects.map.pieceLinkFiles": "{count} files"
 }

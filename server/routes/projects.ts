@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { buildArchitecture, aliasesFromGoMod, aliasesFromTsconfig, type Architecture } from "../projects-architecture.ts";
 import { githubLogin, githubRepo, githubRepoLines, githubSignIn } from "../projects-github.ts";
 import { detectPieces, isManifestPath, languagesOf, linkPieces, type Piece, type PieceLink } from "../projects-inspect.ts";
+import type { ArchitectureWithPieces } from "../../shared/projects-pieces.ts";
 import {
   isCodeFile, readGithubImports, readGithubInspect, readLocalImports, readLocalInspect, readSshImports, readSshInspect, type ImportSet, type InspectSet,
 } from "../projects-sources.ts";
@@ -19,7 +20,7 @@ import { PASS, type RouteHandler } from "./table.ts";
 export interface ProjectRouteDeps {
   dataDir: string;
   onArchitectureRead?: (projectId: string) => void;
-  architectures?: ArchitectureReader;
+  readers?: ProjectReaders;
   onChanged?: (rev: number) => void;
   cartographeBotId?: () => string | null;
   /** Makes the Cartographe if this place never had one; called once the map has a source. */
@@ -33,7 +34,7 @@ const ARCHITECTURE_CACHE_SIZE = 32;
  * PUT /api/projects/state {...layout, baseRev} → 200 {ok, rev}; 409 {error, rev} when baseRev is not the saved rev
  * GET /api/projects/github → the GitHub login Git keeps on this computer, if any
  * POST /api/projects/github/signin {switch?} → open Git's GitHub sign-in window on this computer
- * GET /api/projects/architecture?id=<sourceId:name> → 200 Architecture (shared/projects-architecture.ts),
+ * GET /api/projects/architecture?id=<sourceId:name> → 200 Architecture with `pieces` and `pieceLinks` (shared/projects-pieces.ts),
  *   404 {error} for an id no source has, 502 {error} with the source's message when it cannot be read
  */
 function cartographeFor(deps: ProjectRouteDeps): string | null {
@@ -46,14 +47,14 @@ function cartographeFor(deps: ProjectRouteDeps): string | null {
 }
 
 export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
-  const architectures = deps.architectures ?? createArchitectureReader(deps);
+  const readers = deps.readers ?? createProjectReaders(deps);
   return async ({ req, res, url, path, method, json, readBody }) => {
     if (path === "/api/projects/architecture" && method === "GET") {
       const id = url.searchParams.get("id") ?? "";
       try {
-        const architecture = await architectures(id, { refresh: url.searchParams.get("refresh") === "1" });
-        if (!architecture) return json(res, 404, { error: "Unknown project" });
-        return json(res, 200, architecture);
+        const read = await readers.inspection(id, { refresh: url.searchParams.get("refresh") === "1" });
+        if (!read) return json(res, 404, { error: "Unknown project" });
+        return json(res, 200, { ...read.architecture, pieces: read.inspection.pieces, pieceLinks: read.inspection.links } satisfies ArchitectureWithPieces);
       } catch (error) {
         return json(res, 502, { error: error instanceof Error ? error.message : String(error) });
       }

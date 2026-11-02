@@ -9661,7 +9661,7 @@ const webhookIngressStatus = () => ({
 const projectReaders = createProjectReaders({ dataDir: DATA_DIR }); const projectArchitectures = projectReaders.architecture;
 const cartographe = createCartographeHost({ dataDir: DATA_DIR, cloud: CLOUD_HOME !== null || HOSTED_WORKSPACE, store, outboundRequests, notify, broadcast, active: (capability) => internalCapabilityIsActive(capability as InternalCapability),
   architectureOf: (projectId) => projectArchitectures(projectId), inspectionOf: (projectId) => projectReaders.inspection(projectId), mcpCallTimeoutMs: (botId) => { const instanceId = store.bot(botId)?.modelSelection.instanceId; return agentsCallTimeoutMs(instanceId ? registry.get(instanceId)?.driverKind : undefined, mcpCallTimeoutMinutes(cfg) * 60_000); } });
-ROUTES.push(createProjectRoutes({ dataDir: DATA_DIR, architectures: projectArchitectures, onChanged: cartographe.onChanged, cartographeBotId: cartographe.cartographeBotId,
+ROUTES.push(createProjectRoutes({ dataDir: DATA_DIR, readers: projectReaders, onChanged: cartographe.onChanged, cartographeBotId: cartographe.cartographeBotId,
   ensureCartographe: () => (CLOUD_HOME || HOSTED_WORKSPACE ? null : ensureCartographeBot(store, { dataDir: DATA_DIR })?.id ?? null) }));
 ROUTES.push(createWebhookRoutes({ webhooks, ingress: webhookIngressStatus, visible: (auth) => visibleTo(viewerFor(auth)) }));
 

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadLocale, setLocale } from "@/lib/i18n";
-import { levelOf, type Architecture } from "@/lib/projects-architecture-view";
+import { levelOf, type Architecture, type ArchitectureWithPieces } from "@/lib/projects-architecture-view";
 import { ArchitectureView } from "./ArchitectureView";
 
 const arch: Architecture = {
@@ -104,4 +104,73 @@ describe("ArchitectureView", () => {
   it("without data yet, shows the loading state", () => {
     expect(render({ initial: undefined })).toContain("Lecture des fichiers du projet");
   });
+
+  const withPieces: ArchitectureWithPieces = {
+    ...arch,
+    pieces: [
+      { kind: "ui", tech: "React", evidence: [{ path: "package.json", code: "dependency", reason: "depends on react" }], modules: ["src/components"] },
+      { kind: "api", tech: "Express", evidence: [{ path: "package.json", code: "dependency", reason: "depends on express" }], modules: ["server/routes"] },
+      { kind: "database", tech: "PostgreSQL", evidence: [{ path: "compose.yml", code: "compose_image", reason: "runs the postgres image" }], modules: [] },
+    ],
+    pieceLinks: [{ from: "ui", to: "api", count: 4, examples: [{ from: "src/components/A.tsx", to: "server/routes/users.ts" }] }],
+  };
+  const described = { overrides: { "s1:api": { moduleFamily: {}, familyNames: {}, summary: "Une API pour les commandes.\nElle parle à la base.", familyText: { ui: "Ce que voient les clients" }, moduleText: { "src/components": "Les morceaux d'écran" } } } };
+
+  it("shows the En bref summary when present, and an invitation otherwise", () => {
+    const html = render({ initial: withPieces, state: described });
+    expect(html).toContain("En bref");
+    expect(html).toContain("Une API pour les commandes.");
+    expect(html).toContain("Elle parle à la base.");
+    const empty = render({ initial: withPieces, state: { overrides: {} }, onAskCartographe: () => {} });
+    expect(empty).toContain("Demander au Cartographe une fiche En bref");
+    expect(render({ initial: withPieces, state: { overrides: {} } })).not.toContain("Demander au Cartographe une fiche En bref");
+  });
+
+  it("labels pieces with the plain word first and the tech second", () => {
+    const html = render({ initial: withPieces });
+    expect(html).toContain("Base de données");
+    expect(html).toContain("PostgreSQL");
+    expect(html.indexOf("Base de données")).toBeLessThan(html.indexOf("PostgreSQL"));
+    expect(html.match(/data-piece=/g)).toHaveLength(3);
+  });
+
+  it("a chosen piece shows its evidence in plain words", () => {
+    const html = render({ initial: withPieces, initialPiece: 2 });
+    expect(html).toContain("compose.yml : un service lancé avec Docker");
+  });
+
+  it("shows family and module descriptions under their names", () => {
+    expect(render({ initial: withPieces, state: described })).toContain("Ce que voient les clients");
+    expect(render({ initial: withPieces, state: described, initialFocus: { family: "ui" } })).toContain("Les morceaux d&#x27;écran");
+  });
+
+  it("says the project's main folder in plain words where a piece lives", () => {
+    const rooted = { ...withPieces, pieces: [{ ...withPieces.pieces[2]!, modules: ["(root)/config"] }] };
+    const html = render({ initial: rooted, initialPiece: 0 });
+    expect(html).toContain("Dans : dossier principal");
+    expect(html).not.toContain("(root)");
+  });
+
+  it("draws piece arrows between the families that hold the code, never the settings", () => {
+    const mixed: ArchitectureWithPieces = {
+      ...withPieces,
+      families: [...arch.families, { id: "config", name: "config", files: 1, modules: ["(root)/config"] }],
+      modules: [...arch.modules, { id: "(root)/config", family: "config", files: 1 }],
+      pieces: [withPieces.pieces[1]!, { ...withPieces.pieces[2]!, modules: ["(root)/config", "server/routes"] }],
+      pieceLinks: [{ from: "api", to: "database", count: 2, examples: [] }],
+    };
+    expect(render({ initial: mixed })).not.toContain("data-piece-arrow");
+    const apart: ArchitectureWithPieces = { ...withPieces };
+    expect(render({ initial: apart })).toContain('data-piece-arrow="ui-&gt;api"');
+  });
+
+  it("draws piece links with the legend", () => {
+    const html = render({ initial: withPieces });
+    expect(html).toContain("Liens entre pièces");
+    expect(html).toContain("Site / interface → Serveur / API");
+    expect(html).toContain('data-piece-link="ui-&gt;api"');
+    expect(html).toContain("4 appels");
+    expect(render()).not.toContain("Liens entre pièces");
+  });
 });
+

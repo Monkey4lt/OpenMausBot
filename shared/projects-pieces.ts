@@ -1,3 +1,5 @@
+import type { Architecture } from "./projects-architecture.ts";
+
 export type PieceKind = "ui" | "api" | "database" | "cache" | "jobs" | "external" | "chatbot" | "tests" | "deploy";
 
 /** The order pieces are listed and shown in. */
@@ -16,6 +18,13 @@ export const PIECE_LABELS: Record<PieceKind, { fr: string; en: string }> = {
   deploy: { fr: "Mise en ligne", en: "Going online" },
 };
 
+/** Why a file counts as evidence; the app turns each code into plain words, `reason` is the same in English for the bot. */
+export const EVIDENCE_CODES = [
+  "dependency", "compose_image", "vue_component", "svelte_component", "screen_component", "web_page", "prisma_schema",
+  "migration", "sql_file", "docker_build", "compose_file", "ci_workflow", "vercel", "netlify", "fly", "procfile", "test_file",
+] as const;
+export type EvidenceCode = (typeof EVIDENCE_CODES)[number];
+
 /**
  * One part of a project found from its manifests and files.
  * `tech` is empty when the piece has no single technology (the tests family).
@@ -25,7 +34,7 @@ export const PIECE_LABELS: Record<PieceKind, { fr: string; en: string }> = {
 export interface Piece {
   kind: PieceKind;
   tech: string;
-  evidence: { path: string; reason: string }[];
+  evidence: { path: string; code: EvidenceCode; reason: string }[];
   modules: string[];
 }
 
@@ -36,3 +45,6 @@ export interface PieceLink {
   count: number;
   examples: { from: string; to: string }[];
 }
+
+/** The body of GET /api/projects/architecture. */
+export type ArchitectureWithPieces = Architecture & { pieces: Piece[]; pieceLinks: PieceLink[] };

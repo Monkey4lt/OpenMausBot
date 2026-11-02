@@ -2,9 +2,55 @@ import { edgePoint, type Rect } from "@/lib/projects-map";
 
 import { FAMILY_ORDER, MAX_CODE_FILES } from "../../shared/projects-architecture";
 import type { ArchOverrides, Architecture, Family } from "../../shared/projects-architecture";
+import { PIECE_LABELS, type ArchitectureWithPieces, type EvidenceCode, type Piece, type PieceKind, type PieceLink } from "../../shared/projects-pieces";
 
 export { FAMILY_ORDER, MAX_CODE_FILES as MAX_READ_FILES };
-export type { ArchOverrides, Architecture, Family };
+export type { ArchOverrides, Architecture, ArchitectureWithPieces, Family, Piece, PieceKind, PieceLink };
+
+type Locale = "fr" | "en";
+
+export const PIECE_COLORS: Readonly<Record<PieceKind, string>> = {
+  ui: "#1084fe", api: "#38d591", database: "#ff9800", cache: "#b47cff", jobs: "#facc15",
+  external: "#ff5667", chatbot: "#2dd4bf", tests: "#9ca3af", deploy: "#60a5fa",
+};
+
+/** Plain words for each kind of evidence; the server's `reason` stays in English for the bot. */
+export const EVIDENCE_WORDS: Readonly<Record<Locale, Record<EvidenceCode, string>>> = {
+  fr: {
+    dependency: "la liste des outils du projet le demande", compose_image: "un service lancé avec Docker", vue_component: "un morceau d'écran Vue",
+    svelte_component: "un morceau d'écran Svelte", screen_component: "un morceau d'écran", web_page: "une page web", prisma_schema: "le plan de la base de données",
+    migration: "un changement de la forme de la base de données", sql_file: "des commandes de base de données", docker_build: "la recette pour emballer le projet",
+    compose_file: "la liste des services à lancer ensemble", ci_workflow: "une tâche automatique sur GitHub", vercel: "les réglages de Vercel",
+    netlify: "les réglages de Netlify", fly: "les réglages de Fly.io", procfile: "la liste des programmes à lancer en ligne", test_file: "un fichier de tests",
+  },
+  en: {
+    dependency: "the project's list of tools asks for it", compose_image: "a service started with Docker", vue_component: "a piece of Vue screen",
+    svelte_component: "a piece of Svelte screen", screen_component: "a piece of screen", web_page: "a web page", prisma_schema: "the database's plan",
+    migration: "a change to the database's layout", sql_file: "database commands", docker_build: "the recipe to package the project",
+    compose_file: "the list of services to start together", ci_workflow: "an automatic task on GitHub", vercel: "Vercel settings",
+    netlify: "Netlify settings", fly: "Fly.io settings", procfile: "the list of programs to start online", test_file: "a test file",
+  },
+};
+
+export function pieceBadges(pieces: readonly Piece[], locale: Locale): { kind: PieceKind; label: string; tech: string; modules: string[]; color: string }[] {
+  return pieces.map((p) => ({ kind: p.kind, label: PIECE_LABELS[p.kind][locale], tech: p.tech, modules: p.modules, color: PIECE_COLORS[p.kind] }));
+}
+
+export function evidenceLine(evidence: Piece["evidence"][number], locale: Locale): string {
+  return `${evidence.path}${locale === "fr" ? " : " : ": "}${EVIDENCE_WORDS[locale][evidence.code] ?? evidence.reason}`;
+}
+
+export function pieceLinkRows(links: readonly PieceLink[], locale: Locale): { from: PieceKind; to: PieceKind; text: string; count: number }[] {
+  return links.map((l) => ({ from: l.from, to: l.to, text: `${PIECE_LABELS[l.from][locale]} → ${PIECE_LABELS[l.to][locale]}`, count: l.count }));
+}
+
+const PREVIEW_MAX = 120;
+
+/** The first non-empty line of an En bref summary, for the project's block. */
+export function summaryPreview(summary: string | undefined): string {
+  const line = (summary ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+  return line.length > PREVIEW_MAX ? `${line.slice(0, PREVIEW_MAX - 1)}…` : line;
+}
 
 export const FAMILY_COLORS: Readonly<Record<Family, string>> = {
   ui: "#1084fe",
