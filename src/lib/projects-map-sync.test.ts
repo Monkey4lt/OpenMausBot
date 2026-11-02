@@ -52,6 +52,7 @@ describe("the Projects page's saves", () => {
     expect(puts).toEqual([]);
     expect(events).toContain("reload");
     expect(events).toContain("notice");
+    expect(events.at(-1)).toBe("status:idle");
   });
 
   it("ignores its own save's frame, an older one, and every other frame", async () => {
@@ -78,7 +79,7 @@ describe("the Projects page's saves", () => {
     const { sync, events } = setup({ put: () => Promise.reject(stale) });
     sync.loaded({ rev: 1, groups: [] });
     await expect(sync.now({ rev: 1, groups: ["a"] })).rejects.toThrow("The map changed");
-    expect(events).toEqual(["status:saving", "reload", "notice"]);
+    expect(events).toEqual(["status:saving", "reload", "notice", "status:idle"]);
   });
 
   it("another failure reports an error and does not reload", async () => {
@@ -96,6 +97,6 @@ describe("the Projects page's saves", () => {
     sync.later({ rev: 1, groups: ["a"] });
     timers[0]!.fn();
     await flush();
-    expect(events).toEqual(["status:saving", "status:saving", "reload", "notice"]);
+    expect(events).toEqual(["status:saving", "status:saving", "reload", "notice", "status:idle"]);
   });
 });

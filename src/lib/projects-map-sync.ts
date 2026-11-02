@@ -1,4 +1,4 @@
-export type SaveStatus = "saving" | "saved" | "error";
+export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 export interface MapSyncDeps<S extends { rev?: number }> {
   /** PUT /api/projects/state; rejects with `status` 409 when baseRev is stale. */
@@ -38,6 +38,7 @@ export function createMapSync<S extends { rev?: number }>(deps: MapSyncDeps<S>) 
       if (stale(error)) {
         deps.reload();
         deps.changedElsewhere();
+        deps.status("idle");
       } else {
         deps.status("error");
       }
@@ -69,7 +70,10 @@ export function createMapSync<S extends { rev?: number }>(deps: MapSyncDeps<S>) 
       if (frame.kind !== "projects.changed" || typeof frame.rev !== "number" || frame.rev <= rev) return;
       const lost = cancel();
       deps.reload();
-      if (lost) deps.changedElsewhere();
+      if (lost) {
+        deps.changedElsewhere();
+        deps.status("idle");
+      }
     },
   };
 }
