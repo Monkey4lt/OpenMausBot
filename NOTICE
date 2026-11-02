@@ -74,10 +74,15 @@ This repository is a modified fork of OpenMausBot
 Changes in this fork:
 - The source-available enterprise/ folder was removed; what remains is the
   open-source edition.
-- A "Projects" view was added (server/projects.ts, server/routes/projects.ts,
-  src/components/ProjectsPage.tsx), wired in server/index.ts, src/App.tsx,
-  src/state/store.tsx, src/components/lazy-screens.tsx,
-  src/components/SidebarFooterNav.tsx, with strings in src/locales/en.json and
-  src/locales/fr.json.
+- A "Projects" view was added (server/projects*.ts, server/routes/projects.ts,
+  src/components/ProjectsPage.tsx, src/components/projects/), with a map of
+  each project and the "Cartographe" bot that proposes changes to the maps
+  (server/cartographe-*.ts, server/routes/cartographe.ts,
+  server/drivers/agents-cartographe-tools.ts).
+- An "Aurora" dark skin was added and made the dark side of "system".
+- A Windows launcher (scripts/windows/OpenMausBot.bat) and a French guide
+  (docs/projets-guide-fr.md) were added.
+- Upstream files are changed only where these are wired in; list them with
+  git diff --stat --diff-filter=M against upstream main.
 "OpenMausBot" and "MausBot" are the original authors' names; this fork is not
 affiliated with or endorsed by them.

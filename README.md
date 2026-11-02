@@ -1,4 +1,4 @@
-> **Fork.** Ceci est une version modifiée d'[OpenMausBot](https://github.com/milind-soni/OpenMausBot) (licence Apache 2.0), sans le dossier `enterprise/`, avec un onglet **Projets** en plus : chaque dossier de projet (sur cet ordinateur ou sur un serveur SSH) devient un bloc avec toute son arborescence, regroupable par pôles et reliable par des liens. Détails dans `NOTICE`.
+> **Fork.** Ceci est une version modifiée d'[OpenMausBot](https://github.com/milind-soni/OpenMausBot) (licence Apache 2.0), sans le dossier `enterprise/`, avec un onglet **Projets** en plus : chaque dossier de projet (sur cet ordinateur ou sur un serveur SSH) devient un bloc avec toute son arborescence, regroupable par pôles et reliable par des liens. Détails dans `NOTICE`. Installation sous Windows et mode d'emploi : [docs/projets-guide-fr.md](docs/projets-guide-fr.md).
 
 <div align="center">
 
