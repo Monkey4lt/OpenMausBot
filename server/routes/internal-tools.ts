@@ -7,14 +7,14 @@ import { createMausBotNotificationRoutes, type LiveNotificationsDeps } from "./m
 import { PASS } from "./table.ts";
 import { createXResearchInternalRoutes, type XResearchDeps } from "./x-research.ts";
 
-export type InternalToolContext = HelperToolContext & Partial<Pick<CartographeContext, "threadId" | "capability">>;
+export type InternalToolContext = HelperToolContext & Pick<CartographeContext, "threadId" | "capability">;
 
 export function createInternalToolRoutes(deps: { helpers: HelperToolDeps; xResearch: XResearchDeps; notifications: LiveNotificationsDeps; cartographe?: ReturnType<typeof createCartographeRoutes> }) {
   const routes = [createXResearchInternalRoutes(deps.xResearch), createHelperToolRoutes(deps.helpers), createMausBotNotificationRoutes(deps.notifications)];
   const { cartographe } = deps;
   return async (ctx: InternalToolContext): Promise<typeof PASS | void> => {
     for (const route of routes) if (await route(ctx) !== PASS) return;
-    if (cartographe && ctx.threadId !== undefined && await cartographe({ ...ctx, threadId: ctx.threadId, capability: ctx.capability }) !== PASS) return;
+    if (cartographe && await cartographe(ctx) !== PASS) return;
     return PASS;
   };
 }

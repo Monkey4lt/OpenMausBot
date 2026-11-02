@@ -282,6 +282,13 @@ describe("cartographe internal routes", () => {
 });
 
 describe("internal tool routes", () => {
+  it("needs the turn's thread and capability, so the Cartographe always knows which turn asks", () => {
+    type Context = Parameters<ReturnType<typeof createInternalToolRoutes>>[0];
+    // @ts-expect-error threadId and capability are required
+    const missing: Context = { method: "POST", path: MAP, res: response().res, json, botId: "carto", readBody: async () => ({}), folders: async () => ({ roots: [], vmWorkspace: null }) };
+    void missing;
+  });
+
   it("hands the Cartographe's paths to its routes when they are given", async () => {
     const env = setup();
     const internal = createInternalToolRoutes({
