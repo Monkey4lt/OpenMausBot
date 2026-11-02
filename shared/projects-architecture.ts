@@ -5,8 +5,8 @@ export const FAMILY_ORDER: readonly Family[] = ["tests", "docs", "i18n", "data",
 
 /**
  * The person's corrections for one project, kept in projects-map.json under `overrides[projectId]`.
- * `summary` is the "En bref" card (at most 600 characters, line breaks kept); `familyText` and `moduleText` are
- * one-line descriptions of at most 160 characters.
+ * `summary` is the "En bref" card (at most 600 characters, line breaks kept), its first line the sentence on the project's card;
+ * `familyText`, `moduleText` and `pieceText` are one-line descriptions of at most 160 characters, `pieceText` keyed by `PieceKey`.
  */
 export type ArchOverrides = {
   moduleFamily: Record<string, Family>;
@@ -14,6 +14,7 @@ export type ArchOverrides = {
   summary?: string;
   familyText?: Partial<Record<Family, string>>;
   moduleText?: Record<string, string>;
+  pieceText?: Record<string, string>;
 };
 
 export const SUMMARY_MAX = 600;

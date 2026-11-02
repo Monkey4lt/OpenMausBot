@@ -183,11 +183,11 @@ describe("pieces", () => {
 
   it("labels pieces with the plain word first and the tech second", () => {
     expect(pieceBadges(pieces, "fr")).toEqual([
-      { kind: "ui", label: "Site / interface", tech: "React", modules: ["src/ui"], color: PIECE_COLORS.ui },
+      { kind: "ui", label: "Site ou appli", tech: "React", modules: ["src/ui"], color: PIECE_COLORS.ui },
       { kind: "database", label: "Base de données", tech: "PostgreSQL", modules: [], color: PIECE_COLORS.database },
       { kind: "database", label: "Base de données", tech: "", modules: [], color: PIECE_COLORS.database },
     ]);
-    expect(pieceBadges(pieces, "en")[0]).toMatchObject({ label: "Website / interface", tech: "React" });
+    expect(pieceBadges(pieces, "en")[0]).toMatchObject({ label: "Website or app", tech: "React" });
   });
 
   it("says each piece of evidence in plain words, in both languages", () => {
@@ -200,7 +200,7 @@ describe("pieces", () => {
 
   it("lists piece links with plain words and counts, skipping kinds no piece has", () => {
     expect(pieceLinkRows([{ from: "ui", to: "api", count: 3, examples: [] }, { from: "api", to: "database", count: 1, examples: [] }], "fr"))
-      .toEqual([{ from: "ui", to: "api", text: "Site / interface → Serveur / API", count: 3 }, { from: "api", to: "database", text: "Serveur / API → Base de données", count: 1 }]);
+      .toEqual([{ from: "ui", to: "api", text: "Site ou appli → Serveur", count: 3 }, { from: "api", to: "database", text: "Serveur → Base de données", count: 1 }]);
   });
 
   it("previews a summary as its first line, cut to 120", () => {

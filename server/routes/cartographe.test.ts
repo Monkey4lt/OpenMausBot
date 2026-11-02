@@ -386,7 +386,7 @@ describe("inspect and read_file routes", () => {
     const got = await call(INSPECT, { projectId: "s1:shop" });
     expect(got.status).toBe(200);
     const body = got.body as { pieces: { kind: string; label: string; tech: string }[]; links: { from: string; to: string; count: number }[]; languages: Record<string, number>; truncated: boolean; diagramHtml: string };
-    expect(body.pieces.map((p) => `${p.kind}:${p.tech}:${p.label}`)).toEqual(["ui:React:Site / interface", "api:Express:Serveur / API", "database:PostgreSQL:Base de données"]);
+    expect(body.pieces.map((p) => `${p.kind}:${p.tech}:${p.label}`)).toEqual(["ui:React:Site ou appli", "api:Express:Serveur", "database:PostgreSQL:Base de données"]);
     expect(body.links).toEqual([
       { from: "ui", to: "api", count: 1, examples: [{ from: "web/Orders.tsx", to: "server/orders.ts" }] },
       { from: "api", to: "database", count: 1, examples: [{ from: "server/orders.ts", to: "pg" }] },

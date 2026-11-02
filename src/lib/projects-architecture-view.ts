@@ -22,6 +22,7 @@ export const EVIDENCE_WORDS: Readonly<Record<Locale, Record<EvidenceCode, string
     migration: "un changement de la forme de la base de données", sql_file: "des commandes de base de données", docker_build: "la recette pour emballer le projet",
     compose_file: "la liste des services à lancer ensemble", ci_workflow: "une tâche automatique sur GitHub", vercel: "les réglages de Vercel",
     netlify: "les réglages de Netlify", fly: "les réglages de Fly.io", procfile: "la liste des programmes à lancer en ligne", test_file: "un fichier de tests",
+    folder: "rangé dans le dossier de ce bloc",
   },
   en: {
     dependency: "the project's list of tools asks for it", compose_image: "a service started with Docker", vue_component: "a piece of Vue screen",
@@ -29,6 +30,7 @@ export const EVIDENCE_WORDS: Readonly<Record<Locale, Record<EvidenceCode, string
     migration: "a change to the database's layout", sql_file: "database commands", docker_build: "the recipe to package the project",
     compose_file: "the list of services to start together", ci_workflow: "an automatic task on GitHub", vercel: "Vercel settings",
     netlify: "Netlify settings", fly: "Fly.io settings", procfile: "the list of programs to start online", test_file: "a test file",
+    folder: "kept in this part's folder",
   },
 };
 

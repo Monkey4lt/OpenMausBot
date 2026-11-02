@@ -247,7 +247,7 @@ describe("pieceDiagramHtml", () => {
   it("draws one box per piece with the plain word and the tech, and an arrow per link with its count", () => {
     const html = pieceDiagramHtml({ pieces: [piece("ui", "React"), piece("api", "Express"), piece("database", "PostgreSQL")], links: [{ from: "ui", to: "api", count: 12, examples: [] }, { from: "api", to: "database", count: 3, examples: [] }] }, "shop");
     expect(html).toMatch(/^<!doctype html>/i);
-    for (const text of ["Site / interface", "React", "Serveur / API", "Express", "Base de données", "PostgreSQL", "12 appels", "3 fichiers", "shop"]) expect(html).toContain(text);
+    for (const text of ["Site ou appli", "React", "Serveur", "Express", "Base de données", "PostgreSQL", "12 appels", "3 fichiers", "shop"]) expect(html).toContain(text);
     expect(html.match(/data-piece=/g)).toHaveLength(3);
     expect(html.match(/data-link=/g)).toHaveLength(2);
     expect(html).not.toMatch(/<script|https?:\/\//i);

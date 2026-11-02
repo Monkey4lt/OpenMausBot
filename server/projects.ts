@@ -53,6 +53,7 @@ const archOverridesSchema = z.object({
   summary: z.string().min(1).max(SUMMARY_MAX).optional(),
   familyText: z.partialRecord(familySchema, z.string().min(1).max(DESCRIPTION_MAX)).optional(),
   moduleText: z.record(z.string().min(1).max(300), z.string().min(1).max(DESCRIPTION_MAX)).optional(),
+  pieceText: z.record(z.string().min(1).max(60), z.string().min(1).max(DESCRIPTION_MAX)).optional(),
 });
 
 export const projectMapStateSchema = z.object({

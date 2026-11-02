@@ -240,7 +240,7 @@ describe("ArchitectureView", () => {
   it("draws piece links with the legend", () => {
     const html = render({ initial: withPieces });
     expect(html).toContain("Liens entre pièces");
-    expect(html).toContain("Site / interface → Serveur / API");
+    expect(html).toContain("Site ou appli → Serveur");
     expect(html).toContain('data-piece-link="ui-&gt;api"');
     expect(html).toContain("4 appels");
     expect(render({ initial: { ...withPieces, pieceLinks: [{ ...withPieces.pieceLinks[0]!, count: 1 }] } })).toContain("1 appel<");

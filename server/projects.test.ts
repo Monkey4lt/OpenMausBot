@@ -70,8 +70,9 @@ describe("projects map", () => {
     expect(projectMapStateSchema.parse({ overrides: { "local:api": {} } }).overrides).toEqual({ "local:api": { moduleFamily: {}, familyNames: {} } });
     expect(projectMapStateSchema.safeParse({ overrides: { "local:api": { moduleFamily: { "src/state": "magic" }, familyNames: {} } } }).success).toBe(false);
     expect(projectMapStateSchema.safeParse({ overrides: { "local:api": { moduleFamily: {}, familyNames: { magic: "x" } } } }).success).toBe(false);
-    const described = { "local:api": { moduleFamily: {}, familyNames: {}, summary: "Une API.\nSimple.", familyText: { ui: "Écrans" }, moduleText: { "src/state": "Le panier" } } };
+    const described = { "local:api": { moduleFamily: {}, familyNames: {}, summary: "Une API.\nSimple.", familyText: { ui: "Écrans" }, moduleText: { "src/state": "Le panier" }, pieceText: { api: "Prend les commandes.", "external:Stripe": "Encaisse." } } };
     expect(projectMapStateSchema.parse({ overrides: described }).overrides).toEqual(described);
+    expect(projectMapStateSchema.safeParse({ overrides: { "local:api": { pieceText: { api: "x".repeat(161) } } } }).success).toBe(false);
     expect(projectMapStateSchema.safeParse({ overrides: { "local:api": { summary: "x".repeat(601) } } }).success).toBe(false);
     expect(projectMapStateSchema.safeParse({ overrides: { "local:api": { familyText: { ui: "x".repeat(161) } } } }).success).toBe(false);
     expect(projectMapStateSchema.safeParse({ overrides: { "local:api": { moduleText: { "src/a": "x".repeat(161) } } } }).success).toBe(false);
