@@ -69,7 +69,7 @@ const sendData = z.object({ to: z.enum(["notification", "bot-chat"]).default("no
 const noteData = z.object({ text: text().default("") });
 
 const node = <K extends NodeKind, D extends z.ZodType>(kind: K, data: D) =>
-  z.object({ id: idSchema, kind: z.literal(kind), x: finite, y: finite, data: data.prefault({}) });
+  z.object({ id: idSchema, kind: z.literal(kind), x: finite, y: finite, data: data.prefault({} as z.input<D>) });
 
 export const workflowNodeSchema = z.discriminatedUnion("kind", [
   node("trigger", triggerData),
