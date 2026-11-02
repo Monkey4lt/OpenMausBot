@@ -7,11 +7,11 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/cn";
 import { activeLocale, t } from "@/lib/i18n";
 import {
-  FAMILY_COLORS, FAMILY_ORDER, PIECE_COLORS, edgeWidth, evidenceWords, flowLayout, layoutLevel, levelOf, mergeTwoWay, plainModuleLabel,
+  FAMILY_COLORS, FAMILY_ORDER, FLOW_BOX, PIECE_COLORS, edgeEvidence, edgeWidth, evidenceWords, flowLayout, layoutLevel, levelOf, mergeTwoWay, plainModuleLabel,
   withFamilyName, withModuleFamily,
   type Architecture, type ArchitectureWithPieces, type ArchOverrides, type Family, type FlowBox, type FlowColumn, type FlowEdge, type LevelNode, type Piece, type PieceKind, type PieceLink,
 } from "@/lib/projects-architecture-view";
-import { facingAnchors, fitRects, type View } from "@/lib/canvas/geometry";
+import { boundsOf, facingAnchors, fitRects, type Rect, type View } from "@/lib/canvas/geometry";
 import type { Tool } from "@/lib/canvas/gestures";
 import { api } from "@/state/api";
 import type { LocaleKey } from "@/locales";
@@ -168,7 +168,7 @@ export function ArchitectureView<S extends SavedState>({ project, onBack, state,
         </div>
       )}
 
-      {arch && !focus.family && <ProjectSummary summary={own?.summary} onAsk={onAskCartographe} />}
+      {arch && !focus.family && (own?.summary || detail || !plainFallback(arch)) && <ProjectSummary summary={own?.summary} onAsk={onAskCartographe} />}
 
       {arch && !detail && (
         <SimpleView arch={arch} texts={own?.pieceText} why={why} onWhy={setWhy} onAsk={onAskCartographe} onDetail={toDetail} />
@@ -218,10 +218,14 @@ function AskButton({ onClick, label }: { onClick: () => void; label: string }) {
 
 const FEW_FILES = 3;
 
+/** A tiny project or one with no big part recognised: the simple view says so in words, with its own invitation to ask. */
+const plainFallback = (arch: MapArch) => arch.files.length <= FEW_FILES || !(arch.pieces ?? []).length;
+
 /** « Comment ça marche »: the project's big pieces in four columns, or a plain fallback for a tiny project or one with none recognised. */
 function SimpleView({ arch, texts, why, onWhy, onAsk, onDetail }: {
   arch: MapArch; texts: Record<string, string> | undefined; why: Why | null; onWhy: (why: Why | null) => void; onAsk?: () => void; onDetail: (focus?: Focus) => void;
 }) {
+  const narrow = useNarrow();
   if (arch.files.length <= FEW_FILES) {
     return (
       <div data-few-files className="flex flex-1 flex-col gap-2 px-6 py-6">
@@ -233,7 +237,7 @@ function SimpleView({ arch, texts, why, onWhy, onAsk, onDetail }: {
       </div>
     );
   }
-  const flow = flowLayout(arch.pieces ?? [], arch.pieceLinks ?? [], texts, locale());
+  const flow = flowLayout(arch.pieces ?? [], arch.pieceLinks ?? [], texts, locale(), { stacked: narrow });
   if (!flow.boxes.length && !flow.build.length) {
     return (
       <div data-no-pieces className="flex flex-1 flex-col items-start gap-3 px-6 py-6">
@@ -243,7 +247,29 @@ function SimpleView({ arch, texts, why, onWhy, onAsk, onDetail }: {
       </div>
     );
   }
-  return <FlowCanvas arch={arch} flow={flow} why={why} onWhy={onWhy} onDetail={onDetail} />;
+  return <FlowCanvas key={narrow ? "stacked" : "wide"} arch={arch} flow={flow} stacked={narrow} why={why} onWhy={onWhy} onDetail={onDetail} />;
+}
+
+const NARROW = "(max-width: 640px)";
+
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(NARROW).matches);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(NARROW);
+    const on = () => setNarrow(query.matches);
+    query.addEventListener("change", on);
+    return () => query.removeEventListener("change", on);
+  }, []);
+  return narrow;
+}
+
+/** Fits the stacked view to the width and starts at its top; the person scrolls down by dragging. */
+function topView(frame: Rect[], viewport: { w: number; h: number }): View {
+  const b = boundsOf(frame);
+  if (!b) return fitRects(frame, viewport);
+  const scale = Math.min(1, (viewport.w - 24) / b.w);
+  return { x: (viewport.w - b.w * scale) / 2 - b.x * scale, y: 16 - b.y * scale, scale };
 }
 
 const COLUMN_TITLES: Readonly<Record<FlowColumn["id"], LocaleKey>> = {
@@ -252,21 +278,22 @@ const COLUMN_TITLES: Readonly<Record<FlowColumn["id"], LocaleKey>> = {
 
 const BUILD_KIND_SET: ReadonlySet<PieceKind> = new Set(["tests", "deploy"]);
 
-function FlowCanvas({ arch, flow, why, onWhy, onDetail }: {
-  arch: MapArch; flow: ReturnType<typeof flowLayout>; why: Why | null; onWhy: (why: Why | null) => void; onDetail: (focus?: Focus) => void;
+function FlowCanvas({ arch, flow, stacked, why, onWhy, onDetail }: {
+  arch: MapArch; flow: ReturnType<typeof flowLayout>; stacked: boolean; why: Why | null; onWhy: (why: Why | null) => void; onDetail: (focus?: Focus) => void;
 }) {
   const [tool, setTool] = useState<Tool>("select");
   const [view, setView] = useState<View | undefined>(undefined);
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   const shown = [...flow.boxes, ...flow.build];
-  const frame = [...shown.map((b) => b.rect), ...flow.columns.map((c) => ({ x: c.x, y: c.y, w: c.w, h: 24 }))];
+  const frame = [...shown.map((b) => b.rect), ...flow.columns.map((c) => ({ x: c.x, y: c.y, w: c.w, h: 24 })),
+    ...(stacked && flow.edges.length ? [{ x: FLOW_BOX.x0, y: FLOW_BOX.y0, w: FLOW_BOX.w + 170, h: 1 }] : [])];
   const fitted = useRef(false);
   useEffect(() => {
     if (!box || fitted.current) return;
     const viewport = { w: box.clientWidth, h: box.clientHeight };
     if (!(viewport.w > 0)) return;
     fitted.current = true;
-    setView(fitRects(frame, viewport));
+    setView(stacked ? topView(frame, viewport) : fitRects(frame, viewport));
   });
   const chosenBox = why && "box" in why ? shown.find((b) => b.key === why.box) : undefined;
   const chosenEdge = why && "edge" in why ? flow.edges.find((e) => e.id === why.edge) : undefined;
@@ -350,12 +377,13 @@ function BoxWhy({ box, onClose, onFiles }: { box: FlowBox; onClose: () => void; 
 }
 
 function EdgeWhy({ edge, from, to, onClose }: { edge: FlowEdge; from: FlowBox; to: FlowBox; onClose: () => void }) {
+  const { count, examples } = edgeEvidence(edge.link, { kind: to.kind, tech: to.techs[0] ?? "" });
   return (
     <WhyCard title={t("projects.map.pieceEvidence", { name: `${from.label} ${edge.label} ${to.label}` })} onClose={onClose}>
-      <p className="text-ink">{t(edge.link.count === 1 ? "projects.flow.found.one" : "projects.flow.found", { count: edge.link.count })}</p>
-      {edge.link.examples.length > 0 && (
+      <p className="text-ink">{t(count === 1 ? "projects.flow.found.one" : "projects.flow.found", { count })}</p>
+      {examples.length > 0 && (
         <ul className="mt-1 flex flex-col gap-0.5">
-          {edge.link.examples.slice(0, 5).map((x) => <li key={`${x.from}>${x.to}`} className="break-all font-mono text-[11.5px] text-ink-tertiary">{x.from} → {x.to}</li>)}
+          {examples.slice(0, 5).map((x) => <li key={`${x.from}>${x.to}`} className="break-all font-mono text-[11.5px] text-ink-tertiary">{x.from} → {x.to}</li>)}
         </ul>
       )}
     </WhyCard>

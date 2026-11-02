@@ -5,7 +5,7 @@ import * as wire from "../../shared/projects-architecture";
 import * as wirePieces from "../../shared/projects-pieces";
 
 import {
-  cardPieces, flowLayout, linkPhrase, EVIDENCE_WORDS, FAMILY_COLORS, FAMILY_ORDER, evidenceLine, summaryPreview, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, mergeTwoWay, moduleLabel, plainModuleLabel, withFamilyName, withModuleFamily, type Architecture,
+  cardPieces, edgeEvidence, flowLayout, linkPhrase, EVIDENCE_WORDS, FAMILY_COLORS, FAMILY_ORDER, evidenceLine, summaryPreview, edgeCurve, edgeWidth, layoutGrid, layoutLevel, levelOf, mergeTwoWay, moduleLabel, plainModuleLabel, withFamilyName, withModuleFamily, type Architecture,
 } from "./projects-architecture-view";
 
 const arch: Architecture = {
@@ -235,14 +235,20 @@ describe("flowLayout", () => {
     { from: "api", to: "external", count: 2, examples: [] },
   ];
 
-  it("puts boxes in the four columns left to right, one box per kind, each outside service on its own", () => {
+  it("puts boxes in columns left to right, one box per kind, each outside service on its own, under the store column", () => {
     const flow = flowLayout(shop, links, undefined, "fr");
     expect(flow.boxes.map((b) => b.key)).toEqual(["ui", "api", "database", "external:SendGrid", "external:Stripe"]);
     const x = (key: string) => flow.boxes.find((b) => b.key === key)!.rect.x;
     expect(x("ui")).toBeLessThan(x("api"));
     expect(x("api")).toBeLessThan(x("database"));
-    expect(x("database")).toBeLessThan(x("external:Stripe"));
+    expect(x("external:Stripe")).toBe(x("database"));
     expect(x("external:Stripe")).toBe(x("external:SendGrid"));
+    const y = (key: string) => flow.boxes.find((b) => b.key === key)!.rect.y;
+    expect(y("external:SendGrid")).toBeGreaterThan(y("database") + 92);
+    const outside = flow.columns.find((c) => c.id === "outside")!;
+    expect(outside.y).toBeGreaterThan(y("database") + 92);
+    const alone = flowLayout([piece("api", "Express"), piece("external", "Stripe")], [], undefined, "fr");
+    expect(alone.boxes.find((b) => b.key === "external:Stripe")!.rect.x).toBeGreaterThan(alone.boxes.find((b) => b.key === "api")!.rect.x);
     expect(flow.columns.map((c) => c.id)).toEqual(["see", "work", "store", "outside"]);
     const ui = flow.boxes.find((b) => b.key === "ui")!;
     expect(ui).toMatchObject({ label: "Site ou appli", text: "Ce que les gens voient et utilisent.", described: false, techs: ["React", "Vite"] });
@@ -278,11 +284,33 @@ describe("flowLayout", () => {
     expect(noServer.edges).toEqual([]);
   });
 
+  it("keeps, for one outside service, only the examples that name it", () => {
+    const link: wirePieces.PieceLink = { from: "api", to: "external", count: 2, examples: [
+      { from: "api/mail.ts", to: "@sendgrid/mail" }, { from: "api/pay.ts", to: "@sendgrid/mail" }, { from: "api/pay.ts", to: "stripe" },
+    ] };
+    expect(edgeEvidence(link, { kind: "external", tech: "Stripe" })).toEqual({ count: 1, examples: [{ from: "api/pay.ts", to: "stripe" }] });
+    expect(edgeEvidence(link, { kind: "external", tech: "SendGrid" }).count).toBe(2);
+    const many = { ...link, count: 40 };
+    expect(edgeEvidence(many, { kind: "external", tech: "Stripe" }).count).toBe(40);
+    const toServer: wirePieces.PieceLink = { from: "ui", to: "api", count: 3, examples: [] };
+    expect(edgeEvidence(toServer, { kind: "api", tech: "" })).toEqual({ count: 3, examples: [] });
+  });
+
   it("says each link in plain words in both languages", () => {
     expect(linkPhrase({ from: "api", to: "cache", count: 1, examples: [] }, { kind: "cache", tech: "Redis" }, "fr")).toBe("garde sous la main dans");
     expect(linkPhrase({ from: "api", to: "external", count: 1, examples: [] }, { kind: "external", tech: "Twilio" }, "fr")).toBe("envoie les SMS avec");
     expect(linkPhrase({ from: "api", to: "external", count: 1, examples: [] }, { kind: "external", tech: "AWS" }, "en")).toBe("uses");
     expect(linkPhrase({ from: "ui", to: "api", count: 1, examples: [] }, { kind: "api", tech: "" }, "en")).toBe("sends its requests to");
+  });
+
+  it("on a narrow screen stacks the columns top to bottom, in the same order, with the arrows going down", () => {
+    const flow = flowLayout(shop, links, undefined, "fr", { stacked: true });
+    const rects = [...flow.boxes, ...flow.build].map((b) => b.rect);
+    expect(new Set(rects.map((r) => r.x)).size).toBe(1);
+    for (let i = 1; i < rects.length; i++) expect(rects[i]!.y).toBeGreaterThan(rects[i - 1]!.y + rects[i - 1]!.h);
+    expect(flow.columns.map((c) => c.id)).toEqual(["see", "work", "store", "outside"]);
+    const ui = flow.edges.find((e) => e.id === "ui->api")!;
+    expect([ui.from.side, ui.to.side]).toEqual(["bottom", "top"]);
   });
 
   it("an empty project lays out nothing", () => {

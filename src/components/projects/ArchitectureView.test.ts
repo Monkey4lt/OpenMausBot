@@ -258,6 +258,8 @@ describe("ArchitectureView", () => {
     expect(html).toContain("Demander au Cartographe de l&#x27;expliquer");
     expect(html).toContain("data-no-pieces");
     expect(html).not.toContain("data-canvas=");
+    expect(html).not.toContain("Demander au Cartographe de le décrire");
+    expect(simple({ initial: { ...arch, pieces: [], pieceLinks: [] }, state: described, onAskCartographe: () => {} })).toContain("Une API pour les commandes.");
   });
 
   it("a project of three files or fewer lists them instead of a map", () => {

@@ -564,12 +564,15 @@ export function pieceDiagramHtml(inspect: { pieces: Piece[]; links: PieceLink[] 
   const shapes: string[] = [];
   let height = 0;
   let column = 0;
-  for (const { id, kinds } of FLOW_COLUMNS) {
+  const placed = new Map<string, { x: number; bottom: number }>();
+  for (const { id, kinds, under } of FLOW_COLUMNS) {
     const list = kinds.flatMap((kind) => boxesOf(kind).map((b) => ({ ...b, kind })));
     if (!list.length) continue;
-    const x = column * (BOX_W + GAP_X);
-    shapes.push(`<text x="${x}" y="14" class="h">${escapeHtml(DIAGRAM_COLUMN_TITLES[id])}</text>`);
-    let y = HEAD_H;
+    const host = under ? placed.get(under) : undefined;
+    const x = host ? host.x : column++ * (BOX_W + GAP_X);
+    const top = host ? host.bottom + 12 : 0;
+    shapes.push(`<text x="${x}" y="${top + 14}" class="h">${escapeHtml(DIAGRAM_COLUMN_TITLES[id])}</text>`);
+    let y = top + HEAD_H;
     for (const b of list) {
       boxes.push({ ...b, x, y, w: BOX_W, h: BOX_H });
       const color = DIAGRAM_COLORS[b.kind];
@@ -579,8 +582,8 @@ export function pieceDiagramHtml(inspect: { pieces: Piece[]; links: PieceLink[] 
       shapes.push(`<g data-piece="${escapeHtml(b.key)}"><rect x="${x}" y="${y}" width="${BOX_W}" height="${BOX_H}" rx="10" fill="${color}22" stroke="${color}" stroke-width="2"/><text x="${x + 14}" y="${y + 23}" class="k">${escapeHtml(name)}</text>${text}</g>`);
       y += BOX_H + GAP_Y;
     }
+    placed.set(id, { x, bottom: y });
     height = Math.max(height, y);
-    column++;
   }
   const build = BUILD_KINDS.filter((kind) => inspect.pieces.some((p) => p.kind === kind));
   if (build.length) {

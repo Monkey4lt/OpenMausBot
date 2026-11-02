@@ -7661,5 +7661,6 @@
   "workflows.kind.condition.plain": "If… then",
   "workflows.kind.approval.plain": "Ask you first",
   "workflows.kind.send.plain": "Let you know",
-  "workflows.kind.note.plain": "Note"
+  "workflows.kind.note.plain": "Note",
+  "workflows.advanced.changed": "Changed"
 }

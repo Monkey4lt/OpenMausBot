@@ -958,11 +958,11 @@ export function ProjectCard({ name, title, q = "", group, summary, kinds, files,
           {more > 0 && <span className="text-[12px] tabular-nums text-ink-tertiary">{t("projects.card.more", { count: more })}</span>}
         </div>
         <div className="mt-auto flex items-center gap-2 pt-2.5">
-          <button type="button" onClick={onOpen} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent/12 px-3 text-[13px] font-medium text-accent-text hover:bg-accent/20">
-            {t("projects.card.how")}<ChevronRight size={14} className="shrink-0" />
+          <button type="button" onClick={onOpen} className="inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-lg bg-accent/12 px-2.5 text-[12.5px] font-medium text-accent-text hover:bg-accent/20">
+            {t("projects.card.how")}
           </button>
           <button type="button" onClick={onToggleFiles} aria-expanded={filesOpen}
-            className="ml-auto inline-flex h-7 items-center rounded-md px-1.5 text-[12px] text-ink-tertiary hover:bg-raised-hover hover:text-ink">
+            className="ml-auto min-w-0 truncate whitespace-nowrap rounded-md px-1 py-1 text-[12px] text-ink-tertiary hover:bg-raised-hover hover:text-ink">
             {filesOpen ? t("projects.files.hide") : t("projects.files.show", { files: fileCount(files, truncated) })}
           </button>
         </div>

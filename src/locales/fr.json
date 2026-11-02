@@ -3079,5 +3079,6 @@
   "workflows.kind.condition.plain": "Si… alors",
   "workflows.kind.approval.plain": "Te demander d'abord",
   "workflows.kind.send.plain": "Te prévenir",
-  "workflows.kind.note.plain": "Note"
+  "workflows.kind.note.plain": "Note",
+  "workflows.advanced.changed": "Modifiés"
 }

@@ -31,12 +31,15 @@ export const PIECE_DEFAULT_TEXT: Record<PieceKind, { fr: string; en: string }> =
   deploy: { fr: "Met le projet en ligne.", en: "Puts the project online." },
 };
 
-/** The columns of the « Comment ça marche » view, left to right; tests and deploy sit in a quiet row under them. */
-export const FLOW_COLUMNS: readonly { id: "see" | "work" | "store" | "outside"; kinds: readonly PieceKind[] }[] = [
+/**
+ * The columns of the « Comment ça marche » view, left to right; tests and deploy sit in a quiet row under them.
+ * A column with `under` stacks below that column when it has boxes, so the server's arrows to it never cross it.
+ */
+export const FLOW_COLUMNS: readonly { id: "see" | "work" | "store" | "outside"; kinds: readonly PieceKind[]; under?: "store" }[] = [
   { id: "see", kinds: ["ui", "chatbot"] },
   { id: "work", kinds: ["api", "jobs"] },
   { id: "store", kinds: ["database", "cache"] },
-  { id: "outside", kinds: ["external"] },
+  { id: "outside", kinds: ["external"], under: "store" },
 ];
 export const BUILD_KINDS: readonly PieceKind[] = ["tests", "deploy"];
 

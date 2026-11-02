@@ -283,7 +283,10 @@ describe("pieceDiagramHtml", () => {
   });
 
   it("gives each outside service its own box, named by its brand, and fans the server's link out to each", () => {
-    const html = pieceDiagramHtml({ pieces: [piece("api", "Express"), piece("external", "Stripe"), piece("external", "SendGrid"), piece("tests", ""), piece("deploy", "Docker")], links: [{ from: "api", to: "external", count: 2, examples: [] }] }, "shop");
+    const html = pieceDiagramHtml({ pieces: [piece("api", "Express"), piece("database", "PostgreSQL"), piece("external", "Stripe"), piece("external", "SendGrid"), piece("tests", ""), piece("deploy", "Docker")], links: [{ from: "api", to: "external", count: 2, examples: [] }] }, "shop");
+    const at = (key: string) => new RegExp(`data-piece="${key}"><rect x="(-?[\\d.]+)" y="(-?[\\d.]+)"`).exec(html)!.slice(1).map(Number);
+    expect(at("external:Stripe")[0]).toBe(at("database")[0]);
+    expect(at("external:Stripe")[1]).toBeGreaterThan(at("database")[1]);
     expect(html).toContain('data-piece="external:Stripe"');
     expect(html).toContain('data-piece="external:SendGrid"');
     expect(html).toContain("Service extérieur");

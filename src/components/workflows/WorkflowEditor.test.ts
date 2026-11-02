@@ -150,7 +150,7 @@ describe("block settings", () => {
     expect(html).toContain('aria-label="Lundi"');
   });
 
-  it("an AI step shows its instruction, and keeps the permanent instruction and the model behind « Réglages avancés »", () => {
+  it("an AI step shows its instruction, and keeps the permanent instruction and the model behind « Réglages avancés », marked when changed", () => {
     const plain = renderToStaticMarkup(createElement(NodeSettings, { ctx, onPatch: noop, node: { id: "a", kind: "ai", x: 0, y: 0, data: { prompt: "Résume" } } }));
     expect(plain).toContain("Écris la consigne ici");
     expect(plain).toContain("Réglages avancés");
@@ -158,10 +158,10 @@ describe("block settings", () => {
     expect(plain).not.toContain("Consigne permanente");
     expect(plain).not.toContain("<select");
     const set = renderToStaticMarkup(createElement(NodeSettings, { ctx, onPatch: noop, node: { id: "a", kind: "ai", x: 0, y: 0, data: { prompt: "Résume", model: "claude/haiku" } } }));
-    expect(set).toContain('aria-expanded="true"');
-    expect(set).toContain("Consigne permanente (facultatif)");
-    expect(set).toContain("Modèle choisi par l&#x27;appli");
-    expect(set).toContain('<option value="claude/haiku" selected="">Claude Haiku</option>');
+    expect(set).toContain('aria-expanded="false"');
+    expect(set).toContain("data-advanced-changed");
+    expect(set).not.toContain("Claude Haiku");
+    expect(plain).not.toContain("data-advanced-changed");
   });
 
   it("a bot step shows the bot to pick, and its model only behind « Réglages avancés »", () => {

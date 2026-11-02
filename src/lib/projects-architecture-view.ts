@@ -221,6 +221,18 @@ export function linkPhrase(link: PieceLink, to: { kind: PieceKind; tech: string 
   return Object.hasOwn(LINK_PHRASES, key) ? LINK_PHRASES[key as keyof typeof LINK_PHRASES][locale] : "";
 }
 
+/**
+ * What backs one drawn arrow. The server → outside services link is one link for every service, so for one service only
+ * the examples whose package names it are kept; their files are counted when the examples hold the whole link.
+ */
+export function edgeEvidence(link: PieceLink, to: { kind: PieceKind; tech: string }): { count: number; examples: PieceLink["examples"] } {
+  if (link.to !== "external" || !to.tech) return { count: link.count, examples: link.examples };
+  const name = to.tech.toLowerCase();
+  const examples = link.examples.filter((x) => x.to.toLowerCase().includes(name));
+  const whole = link.examples.length >= link.count;
+  return { count: whole ? new Set(examples.map((x) => x.from)).size : link.count, examples };
+}
+
 export type FlowBox = {
   key: string;
   kind: PieceKind;
@@ -237,10 +249,11 @@ export type FlowBox = {
 export type FlowEdge = CanvasEdge & { fromKey: string; toKey: string; link: PieceLink; label: string };
 export type FlowColumn = { id: (typeof FLOW_COLUMNS)[number]["id"]; x: number; y: number; w: number };
 
-export const FLOW_BOX = { w: 240, h: 92, gapX: 150, gapY: 28, x0: 40, y0: 56, buildW: 200, buildH: 44, buildGap: 70 };
+export const FLOW_BOX = { w: 240, h: 92, gapX: 150, gapY: 28, underGap: 74, stackGap: 110, x0: 40, y0: 56, buildW: 200, buildH: 44, buildGap: 70 };
 
 /** The « Comment ça marche » view: one box per kind (one per outside service) in four columns, tests and deploy in a row under them, and one plain phrase per found link. */
-export function flowLayout(pieces: readonly Piece[], links: readonly PieceLink[], texts: Readonly<Record<string, string>> | undefined, locale: Locale): {
+export function flowLayout(pieces: readonly Piece[], links: readonly PieceLink[], texts: Readonly<Record<string, string>> | undefined, locale: Locale,
+  options: { stacked?: boolean } = {}): {
   boxes: FlowBox[]; build: FlowBox[]; columns: FlowColumn[]; buildRow: { x: number; y: number } | null; edges: FlowEdge[];
 } {
   const groupsOf = (kind: PieceKind): { key: string; tech: string; pieces: Piece[] }[] => {
@@ -269,20 +282,27 @@ export function flowLayout(pieces: readonly Piece[], links: readonly PieceLink[]
   const boxes: FlowBox[] = [];
   const columns: FlowColumn[] = [];
   let bottom = B.y0;
+  const columnBottom = new Map<string, number>();
+  let slot = 0;
   for (const column of FLOW_COLUMNS) {
     const groups = column.kinds.flatMap((kind) => groupsOf(kind).map((g) => ({ kind, g })));
     if (!groups.length) continue;
-    const x = B.x0 + columns.length * (B.w + B.gapX);
-    columns.push({ id: column.id, x, y: B.y0 - 34, w: B.w });
+    const host = options.stacked ? columns.at(-1) : column.under ? columns.find((c) => c.id === column.under) : undefined;
+    const x = host ? host.x : B.x0 + slot++ * (B.w + B.gapX);
+    const top = host ? columnBottom.get(host.id)! + (options.stacked ? B.stackGap : B.underGap) : B.y0;
+    columns.push({ id: column.id, x, y: top - 34, w: B.w });
     groups.forEach(({ kind, g }, row) => {
-      const rect = { x, y: B.y0 + row * (B.h + B.gapY), w: B.w, h: B.h };
+      const rect = { x, y: top + row * (B.h + B.gapY), w: B.w, h: B.h };
       boxes.push(box(kind, g, rect));
+      columnBottom.set(column.id, rect.y + rect.h);
       bottom = Math.max(bottom, rect.y + rect.h);
     });
   }
   const buildKinds = BUILD_KINDS.filter((kind) => pieces.some((p) => p.kind === kind));
   const buildRow = buildKinds.length ? { x: B.x0, y: (boxes.length ? bottom : B.y0) + B.buildGap - 30 } : null;
-  const build = buildKinds.map((kind, i) => box(kind, groupsOf(kind)[0]!, { x: B.x0 + i * (B.buildW + B.gapY), y: buildRow!.y + 30, w: B.buildW, h: B.buildH }));
+  const build = buildKinds.map((kind, i) => box(kind, groupsOf(kind)[0]!, options.stacked
+    ? { x: B.x0, y: buildRow!.y + 30 + i * (B.buildH + 12), w: B.w, h: B.buildH }
+    : { x: B.x0 + i * (B.buildW + B.gapY), y: buildRow!.y + 30, w: B.buildW, h: B.buildH }));
   const edges = links.flatMap((link) => {
     const from = boxes.find((b) => b.kind === link.from);
     if (!from) return [];

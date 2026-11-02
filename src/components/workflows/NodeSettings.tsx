@@ -174,13 +174,14 @@ function YesNoRows() {
   </>;
 }
 
-/** Settings most people never need, folded under one quiet toggle; open from the start when one of them is set. */
-function Advanced({ initiallyOpen, children }: { initiallyOpen: boolean; children: ReactNode }) {
-  const [open, setOpen] = useState(initiallyOpen);
+/** Settings most people never need, folded under one quiet toggle that says when one of them was changed. */
+function Advanced({ changed, children }: { changed: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
   return <div className="flex flex-col gap-1">
     <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
       className="flex h-6 w-fit items-center gap-1 rounded-md px-1.5 text-[12px] text-ink-tertiary hover:text-ink">
       <ChevronRight size={12} className={cn("shrink-0 transition-transform", open && "rotate-90")} />{t("workflows.advanced")}
+      {changed && <span data-advanced-changed className="ml-0.5 size-1.5 rounded-full bg-accent" title={t("workflows.advanced.changed")} />}
     </button>
     {open && <NodeField className="flex flex-col gap-2 py-1.5">{children}</NodeField>}
   </div>;
@@ -198,7 +199,7 @@ export function NodeSettings({ node, onPatch, ctx }: { node: WorkflowNode; onPat
           <NodeTextarea rows={4} value={node.data.prompt} placeholder={t("workflows.ai.prompt")} aria-label={t("workflows.ai.prompt")} readOnly={ro}
             onChange={(event) => onPatch({ prompt: event.target.value })} />
         </NodeField>
-        <Advanced key={node.id} initiallyOpen={Boolean(node.data.model || node.data.system)}>
+        <Advanced key={node.id} changed={Boolean(node.data.model || node.data.system)}>
           <div className="-mx-1.5 flex items-center justify-between">
             <ModelSelect value={node.data.model} models={ctx.models} emptyLabel={t("workflows.model.auto")} disabled={ro} onChange={(model) => onPatch({ model })} />
           </div>
@@ -215,7 +216,7 @@ export function NodeSettings({ node, onPatch, ctx }: { node: WorkflowNode; onPat
             <BotSelect value={node.data.botId} bots={ctx.bots} disabled={ro} onChange={(botId) => onPatch({ botId })} />
           </div>
         </NodeField>
-        <Advanced key={node.id} initiallyOpen={Boolean(node.data.model)}>
+        <Advanced key={node.id} changed={Boolean(node.data.model)}>
           <div className="-mx-1.5 flex items-center justify-between">
             <ModelSelect value={node.data.model} models={ctx.models} emptyLabel={t("workflows.model.bot")} disabled={ro} onChange={(model) => onPatch({ model })} />
           </div>
