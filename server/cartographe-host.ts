@@ -10,7 +10,7 @@ import type { Store } from "./store.ts";
 
 export interface CartographeHostDeps {
   dataDir: string;
-  /** Team Cloud or Cloud Home. */
+  /** Team Cloud, Cloud Home or a hosted company workspace. */
   cloud: boolean;
   store: Pick<Store, "bot" | "groupByThread" | "appendMessage" | "messagesFor" | "patchMessage">;
   outboundRequests: OutboundRequestService;

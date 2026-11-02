@@ -10,6 +10,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { json, readBody } from "../harness/http.ts";
 import { setGithubTransport } from "../projects-github.ts";
 import { tar } from "../testing/tar-builder.ts";
+import { cartographeBotId, CARTOGRAPHE_NAME, ensureCartographeBot } from "../cartographe-bot.ts";
+import { DATA_DIR } from "../config.ts";
+import { Store } from "../store.ts";
 import { createProjectRoutes } from "./projects.ts";
 import { PASS, type RouteContext, type RouteHandler } from "./table.ts";
 
@@ -81,6 +84,60 @@ describe("projects routes", () => {
     expect(stale).toEqual({ status: 409, body: { error: expect.any(String), rev: 1 } });
     expect(changed).toEqual([1]);
     expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ state: { rev: 1, groups } });
+  });
+
+  it("GET /api/projects makes the Cartographe only once the map has a source", async () => {
+    const dataDir = tmp();
+    const calls: string[] = [];
+    let made: string | null = null;
+    const route = createProjectRoutes({ dataDir, cartographeBotId: () => made, ensureCartographe: () => { calls.push("ensure"); made = "b-carto"; return made; } });
+    expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ cartographeBotId: null });
+    expect(calls).toEqual([]);
+    mkdirSync(join(dataDir, "proj"));
+    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "x", kind: "local", path: join(dataDir, "proj") }], baseRev: 0 });
+    expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ cartographeBotId: "b-carto" });
+    expect(calls).toEqual(["ensure"]);
+  });
+
+  it("with a real store: no source no Cartographe, first source makes it, deleted it is not made again", async () => {
+    rmSync(DATA_DIR, { recursive: true, force: true });
+    const store = new Store(() => ({ instanceId: "", model: "" }));
+    const dataDir = tmp();
+    mkdirSync(join(dataDir, "proj"));
+    const route = createProjectRoutes({
+      dataDir,
+      cartographeBotId: () => cartographeBotId(DATA_DIR, (id) => Boolean(store.bot(id))),
+      ensureCartographe: () => ensureCartographeBot(store, { dataDir: DATA_DIR })?.id ?? null,
+    });
+    const named = () => store.bots.filter((b) => b.name === CARTOGRAPHE_NAME);
+    expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ cartographeBotId: null });
+    expect(named()).toHaveLength(0);
+    await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "x", kind: "local", path: join(dataDir, "proj") }], baseRev: 0 });
+    const id = ((await call(route, "GET", "/api/projects")).body as { cartographeBotId: string }).cartographeBotId;
+    expect(named().map((b) => b.id)).toEqual([id]);
+    expect(((await call(route, "GET", "/api/projects")).body as { cartographeBotId: string }).cartographeBotId).toBe(id);
+    expect(named()).toHaveLength(1);
+    store.deleteBot(id);
+    expect((await call(route, "GET", "/api/projects")).body).toMatchObject({ cartographeBotId: null });
+    expect(named()).toHaveLength(0);
+  });
+
+  it("GET /api/projects still answers, with no Cartographe, when making it fails", async () => {
+    const dataDir = tmp();
+    mkdirSync(join(dataDir, "proj"));
+    const warned: unknown[] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => { warned.push(args); };
+    try {
+      const route = createProjectRoutes({ dataDir, cartographeBotId: () => null, ensureCartographe: () => { throw new Error("EBUSY: locked"); } });
+      await call(route, "PUT", "/api/projects/state", { sources: [{ id: "s1", label: "x", kind: "local", path: join(dataDir, "proj") }], baseRev: 0 });
+      const answer = await call(route, "GET", "/api/projects");
+      expect(answer.status).toBe(200);
+      expect(answer.body).toMatchObject({ cartographeBotId: null, state: { sources: [{ id: "s1" }] } });
+      expect(String(warned.flat().join(" "))).toContain("EBUSY");
+    } finally {
+      console.warn = warn;
+    }
   });
 
   it("PUT without a usable baseRev is refused and writes nothing", async () => {

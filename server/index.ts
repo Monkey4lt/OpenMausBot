@@ -1869,7 +1869,7 @@ function agentsIntegration(
   // Only advertises the tools; the routes behind them refuse regardless.
   const host = { skillAuthoring: skillAuthoringEnabled(cfg), sharedComputers: lendingEnabled(), cloudHome: Boolean(CLOUD_HOME), team: Boolean(CLOUD_TEAM), escalations: chiefEscalationsEnabled(cfg),
     voiceNotes: tts.voiceReady(cfg, speaking?.voice) && speaking?.voiceNotes !== false, x: Boolean(researchCredential(cfg.treg?.key)), research: researchAvailability.available() };
-  return { ...agentsProxyLaunch(), env: agentsServerEnv({ threadId, bot: bot ?? { id: botId }, room: Boolean(store.groupByThread(threadId)), teamComputer: Boolean(bot && inheritedTeamComputer(bot)), host, cartographeBotId: CLOUD_HOME ? null : cartographeBotId(DATA_DIR, (id) => Boolean(store.bot(id))) },
+  return { ...agentsProxyLaunch(), env: agentsServerEnv({ threadId, bot: bot ?? { id: botId }, room: Boolean(store.groupByThread(threadId)), teamComputer: Boolean(bot && inheritedTeamComputer(bot)), host, cartographeBotId: CLOUD_HOME || HOSTED_WORKSPACE ? null : cartographeBotId(DATA_DIR, (id) => Boolean(store.bot(id))) },
     { generation, depth, skillAuthoring, roomHandoffId, ...(hostFiles && !CLOUD_HOME && !HOSTED_WORKSPACE ? { deliversSavedFiles: true } : {}) },
     (turn) => mintInternalCapability({ botId, threadId, kind: "agents", createdBots: 0, openedThreads: 0, ...turn }), `http://127.0.0.1:${PORT}`) };
 }
@@ -2899,7 +2899,7 @@ for (const pending of startupCatalogs) {
     broadcast({ kind: "config", ...configStatus() });
   }, () => {});
 }
-const firstHourFresh = Boolean(CLOUD_PERSONAL) && store.needsSeed(); testedAi.seed({ defaultBot: !CLOUD_TEAM, ...(firstHourFresh ? { intro: (bot) => greetingMessage(bot, { name: cfg.profile?.name }, cfg.language) } : {}) }); moveFreeze.hold(() => { if (!CLOUD_TEAM) ensureDefaultBot(store, { dataDir: DATA_DIR }); if (!CLOUD_HOME) { ensureCartographeBot(store, { dataDir: DATA_DIR }); repairCartographeBot(store, { dataDir: DATA_DIR }); } }, () => {}); if (CLOUD_TEAM) readTeamRolesWith((email) => sessions.list().filter((session) => session.email?.toLowerCase() === email && session.teamRole).sort((a, b) => b.createdAt - a.createdAt)[0]?.teamRole ?? null);
+const firstHourFresh = Boolean(CLOUD_PERSONAL) && store.needsSeed(); testedAi.seed({ defaultBot: !CLOUD_TEAM, ...(firstHourFresh ? { intro: (bot) => greetingMessage(bot, { name: cfg.profile?.name }, cfg.language) } : {}) }); moveFreeze.hold(() => { if (!CLOUD_TEAM) ensureDefaultBot(store, { dataDir: DATA_DIR }); if (!CLOUD_HOME && !HOSTED_WORKSPACE) { try { repairCartographeBot(store, { dataDir: DATA_DIR }); } catch (error) { console.warn("could not check the Cartographe", error); } } }, () => {}); if (CLOUD_TEAM) readTeamRolesWith((email) => sessions.list().filter((session) => session.email?.toLowerCase() === email && session.teamRole).sort((a, b) => b.createdAt - a.createdAt)[0]?.teamRole ?? null);
 hostedModels?.reconcile(store);
 if (skillsLibraryEnabled(cfg)) {
   try {
@@ -9659,9 +9659,10 @@ const webhookIngressStatus = () => ({
   ...(webhookIngressError ? { error: webhookIngressError } : {}),
 });
 const projectArchitectures = createArchitectureReader({ dataDir: DATA_DIR });
-const cartographe = createCartographeHost({ dataDir: DATA_DIR, cloud: CLOUD_HOME !== null, store, outboundRequests, notify, broadcast, active: (capability) => internalCapabilityIsActive(capability as InternalCapability),
+const cartographe = createCartographeHost({ dataDir: DATA_DIR, cloud: CLOUD_HOME !== null || HOSTED_WORKSPACE, store, outboundRequests, notify, broadcast, active: (capability) => internalCapabilityIsActive(capability as InternalCapability),
   architectureOf: (projectId) => projectArchitectures(projectId), mcpCallTimeoutMs: (botId) => { const instanceId = store.bot(botId)?.modelSelection.instanceId; return agentsCallTimeoutMs(instanceId ? registry.get(instanceId)?.driverKind : undefined, mcpCallTimeoutMinutes(cfg) * 60_000); } });
-ROUTES.push(createProjectRoutes({ dataDir: DATA_DIR, architectures: projectArchitectures, onChanged: cartographe.onChanged, cartographeBotId: cartographe.cartographeBotId }));
+ROUTES.push(createProjectRoutes({ dataDir: DATA_DIR, architectures: projectArchitectures, onChanged: cartographe.onChanged, cartographeBotId: cartographe.cartographeBotId,
+  ensureCartographe: () => (CLOUD_HOME || HOSTED_WORKSPACE ? null : ensureCartographeBot(store, { dataDir: DATA_DIR })?.id ?? null) }));
 ROUTES.push(createWebhookRoutes({ webhooks, ingress: webhookIngressStatus, visible: (auth) => visibleTo(viewerFor(auth)) }));
 
 const RUNTIME_KEEP_MS = 30 * 24 * 60 * 60_000;
@@ -12249,7 +12250,7 @@ ROUTES.push(createSharedComputerRoutes({ enabled: lendingEnabled, computers: sha
 // `routines` is assigned at boot, so it is read per request.
 ROUTES.push(createBotMessageRoutes({
   store, registry, handoffs, liveTurn: (threadId) => liveTurns.running(threadId), phoneSecretSubmissions, directTurnDispatchClaims, groupSpeakers,
-  routines: () => routines,
+  routines: () => routines, cartographeBotId: cartographe.cartographeBotId,
   fromPhone: phones.fromPhone, notePhoneSend: phones.noteSend,
   desktopManaged: DESKTOP_MANAGED, cloudHome: Boolean(CLOUD_HOME), DirectSendRefused,
   acceptDirectSend, directSendRefusal, startTurn, usageTriggerFor, messageSender, cloudGuestSendRefusal, cloudThreadRefusal, resolveAccessRequest: accessRequests.resolve, relayRefusal: CLOUD_TEAM ? (bot, email) => relayedSendRefusal(bot, email, Boolean(email && teamOwners.people?.list().some((one) => one.email === email && one.role !== "member"))) : undefined,

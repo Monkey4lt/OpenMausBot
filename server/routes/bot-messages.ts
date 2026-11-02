@@ -52,6 +52,8 @@ export interface BotMessageRouteDeps {
     | "patchMessage" | "patchTask" | "projectBotForTask" | "setActiveLeaf" | "setTaskAskedAt" | "taskByThread" | "tasks">;
   registry: Pick<ProviderRegistry, "get">;
   routines(): RoutineManager | null;
+  /** The app-made Cartographe, which MausBot's follow-up does not count among the person's bots. */
+  cartographeBotId?: () => string | null;
   handoffs: Pick<Handoffs, "current" | "steered">;
   /** The turn running in a thread now, as its runtime events name it. */
   liveTurn(threadId: string): string | undefined;
@@ -423,7 +425,7 @@ export function createBotMessageRoutes(deps: BotMessageRouteDeps): RouteHandler 
       if (!parsed.success) return json(res, 400, { error: "body must be { ai, apps?, threadId? }" });
       const threadId = parsed.data.threadId ?? bot.threadId;
       if (store.botByThread(threadId)?.id !== bot.id) return json(res, 404, { error: "no such conversation" });
-      const next = helperFollowup(store.messagesFor(threadId), () => followupFacts(bot, parsed.data, store.bots, routines?.listRoutines() ?? []));
+      const next = helperFollowup(store.messagesFor(threadId), () => followupFacts(bot, parsed.data, store.bots, routines?.listRoutines() ?? [], deps.cartographeBotId?.()));
       if (!next) return json(res, 409, { error: "this conversation has no intro to follow up" });
       if ("existing" in next) return json(res, 200, { message: next.existing });
       return json(res, 201, { message: store.appendMessage(threadId, next.append) });

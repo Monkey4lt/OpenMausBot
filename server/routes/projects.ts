@@ -19,6 +19,8 @@ export interface ProjectRouteDeps {
   architectures?: ArchitectureReader;
   onChanged?: (rev: number) => void;
   cartographeBotId?: () => string | null;
+  /** Makes the Cartographe if this place never had one; called once the map has a source. */
+  ensureCartographe?: () => string | null;
 }
 
 const ARCHITECTURE_CACHE_SIZE = 32;
@@ -31,6 +33,15 @@ const ARCHITECTURE_CACHE_SIZE = 32;
  * GET /api/projects/architecture?id=<sourceId:name> → 200 Architecture (shared/projects-architecture.ts),
  *   404 {error} for an id no source has, 502 {error} with the source's message when it cannot be read
  */
+function cartographeFor(deps: ProjectRouteDeps): string | null {
+  try {
+    return deps.ensureCartographe?.() ?? deps.cartographeBotId?.() ?? null;
+  } catch (error) {
+    console.warn("could not make the Cartographe", error);
+    return null;
+  }
+}
+
 export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
   const architectures = deps.architectures ?? createArchitectureReader(deps);
   return async ({ req, res, url, path, method, json, readBody }) => {
@@ -47,7 +58,7 @@ export function createProjectRoutes(deps: ProjectRouteDeps): RouteHandler {
     if (path === "/api/projects" && method === "GET") {
       const state = readProjectMapState(deps.dataDir);
       const { projects, errors } = await scanProjects(state);
-      return json(res, 200, { state, projects, errors, cartographeBotId: deps.cartographeBotId?.() ?? null });
+      return json(res, 200, { state, projects, errors, cartographeBotId: state.sources.length ? cartographeFor(deps) : deps.cartographeBotId?.() ?? null });
     }
     if (path === "/api/projects/state" && method === "PUT") {
       const body = await readBody(req, 2_000_000) as { baseRev?: unknown } | null;
