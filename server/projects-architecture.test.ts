@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { aliasesFromGoMod, aliasesFromTsconfig, buildArchitecture, classify, FAMILY_ORDER, modulesOf, parseImports, resolveImport } from "./projects-architecture.ts";
@@ -398,4 +400,11 @@ describe("classify edge cases", () => {
     ["app/main.py", "server"], ["app/controllers/users_controller.rb", "server"], ["app/Main.java", "server"],
     ["app/page.tsx", "ui"], ["app/layout.ts", "ui"], ["app/globals.css", "ui"],
   ])("%s → %s", (path, family) => expect(classify(path)).toBe(family));
+});
+
+describe("source text", () => {
+  it("has no invisible characters", () => {
+    const source = readFileSync(new URL("./projects-architecture.ts", import.meta.url), "utf8");
+    expect(source.match(/[\u00A0\u200B-\u200F\u2028\u2029\u2060\uFEFF]/g)).toBeNull();
+  });
 });

@@ -300,7 +300,7 @@ function findImports(language: Language, code: string): Found[] {
 export function parseImports(path: string, text: string): ImportRef[] {
   const language = LANGUAGE_OF[extensionOf(path)];
   if (!language) return [];
-  const normalized = text.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
   const { code, strings } = blankCommentsKeepingOffsets(normalized, SYNTAX[language]);
   const lineStarts = [0];
   for (let i = 0; i < normalized.length; i++) if (normalized[i] === "\n") lineStarts.push(i + 1);
@@ -434,7 +434,7 @@ export function resolveImport(from: string, spec: string, files: ReadonlySet<str
 }
 
 function parseJsonWithCommentsAndTrailingCommas(text: string): unknown {
-  const { code, strings } = blankCommentsKeepingOffsets(text.replace(/^﻿/, ""), C_LIKE);
+  const { code, strings } = blankCommentsKeepingOffsets(text.replace(/^\uFEFF/, ""), C_LIKE);
   let out = "";
   let last = 0;
   for (const [from, to] of strings) {
